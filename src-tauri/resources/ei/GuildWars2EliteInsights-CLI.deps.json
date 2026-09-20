@@ -1,0 +1,518 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v8.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v8.0": {
+      "GuildWars2EliteInsights-CLI/1.0.0": {
+        "dependencies": {
+          "GuildWars2EliteInsights.GW2EIGW2API": "4.1.0",
+          "GuildWars2EliteInsights.GW2EIParserCommons": "0.329.0",
+          "GuildWars2EliteInsights.GW2EIUpdater": "1.2.0",
+          "GuildWars2EliteInsightsUpdater": "0.0.0.0",
+          "GW2EIBuilders": "0.84.0.0",
+          "GW2EIDiscord": "4.1.0.0",
+          "GW2EIDPSReport": "7.1.0.0",
+          "GW2EIEvtcParser": "0.87.0.0",
+          "GW2EIGW2API": "4.1.0.0",
+          "GW2EIJSON": "3.29.0.0",
+          "GW2EIParserCommons": "0.329.0.0"
+        },
+        "runtime": {
+          "GuildWars2EliteInsights-CLI.dll": {}
+        }
+      },
+      "Discord.Net.Core/3.20.1": {
+        "dependencies": {
+          "Newtonsoft.Json": "13.0.4",
+          "System.Linq.AsyncEnumerable": "10.0.0"
+        },
+        "runtime": {
+          "lib/net8.0/Discord.Net.Core.dll": {
+            "assemblyVersion": "3.20.1.0",
+            "fileVersion": "3.20.1.0"
+          }
+        }
+      },
+      "Discord.Net.Rest/3.20.1": {
+        "dependencies": {
+          "Discord.Net.Core": "3.20.1"
+        },
+        "runtime": {
+          "lib/net8.0/Discord.Net.Rest.dll": {
+            "assemblyVersion": "3.20.1.0",
+            "fileVersion": "3.20.1.0"
+          }
+        }
+      },
+      "Discord.Net.Webhook/3.20.1": {
+        "dependencies": {
+          "Discord.Net.Core": "3.20.1",
+          "Discord.Net.Rest": "3.20.1"
+        },
+        "runtime": {
+          "lib/net8.0/Discord.Net.Webhook.dll": {
+            "assemblyVersion": "3.20.1.0",
+            "fileVersion": "3.20.1.0"
+          }
+        }
+      },
+      "Newtonsoft.Json/13.0.4": {
+        "runtime": {
+          "lib/net6.0/Newtonsoft.Json.dll": {
+            "assemblyVersion": "13.0.0.0",
+            "fileVersion": "13.0.4.30916"
+          }
+        }
+      },
+      "System.Configuration.ConfigurationManager/10.0.11": {
+        "dependencies": {
+          "System.Diagnostics.EventLog": "10.0.11",
+          "System.Security.Cryptography.ProtectedData": "10.0.11"
+        },
+        "runtime": {
+          "lib/net8.0/System.Configuration.ConfigurationManager.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.1126.37416"
+          }
+        }
+      },
+      "System.Diagnostics.EventLog/10.0.11": {
+        "runtime": {
+          "lib/net8.0/System.Diagnostics.EventLog.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.1126.37416"
+          }
+        },
+        "runtimeTargets": {
+          "runtimes/win/lib/net8.0/System.Diagnostics.EventLog.Messages.dll": {
+            "rid": "win",
+            "assetType": "runtime",
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/win/lib/net8.0/System.Diagnostics.EventLog.dll": {
+            "rid": "win",
+            "assetType": "runtime",
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.1126.37416"
+          }
+        }
+      },
+      "System.IO.Pipelines/10.0.11": {
+        "runtime": {
+          "lib/net8.0/System.IO.Pipelines.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.1126.37416"
+          }
+        }
+      },
+      "System.Linq.AsyncEnumerable/10.0.0": {
+        "runtime": {
+          "lib/net8.0/System.Linq.AsyncEnumerable.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.25.52411"
+          }
+        }
+      },
+      "System.Security.Cryptography.ProtectedData/10.0.11": {
+        "runtime": {
+          "lib/net8.0/System.Security.Cryptography.ProtectedData.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.1126.37416"
+          }
+        }
+      },
+      "System.Text.Encoding.CodePages/10.0.11": {
+        "runtime": {
+          "lib/net8.0/System.Text.Encoding.CodePages.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.1126.37416"
+          }
+        },
+        "runtimeTargets": {
+          "runtimes/win/lib/net8.0/System.Text.Encoding.CodePages.dll": {
+            "rid": "win",
+            "assetType": "runtime",
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.1126.37416"
+          }
+        }
+      },
+      "System.Text.Encodings.Web/10.0.11": {
+        "runtime": {
+          "lib/net8.0/System.Text.Encodings.Web.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.1126.37416"
+          }
+        },
+        "runtimeTargets": {
+          "runtimes/browser/lib/net8.0/System.Text.Encodings.Web.dll": {
+            "rid": "browser",
+            "assetType": "runtime",
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.1126.37416"
+          }
+        }
+      },
+      "System.Text.Json/10.0.11": {
+        "dependencies": {
+          "System.IO.Pipelines": "10.0.11",
+          "System.Text.Encodings.Web": "10.0.11"
+        },
+        "runtime": {
+          "lib/net8.0/System.Text.Json.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.1126.37416"
+          }
+        }
+      },
+      "GuildWars2EliteInsights.GW2EIBuilders/0.84.0": {
+        "dependencies": {
+          "GuildWars2EliteInsights.GW2EIEvtcParser": "0.87.0",
+          "GuildWars2EliteInsights.GW2EIGW2API": "4.1.0",
+          "GuildWars2EliteInsights.GW2EIJSON": "3.29.0",
+          "System.Text.Encoding.CodePages": "10.0.11"
+        },
+        "runtime": {
+          "GW2EIBuilders.dll": {
+            "assemblyVersion": "0.84.0.0",
+            "fileVersion": "0.84.0.0"
+          }
+        }
+      },
+      "GuildWars2EliteInsights.GW2EIDiscord/4.1.0": {
+        "dependencies": {
+          "Discord.Net.Webhook": "3.20.1"
+        },
+        "runtime": {
+          "GW2EIDiscord.dll": {
+            "assemblyVersion": "4.1.0.0",
+            "fileVersion": "4.1.0.0"
+          }
+        }
+      },
+      "GuildWars2EliteInsights.GW2EIDPSReport/7.1.0": {
+        "dependencies": {
+          "System.Text.Json": "10.0.11"
+        },
+        "runtime": {
+          "GW2EIDPSReport.dll": {
+            "assemblyVersion": "7.1.0.0",
+            "fileVersion": "7.1.0.0"
+          }
+        }
+      },
+      "GuildWars2EliteInsights.GW2EIEvtcParser/0.87.0": {
+        "dependencies": {
+          "GuildWars2EliteInsights.GW2EIGW2API": "4.1.0"
+        },
+        "runtime": {
+          "GW2EIEvtcParser.dll": {
+            "assemblyVersion": "0.87.0.0",
+            "fileVersion": "0.87.0.0"
+          }
+        }
+      },
+      "GuildWars2EliteInsights.GW2EIGW2API/4.1.0": {
+        "dependencies": {
+          "System.Text.Json": "10.0.11"
+        },
+        "runtime": {
+          "GW2EIGW2API.dll": {
+            "assemblyVersion": "4.1.0.0",
+            "fileVersion": "4.1.0.0"
+          }
+        }
+      },
+      "GuildWars2EliteInsights.GW2EIJSON/3.29.0": {
+        "dependencies": {
+          "System.Text.Json": "10.0.11"
+        },
+        "runtime": {
+          "GW2EIJSON.dll": {
+            "assemblyVersion": "3.29.0.0",
+            "fileVersion": "3.29.0.0"
+          }
+        }
+      },
+      "GuildWars2EliteInsights.GW2EIParserCommons/0.329.0": {
+        "dependencies": {
+          "GW2EIWingman": "5.1.0",
+          "GuildWars2EliteInsights.GW2EIBuilders": "0.84.0",
+          "GuildWars2EliteInsights.GW2EIDPSReport": "7.1.0",
+          "GuildWars2EliteInsights.GW2EIDiscord": "4.1.0",
+          "GuildWars2EliteInsights.GW2EIGW2API": "4.1.0",
+          "System.Configuration.ConfigurationManager": "10.0.11"
+        },
+        "runtime": {
+          "GW2EIParserCommons.dll": {
+            "assemblyVersion": "0.329.0.0",
+            "fileVersion": "0.329.0.0"
+          }
+        }
+      },
+      "GuildWars2EliteInsights.GW2EIUpdater/1.2.0": {
+        "runtime": {
+          "GuildWars2EliteInsightsUpdater.dll": {
+            "fileVersion": "0.0.0.0"
+          }
+        }
+      },
+      "GW2EIWingman/5.1.0": {
+        "dependencies": {
+          "GuildWars2EliteInsights.GW2EIJSON": "3.29.0",
+          "System.Text.Json": "10.0.11"
+        },
+        "runtime": {
+          "GW2EIWingman.dll": {
+            "assemblyVersion": "5.1.0.0",
+            "fileVersion": "5.1.0.0"
+          }
+        }
+      },
+      "GuildWars2EliteInsightsUpdater/0.0.0.0": {
+        "runtime": {
+          "GuildWars2EliteInsightsUpdater.dll": {
+            "assemblyVersion": "0.0.0.0",
+            "fileVersion": "0.0.0.0"
+          }
+        }
+      },
+      "GW2EIBuilders/0.84.0.0": {
+        "runtime": {
+          "GW2EIBuilders.dll": {
+            "assemblyVersion": "0.84.0.0",
+            "fileVersion": "0.84.0.0"
+          }
+        }
+      },
+      "GW2EIDiscord/4.1.0.0": {
+        "runtime": {
+          "GW2EIDiscord.dll": {
+            "assemblyVersion": "4.1.0.0",
+            "fileVersion": "4.1.0.0"
+          }
+        }
+      },
+      "GW2EIDPSReport/7.1.0.0": {
+        "runtime": {
+          "GW2EIDPSReport.dll": {
+            "assemblyVersion": "7.1.0.0",
+            "fileVersion": "7.1.0.0"
+          }
+        }
+      },
+      "GW2EIEvtcParser/0.87.0.0": {
+        "runtime": {
+          "GW2EIEvtcParser.dll": {
+            "assemblyVersion": "0.87.0.0",
+            "fileVersion": "0.87.0.0"
+          }
+        }
+      },
+      "GW2EIGW2API/4.1.0.0": {
+        "runtime": {
+          "GW2EIGW2API.dll": {
+            "assemblyVersion": "4.1.0.0",
+            "fileVersion": "4.1.0.0"
+          }
+        }
+      },
+      "GW2EIJSON/3.29.0.0": {
+        "runtime": {
+          "GW2EIJSON.dll": {
+            "assemblyVersion": "3.29.0.0",
+            "fileVersion": "3.29.0.0"
+          }
+        }
+      },
+      "GW2EIParserCommons/0.329.0.0": {
+        "runtime": {
+          "GW2EIParserCommons.dll": {
+            "assemblyVersion": "0.329.0.0",
+            "fileVersion": "0.329.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "GuildWars2EliteInsights-CLI/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Discord.Net.Core/3.20.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-fgWdbTlcd2ck05OoS03UBd/7kyrgHWATV9o2mvTwReqIB2CCcVPf5Qu8BpUpr3IgGYNHeVg+9J4KnK9DznYT4Q==",
+      "path": "discord.net.core/3.20.1",
+      "hashPath": "discord.net.core.3.20.1.nupkg.sha512"
+    },
+    "Discord.Net.Rest/3.20.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-vAmHwdpotchmz/rPicB2BrYoU2yWmMuFJhqDv/Ywi4nelIo/O7VYzzHD82iNGm3fYnD+2m+dCcZZGGgga3A7wQ==",
+      "path": "discord.net.rest/3.20.1",
+      "hashPath": "discord.net.rest.3.20.1.nupkg.sha512"
+    },
+    "Discord.Net.Webhook/3.20.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-HZ37Guk1FMYUmur+G8K3tUQwIst7HJyTziCA7F4F9LsOvluD60YEnz53XqJH+anyFf42t0tQeJFMbaCOy3jIiQ==",
+      "path": "discord.net.webhook/3.20.1",
+      "hashPath": "discord.net.webhook.3.20.1.nupkg.sha512"
+    },
+    "Newtonsoft.Json/13.0.4": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-pdgNNMai3zv51W5aq268sujXUyx7SNdE2bj1wZcWjAQrKMFZV260lbqYop1d2GM67JI1huLRwxo9ZqnfF/lC6A==",
+      "path": "newtonsoft.json/13.0.4",
+      "hashPath": "newtonsoft.json.13.0.4.nupkg.sha512"
+    },
+    "System.Configuration.ConfigurationManager/10.0.11": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-vFA8K0xj520MnLp+zkpTmLc3LOGUhkIDxHvhfm8Cr4b+ZVVeAXnfe1+2oixuITbsZfr4ALcU2NrAqQKhooX9yw==",
+      "path": "system.configuration.configurationmanager/10.0.11",
+      "hashPath": "system.configuration.configurationmanager.10.0.11.nupkg.sha512"
+    },
+    "System.Diagnostics.EventLog/10.0.11": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-QTXEoQBzz00SFWbo7nAg1Ogd4f99lwqcO9uAJ7MYSLEUR28f6As32QktrqG2Fr9cfAfd1GjLyGYspE7Ipj7P6w==",
+      "path": "system.diagnostics.eventlog/10.0.11",
+      "hashPath": "system.diagnostics.eventlog.10.0.11.nupkg.sha512"
+    },
+    "System.IO.Pipelines/10.0.11": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-rg8LPOZ62quw3aTnsQNh9rssncaMs69WEM1DiJdDkV+o4Llb2s5Pasy5Bulfm8zL+pE4gDcSQo7V2zW2jvxwYg==",
+      "path": "system.io.pipelines/10.0.11",
+      "hashPath": "system.io.pipelines.10.0.11.nupkg.sha512"
+    },
+    "System.Linq.AsyncEnumerable/10.0.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-t1jnw7So3eeZVemma+82w+Y394oPX1bebkr3gY3IzyotP3kKC/JWwGRz2WssoUFODWWvkACT2hXliumgCHu9LQ==",
+      "path": "system.linq.asyncenumerable/10.0.0",
+      "hashPath": "system.linq.asyncenumerable.10.0.0.nupkg.sha512"
+    },
+    "System.Security.Cryptography.ProtectedData/10.0.11": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-PNoxCTPb+Tlux+GJyq4c89ddYdpioVSqfGx8pqOF6shCSKwUNNctXhQtRkCICjbJmGrJJsW8NY52kVYO/b8mlQ==",
+      "path": "system.security.cryptography.protecteddata/10.0.11",
+      "hashPath": "system.security.cryptography.protecteddata.10.0.11.nupkg.sha512"
+    },
+    "System.Text.Encoding.CodePages/10.0.11": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-K00Cn0qXY9jYh7gRemcRDdwj5PhHKMC9UGJjC/dd7Cn9P5yadXDt2SHDC/Q3iVZ+iRnhbwecbvizEtNPBHJ6iA==",
+      "path": "system.text.encoding.codepages/10.0.11",
+      "hashPath": "system.text.encoding.codepages.10.0.11.nupkg.sha512"
+    },
+    "System.Text.Encodings.Web/10.0.11": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-R7H2/Oqr3onFff/JKDpfRjwxcQZlocF/eQ0ce8go/OTjqz+6LEp/fZK8j1YnDobtysChATEg7krVq4hQJ3IoeQ==",
+      "path": "system.text.encodings.web/10.0.11",
+      "hashPath": "system.text.encodings.web.10.0.11.nupkg.sha512"
+    },
+    "System.Text.Json/10.0.11": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-X2rXQy7g8KEUvWVbAz6vOk6byI1eMgmzFeXbKxq4BfZCfFy5S91K+K+hd4ZBlSp0wL1Y8FyGRXs6+hvABTjwQw==",
+      "path": "system.text.json/10.0.11",
+      "hashPath": "system.text.json.10.0.11.nupkg.sha512"
+    },
+    "GuildWars2EliteInsights.GW2EIBuilders/0.84.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GuildWars2EliteInsights.GW2EIDiscord/4.1.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GuildWars2EliteInsights.GW2EIDPSReport/7.1.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GuildWars2EliteInsights.GW2EIEvtcParser/0.87.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GuildWars2EliteInsights.GW2EIGW2API/4.1.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GuildWars2EliteInsights.GW2EIJSON/3.29.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GuildWars2EliteInsights.GW2EIParserCommons/0.329.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GuildWars2EliteInsights.GW2EIUpdater/1.2.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GW2EIWingman/5.1.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GuildWars2EliteInsightsUpdater/0.0.0.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GW2EIBuilders/0.84.0.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GW2EIDiscord/4.1.0.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GW2EIDPSReport/7.1.0.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GW2EIEvtcParser/0.87.0.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GW2EIGW2API/4.1.0.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GW2EIJSON/3.29.0.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GW2EIParserCommons/0.329.0.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}
