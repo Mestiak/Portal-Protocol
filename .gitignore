@@ -51,9 +51,30 @@ RELEASE-PREP-*.md
 docs/
 test/
 
-# EI resources (large binaries)
+# EI resources (large binaries, debug files)
 src-tauri/resources/ei/*.exe
 src-tauri/resources/ei/*.dll
+src-tauri/resources/ei/*.pdb
+src-tauri/resources/ei/*.log
+src-tauri/resources/ei/Content/
+src-tauri/resources/ei/Settings/
+src-tauri/resources/ei/runtimes/
+src-tauri/resources/ei/*.deps.json
+src-tauri/resources/ei/*.runtimeconfig.json
 
 # Graphify output
 graphify-out/
+
+# Build caches
+.svelte-kit/
+.keycheck/target/
+.keycheck/Cargo.lock
+
+# Scripts (dev-only)
+scripts/
+
+# Temp files
+src-tauri/tmp_*
+src-tauri/testlog.zevtc
+*.bak
+*.broken
