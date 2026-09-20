@@ -38,6 +38,13 @@ backups/
 *.bak
 *.broken
 
+# AI/Planning artifacts
+.hermes/
+.agents/
+plans/
+*PLAN*.md
+RELEASE-PREP-*.md
+
 # EI resources (large binaries)
 src-tauri/resources/ei/*.exe
 src-tauri/resources/ei/*.dll
