@@ -38,6 +38,10 @@ backups/
 *.bak
 *.broken
 
+# Signing keys (SECRETS)
+.keycheck/
+src-tauri/keys/
+
 # AI/Planning artifacts
 .hermes/
 .agents/
