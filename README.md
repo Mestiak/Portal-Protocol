@@ -131,9 +131,9 @@ Portal Protocol/
 
 Portal Protocol stores its config in the platform-specific app data directory:
 
-- **Windows**: `%APPDATA%\com.portal-protocol.app\`
-- **macOS**: `~/Library/Application Support/com.portal-protocol.app/`
-- **Linux**: `~/.config/com.portal-protocol.app/`
+- **Windows**: `%APPDATA%\com.usuario.gw2-log-uploader\`
+- **macOS**: `~/Library/Application Support/com.usuario.gw2-log-uploader/`
+- **Linux**: `~/.config/com.usuario.gw2-log-uploader/`
 
 The config includes: dps.report token, Discord webhooks, watched folders, and UI preferences.
 
