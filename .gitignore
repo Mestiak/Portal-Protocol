@@ -48,6 +48,8 @@ src-tauri/keys/
 plans/
 *PLAN*.md
 RELEASE-PREP-*.md
+docs/
+test/
 
 # EI resources (large binaries)
 src-tauri/resources/ei/*.exe
