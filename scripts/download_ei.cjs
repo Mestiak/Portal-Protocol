@@ -114,7 +114,11 @@ async function main() {
 
   // Get latest release
   const release = await new Promise((resolve, reject) => {
-    https.get(GITHUB_API, { headers: { 'User-Agent': 'Portal-Protocol' } }, (res) => {
+    const headers = { 'User-Agent': 'Portal-Protocol' };
+    if (process.env.GITHUB_TOKEN) {
+      headers['Authorization'] = `Bearer ${process.env.GITHUB_TOKEN}`;
+    }
+    https.get(GITHUB_API, { headers }, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
