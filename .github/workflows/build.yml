@@ -60,11 +60,19 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      - name: Debug password
+        run: |
+          echo "Password length: $(echo -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" | wc -c)"
+          echo "Password bytes: $(echo -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" | xxd -p)"
+        env:
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           CI: true
         with:
           tagName: ${{ github.ref_name }}
