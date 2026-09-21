@@ -3047,19 +3047,26 @@
   }
 
   let noteDraft = $state<Record<string, string>>({});
+  function updateLogInUploads(filePath: string, updater: (log: any) => any) {
+    const idx = uploads.findIndex((u: any) => u.file_path === filePath);
+    if (idx >= 0) {
+      uploads[idx] = updater(uploads[idx]);
+    }
+  }
   function addNote(log: any) {
     const id = cardId(log);
     const text = (noteDraft[id] ?? "").trim();
     if (!text) return;
+    const newNote = { id: `tmp${Date.now()}`, text, created_at: new Date().toISOString() };
     invoke("add_log_note", { filePath: log.file_path, text }).catch(console.error);
-    // optimistic local update so the UI reacts instantly
-    log.notes = [...(log.notes ?? []), { id: `tmp${Date.now()}`, text, created_at: new Date().toISOString() }];
+    // optimistic local update — mutate the source array so derived filteredUploads recomputes
+    updateLogInUploads(log.file_path, (l: any) => ({ ...l, notes: [...(l.notes ?? []), newNote] }));
     noteDraft[id] = "";
   }
   function removeNote(log: any, noteId: string) {
     const id = cardId(log);
     invoke("delete_log_note", { filePath: log.file_path, noteId }).catch(console.error);
-    log.notes = (log.notes ?? []).filter((n: any) => n.id !== noteId);
+    updateLogInUploads(log.file_path, (l: any) => ({ ...l, notes: (l.notes ?? []).filter((n: any) => n.id !== noteId) }));
   }
 
   function triggerCustomConfirm(title: string, message: string, onConfirm: () => void) {
