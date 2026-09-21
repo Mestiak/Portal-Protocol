@@ -1,6 +1,6 @@
 {
   "name": "gw2-log-uploader",
-  "version": "0.6.9",
+  "version": "0.7.0",
   "description": "Portal Protocol — GW2 combat log uploader and Discord webhook integration",
   "type": "module",
   "scripts": {
