@@ -32,6 +32,7 @@
     timeTo: string;   // "HH:MM" — optional time-of-day upper bound
     profession: string | number; // "all" or a PROFESSIONS key / elite_spec id
     professionKind: "all" | "core" | "spec"; // distinguishes base-id vs elite-spec-id
+    hasNotes: boolean; // true = only show logs with notes attached
   }
 
   interface ProfessionOption {
@@ -133,7 +134,8 @@
         filters.dateTo !== "" ||
         filters.timeFrom !== "" ||
         filters.timeTo !== "" ||
-        filters.profession !== "all"
+        filters.profession !== "all" ||
+        filters.hasNotes
     );
 
   // Exclude search from drawer-badge to distinguish text search from active category filters
@@ -203,6 +205,8 @@
       const label = `${filters.timeFrom || "00:00"}–${filters.timeTo || "23:59"}`;
       chips.push({ key: "time", label: `Time ${label}`, clear: () => { filters.timeFrom = ""; filters.timeTo = ""; } });
     }
+    if (filters.hasNotes)
+      chips.push({ key: "hasNotes", label: "Has Notes", clear: () => { filters.hasNotes = false; } });
     if (filters.search.trim() !== "")
       chips.push({ key: "search", label: `“${filters.search.trim()}”`, clear: () => { filters.search = ""; } });
     return chips;
@@ -476,6 +480,17 @@
             ✕ Clear All Filters
           </button>
         {/if}
+
+        <!-- Has Notes toggle -->
+        <button
+          class="filter-btn"
+          class:active={filters.hasNotes}
+          onclick={() => { filters.hasNotes = !filters.hasNotes; onchange?.(); }}
+          title="Only show logs with notes"
+        >
+          <i class="fa-solid fa-note-sticky"></i>
+          <span>Has Notes</span>
+        </button>
       </div>
     </div>
   </div>

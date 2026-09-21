@@ -1026,6 +1026,7 @@
     timeTo: "" as string,         // "HH:MM" optional time-of-day upper bound
     profession: "all" as string | number, // "all" or a PROFESSIONS key / elite_spec id
     professionKind: "all" as "all" | "core" | "spec",
+    hasNotes: false as boolean, // true = only show logs with notes attached
   });
   let sound_notifications = $state(true);
   let desktop_notifications = $state(true);
@@ -2305,6 +2306,9 @@
       );
       if (!has) return false;
     }
+
+    // Has notes filter
+    if (f.hasNotes && (!log.notes || log.notes.length === 0)) return false;
 
     if (f.vlRank !== "all") {
       const ranks = vlRanksOf(log);
