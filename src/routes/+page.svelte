@@ -3741,6 +3741,7 @@
         unlistenQueue?.();
 
         if (updatePollInterval !== null) clearInterval(updatePollInterval);
+        if (statusInterval) clearInterval(statusInterval);
         if (toastTimer) clearTimeout(toastTimer);
         if (feedSaveTimer) clearTimeout(feedSaveTimer);
         if (configSaveTimer) clearTimeout(configSaveTimer);
