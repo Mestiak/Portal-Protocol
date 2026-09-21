@@ -173,12 +173,11 @@ pub fn ei_enabled() -> bool {
 /// app already runs under a .NET-capable host on dev machines). Returns an error
 /// string with the download URL when missing.
 pub fn check_dotnet_runtime() -> Result<(), String> {
-    if Command::new("dotnet")
-        .arg("--list-runtimes")
-        .creation_flags(0x08000000)
-        .status()
-        .is_ok()
-    {
+    let mut cmd = Command::new("dotnet");
+    cmd.arg("--list-runtimes");
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000);
+    if cmd.status().is_ok() {
         return Ok(());
     }
     // Fallback: some installs expose the runtime without `dotnet` on PATH but
