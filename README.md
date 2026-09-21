@@ -63,8 +63,8 @@ cd Portal-Protocol
 # Install dependencies
 pnpm install
 
-# Download static assets (boss icons, profession icons, etc.)
-node scripts/download_icons.cjs
+# Download EI parser binaries (required for local EVTC parsing)
+node scripts/download_ei.cjs
 ```
 
 ### Development mode
@@ -110,10 +110,10 @@ Portal Protocol/
 │   │   ├── ei_runner.rs    # EI parser process execution
 │   │   ├── evtc_parser.rs  # EVTC file parsing
 │   │   └── watcher.rs      # Filesystem watcher for ArcDPS logs
-│   ├── resources/ei/       # Bundled EI parser binaries
+│   ├── resources/ei/       # EI parser binaries (downloaded via script)
 │   └── icons/              # App icons for all platforms
 ├── static/                 # Static assets (boss portraits, boon icons, etc.)
-└── scripts/                # Build and release scripts
+└── scripts/                # Build and release scripts (download_ei.cjs)
 ```
 
 ### Key technologies
