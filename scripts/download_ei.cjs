@@ -38,7 +38,13 @@ function download(url, dest) {
 }
 
 function unzip(zipPath, destDir) {
-  if (process.platform === 'win32') {
+  if (zipPath.endsWith('.rpm')) {
+    // Extract RPM using rpm2cpio + cpio (Linux only)
+    execSync(`rpm2cpio '${zipPath}' | cpio -idmv -D '${destDir}'`, { stdio: 'inherit' });
+  } else if (zipPath.endsWith('.deb')) {
+    // Extract DEB using dpkg-deb (Linux only)
+    execSync(`dpkg-deb -x '${zipPath}' '${destDir}'`, { stdio: 'inherit' });
+  } else if (process.platform === 'win32') {
     execSync(`powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${destDir}' -Force"`, { stdio: 'inherit' });
   } else if (process.platform === 'darwin') {
     execSync(`unzip -o '${zipPath}' -d '${destDir}'`, { stdio: 'inherit' });
@@ -54,28 +60,33 @@ function getPlatformZip(assets) {
   console.log(`Platform: ${platform}, Arch: ${arch}`);
 
   // Platform-specific patterns (be explicit to avoid matching wrong platform)
+  // Prefer .zip files, fall back to platform-specific packages
   let pattern;
   if (platform === 'win32') {
-    // Windows: GW2EI-win-x64.zip
-    pattern = /^GW2EI[_-]win/i;
+    // Windows: only match the plain GW2EI.zip
+    pattern = /^GW2EI[_-]win.*\.zip$/i;
   } else if (platform === 'darwin') {
     // macOS: match mac-specific zips, prefer arm64 on Apple Silicon
-    pattern = arch === 'arm64' ? /^GW2EI[_-]osx[_-]arm/i : /^GW2EI[_-]osx[_-]x64/i;
+    pattern = arch === 'arm64' ? /^GW2EI[_-]osx[_-]arm.*\.zip$/i : /^GW2EI[_-]osx[_-]x64.*\.zip$/i;
   } else {
-    // Linux: match linux-specific zips, prefer arm64 on ARM
-    pattern = arch === 'arm64' ? /^GW2EI[_-]linux[_-]arm/i : /^GW2EI[_-]linux[_-]x64/i;
+    // Linux: prefer .zip, then .deb, then .rpm
+    pattern = arch === 'arm64' ? /^GW2EI[_-]linux[_-]arm.*\.zip$/i : /^GW2EI[_-]linux[_-]x64.*\.zip$/i;
   }
 
   let match = assets.find(a => pattern.test(a.name));
 
-  // Fallback: if specific arch not found, try broader match for the platform
+  // Fallback: if specific arch zip not found, try broader match for the platform
   if (!match) {
     if (platform === 'win32') {
-      match = assets.find(a => /^GW2EI[_-]win/i.test(a.name));
+      match = assets.find(a => /^GW2EI[_-]win.*\.zip$/i.test(a.name));
     } else if (platform === 'darwin') {
-      match = assets.find(a => /^GW2EI[_-]osx/i.test(a.name));
+      match = assets.find(a => /^GW2EI[_-]osx.*\.zip$/i.test(a.name));
     } else {
-      match = assets.find(a => /^GW2EI[_-]linux/i.test(a.name));
+      // Linux: prefer .deb over .rpm (both can be extracted)
+      match = assets.find(a => /^GW2EI[_-]linux.*\.deb$/i.test(a.name));
+      if (!match) {
+        match = assets.find(a => /^GW2EI[_-]linux.*\.rpm$/i.test(a.name));
+      }
     }
   }
 
