@@ -96,6 +96,53 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
 
+      - name: Generate latest.json
+        run: |
+          # Read signature files
+          WIN_SIG=$(cat portal-protocol-windows-x64/*.sig | tr -d '\n')
+          MAC_SIG=$(cat portal-protocol-macos-aarch64/*.sig | tr -d '\n')
+          LINUX_SIG=$(cat portal-protocol-linux-x64/*.sig | tr -d '\n')
+          
+          # Construct download URLs
+          WIN_URL="https://github.com/Mestiak/Portal-Protocol/releases/download/${{ github.ref_name }}/Portal.Protocol_${{ github.ref_name }}_x64-setup.exe"
+          MAC_URL="https://github.com/Mestiak/Portal-Protocol/releases/download/${{ github.ref_name }}/Portal.Protocol_${{ github.ref_name }}_aarch64.dmg"
+          LINUX_URL="https://github.com/Mestiak/Portal-Protocol/releases/download/${{ github.ref_name }}/Portal.Protocol_${{ github.ref_name }}_amd64.AppImage"
+          
+          # Generate latest.json
+          cat > latest.json << EOF
+          {
+            "version": "${{ github.ref_name }}",
+            "notes": "Portal Protocol ${{ github.ref_name }}",
+            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)",
+            "platforms": {
+              "windows-x86_64": {
+                "signature": "$WIN_SIG",
+                "url": "$WIN_URL"
+              },
+              "darwin-aarch64": {
+                "signature": "$MAC_SIG",
+                "url": "$MAC_URL"
+              },
+              "linux-x86_64": {
+                "signature": "$LINUX_SIG",
+                "url": "$LINUX_URL"
+              }
+            }
+          }
+          EOF
+
+      - name: Upload latest.json to main branch
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git checkout main
+          cp latest.json latest.json
+          git add latest.json
+          git commit -m "Update latest.json for ${{ github.ref_name }}" || echo "No changes"
+          git push origin main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
