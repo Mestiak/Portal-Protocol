@@ -3050,8 +3050,37 @@
   function updateLogInUploads(filePath: string, updater: (log: any) => any) {
     const idx = uploads.findIndex((u: any) => u.file_path === filePath);
     if (idx >= 0) {
-      uploads[idx] = updater(uploads[idx]);
+      const newUploads = [...uploads];
+      newUploads[idx] = updater(newUploads[idx]);
+      uploads = newUploads;
     }
+    const hIdx = allHistory.findIndex((h: any) => h.file_path === filePath);
+    if (hIdx >= 0) {
+      const newHistory = [...allHistory];
+      newHistory[hIdx] = updater(newHistory[hIdx]);
+      allHistory = newHistory;
+    }
+    // Also update in sessions/folders/subfolders
+    const newSessions = sessions.map((s: any) => {
+      let changed = false;
+      const newLogs = s.logs.map((l: any) => {
+        if (l.file_path === filePath) { changed = true; return updater(l); }
+        return l;
+      });
+      let newSubfolders = s.subfolders;
+      if (s.subfolders) {
+        newSubfolders = s.subfolders.map((sf: any) => {
+          const sfLogs = sf.logs.map((l: any) => {
+            if (l.file_path === filePath) { changed = true; return updater(l); }
+            return l;
+          });
+          return { ...sf, logs: sfLogs };
+        });
+      }
+      if (changed) return { ...s, logs: newLogs, subfolders: newSubfolders };
+      return s;
+    });
+    sessions = newSessions;
   }
   function addNote(log: any) {
     const id = cardId(log);
@@ -3059,7 +3088,6 @@
     if (!text) return;
     const newNote = { id: `tmp${Date.now()}`, text, created_at: new Date().toISOString() };
     invoke("add_log_note", { filePath: log.file_path, text }).catch(console.error);
-    // optimistic local update — mutate the source array so derived filteredUploads recomputes
     updateLogInUploads(log.file_path, (l: any) => ({ ...l, notes: [...(l.notes ?? []), newNote] }));
     noteDraft[id] = "";
   }
@@ -5439,36 +5467,7 @@ async function testWebhook(wh: any) {
 </div>
 {/snippet}
 
-{#snippet notesPanel(log: any)}
-  {@const id = cardId(log)}
-  <div class="notes-section">
-    <div class="notes-title">
-      <i class="fa-solid fa-note-sticky"></i> Notes
-      {#if log.notes && log.notes.length > 0}<span class="notes-count">({log.notes.length})</span>{/if}
-    </div>
-    {#if log.notes && log.notes.length > 0}
-      <div class="notes-list">
-        {#each log.notes as note (note.id)}
-          <div class="note-item">
-            <span class="note-text">{note.text}</span>
-            <button class="note-delete" title="Delete Note" onclick={(e) => { e.stopPropagation(); removeNote(log, note.id); }}>✕</button>
-          </div>
-        {/each}
-      </div>
-    {/if}
-    <div class="notes-compose">
-      <input
-        class="notes-input"
-        type="text"
-        placeholder="Write a note…"
-        value={noteDraft[id] ?? ""}
-        oninput={(e) => { noteDraft[id] = (e.currentTarget as HTMLInputElement).value; }}
-        onkeydown={(e) => { if (e.key === "Enter") { e.preventDefault(); addNote(log); } }}
-      />
-      <button class="notes-add-btn" onclick={(e) => { e.stopPropagation(); addNote(log); }}>New</button>
-    </div>
-  </div>
-{/snippet}
+
 
 {#snippet logFooter(log: any, onDelete: () => void)}
 <div class="log-footer">
@@ -5621,7 +5620,33 @@ async function testWebhook(wh: any) {
     </div>
   </div>
   {#if notesOpen[cardId(log)]}
-    {@render notesPanel(log)}
+    <div class="notes-section">
+      <div class="notes-title">
+        <i class="fa-solid fa-note-sticky"></i> Notes
+        {#if log.notes && log.notes.length > 0}<span class="notes-count">({log.notes.length})</span>{/if}
+      </div>
+      {#if log.notes && log.notes.length > 0}
+        <div class="notes-list">
+          {#each log.notes as note (note.id)}
+            <div class="note-item">
+              <span class="note-text">{note.text}</span>
+              <button class="note-delete" title="Delete Note" onclick={(e) => { e.stopPropagation(); removeNote(log, note.id); }}>✕</button>
+            </div>
+          {/each}
+        </div>
+      {/if}
+      <div class="notes-compose">
+        <input
+          class="notes-input"
+          type="text"
+          placeholder="Write a note…"
+          value={noteDraft[cardId(log)] ?? ""}
+          oninput={(e) => { noteDraft[cardId(log)] = (e.currentTarget as HTMLInputElement).value; }}
+          onkeydown={(e) => { if (e.key === "Enter") { e.preventDefault(); addNote(log); } }}
+        />
+        <button class="notes-add-btn" onclick={(e) => { e.stopPropagation(); addNote(log); }}>New</button>
+      </div>
+    </div>
   {/if}
 
   {#if log.error_msg && !retryingPaths.has(log.file_path) && log.status !== "Skipped"}
