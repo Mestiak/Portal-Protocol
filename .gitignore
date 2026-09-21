@@ -10,11 +10,11 @@ src-tauri/target/
 # Tauri
 src-tauri/Cargo.lock
 
-# IDE
+# Local tooling
+.hermes/
+.agents/
 .vscode/
 .idea/
-*.swp
-*.swo
 
 # OS
 .DS_Store
