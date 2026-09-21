@@ -10,8 +10,7 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "tauri": "tauri",
-    "download-ei": "node scripts/download_ei.cjs",
-    "prepare": "node scripts/download_ei.cjs"
+    "download-ei": "node scripts/download_ei.cjs"
   },
   "license": "MIT",
   "dependencies": {
