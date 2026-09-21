@@ -131,23 +131,18 @@ jobs:
           }
           EOF
 
-      - name: Upload latest.json to main branch
-        run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git fetch origin main
-          git checkout main
-          git add latest.json
-          git commit -m "Update latest.json for ${{ github.ref_name }}" || echo "No changes"
-          git push origin main
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           draft: true
           files: portal-protocol-*/**
           body_path: RELEASE-NOTES.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload latest.json as release asset
+        uses: softprops/action-gh-release@v1
+        with:
+          files: latest.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
