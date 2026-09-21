@@ -1,7 +1,7 @@
 {
   "name": "gw2-log-uploader",
   "version": "0.6.9",
-  "description": "",
+  "description": "Portal Protocol — GW2 combat log uploader and Discord webhook integration",
   "type": "module",
   "scripts": {
     "dev": "vite dev",
@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "download-ei": "node scripts/download_ei.cjs",
+    "prepare": "node scripts/download_ei.cjs"
   },
   "license": "MIT",
   "dependencies": {

@@ -51,16 +51,8 @@ RELEASE-PREP-*.md
 docs/
 test/
 
-# EI resources (large binaries, debug files)
-src-tauri/resources/ei/*.exe
-src-tauri/resources/ei/*.dll
-src-tauri/resources/ei/*.pdb
-src-tauri/resources/ei/*.log
-src-tauri/resources/ei/Content/
-src-tauri/resources/ei/Settings/
-src-tauri/resources/ei/runtimes/
-src-tauri/resources/ei/*.deps.json
-src-tauri/resources/ei/*.runtimeconfig.json
+# EI binaries (downloaded via script)
+src-tauri/resources/ei/
 
 # Graphify output
 graphify-out/
@@ -72,6 +64,7 @@ graphify-out/
 
 # Scripts (dev-only)
 scripts/
+!scripts/download_ei.cjs
 
 # Temp files
 src-tauri/tmp_*
