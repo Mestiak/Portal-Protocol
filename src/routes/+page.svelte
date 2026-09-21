@@ -3537,7 +3537,7 @@
       checkWingmanStatus();
       checkForUpdate(true); // silent: only toasts if an update is found
 
-      // Hourly poll so a freshly-shipped R2 update surfaces a toast without the
+      // Hourly poll so a freshly-shipped GitHub update surfaces a toast without the
       // user relaunching. De-duped inside checkForUpdate via lastNotifiedVersion;
       // skipped while the install modal is open so we don't nag mid-update.
       updatePollInterval = setInterval(() => {
