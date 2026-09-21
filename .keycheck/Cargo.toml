@@ -1,9 +1,0 @@
-[package]
-name = "keycheck"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-minisign = "0.9"
-hex = "0.4"
-base64 = "0.22"
