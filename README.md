@@ -167,4 +167,4 @@ This project is licensed under the [MIT License](LICENSE).
 
 ---
 
-*Built with ❤️ for the GW2 raiding community.*
+*Built with ❤️ for the GW2 community. Mestiak*
