@@ -485,13 +485,37 @@
   const PATCH_NOTES_DATA: PatchNoteVersion[] = [
     {
       version: "0.7.0",
-      date: "September 17, 2026",
+      date: "September 20, 2026",
       notes: [
+        {
+          category: "✨ New Features",
+          items: [
+            { title: "Public GitHub Repository", desc: "Portal Protocol is now open-source on GitHub. Full source code available at https://github.com/Mestiak/Portal-Protocol under MIT License." },
+            { title: "GitHub Actions CI/CD", desc: "Automatic builds for Windows, macOS, and Linux on every tag push. Draft releases created with signed installers for all platforms." },
+            { title: "Wiki Documentation", desc: "Comprehensive documentation published to the GitHub Wiki, covering installation, features, settings, and troubleshooting." },
+            { title: "Auto-Updater via GitHub Releases", desc: "The Tauri auto-updater now queries GitHub Releases directly. Updates delivered natively through GitHub's infrastructure." }
+          ]
+        },
+        {
+          category: "📝 Notes Feature",
+          items: [
+            { title: "Notes Reactivity Fixed", desc: "Notes added or deleted in Feed, History, Folders, and Subfolders now update the UI instantly without needing to close/reopen." },
+            { title: "Notes Count Badge", desc: "Notes button displays a badge with the number of notes on a log." },
+            { title: "Notes Button Highlight", desc: "Notes button visually highlights (accent color) when a log has notes." },
+            { title: "Keyboard Shortcut", desc: "Press Enter in the notes input field to quickly add a note." },
+            { title: "Has Notes Filter", desc: "New filter option in the Filter Bar to show only logs with notes attached." }
+          ]
+        },
+        {
+          category: "📦 Dependencies",
+          items: [
+            { title: "Elite Insights Updated to v3.30", desc: "Bundled EI parser updated from v3.29 to v3.30. Adds support for Nexus of Eternity raid and convergence, FlyTo events, new buffs, and more." }
+          ]
+        },
         {
           category: "🐞 Bug Fixes",
           items: [
-            { title: "Xunlai Junkyard Daily Raid Badge", desc: "Fixed a name mismatch that prevented Xunlai Jade Junkyard from being marked as 'DAILY' in the Clears tab. The boss card label now matches the official encounter name from dps.report, so the daily raid rotation badge fires correctly." },
-            { title: "Subfolder Deletion Fixed", desc: "Completely redesigned subfolder controls: replaced the buggy kebab menu with a clean X button (appears on hover) for one-click deletion, and double-click on the subfolder name for inline renaming. The old menu had click handlers that silently failed due to Svelte 5 conditional rendering issues." }
+            { title: "Notes State Sync", desc: "Fixed notes created in one view not appearing in other views until switching tabs. All source arrays now update together." }
           ]
         }
       ]
