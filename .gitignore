@@ -53,6 +53,7 @@ test/
 
 # EI binaries (downloaded via script)
 src-tauri/resources/ei/
+src-tauri/resources/ei_backup/
 
 # Graphify output
 graphify-out/

@@ -1,5 +1,0 @@
-Elapsed 946 ms
-Program: GW2EIEvtcParser
-Program:    at GW2EIEvtcParser.EvtcParser.ParseLog(ParserController operation, FileInfo evtc, ParsingFailureReason& parsingFailureReason, Boolean multiThreadAcceleration)
-Program: GW2EIEvtcParser.ParsedEvtcLog ParseLog(GW2EIEvtcParser.ParserController, System.IO.FileInfo, GW2EIEvtcParser.ParserHelpers.ParsingFailureReason ByRef, Boolean)
-Program: File C:\Users\Usuario\Desktop\gw2-log-uploader\src-tauri\resources\ei\--help does not exist

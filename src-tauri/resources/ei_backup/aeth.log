@@ -1,5 +1,0 @@
-Elapsed 248 ms
-Program: GW2EIEvtcParser
-Program:    at GW2EIEvtcParser.EvtcParser.ParseLog(ParserController operation, FileInfo evtc, ParsingFailureReason& parsingFailureReason, Boolean multiThreadAcceleration) in G:\Projects\GW2-Elite-Insights-Parser\GW2EIEvtcParser\EvtcParser.cs:line 70
-Program: GW2EIEvtcParser.ParsedEvtcLog ParseLog(GW2EIEvtcParser.ParserController, System.IO.FileInfo, GW2EIEvtcParser.ParserHelpers.ParsingFailureReason ByRef, Boolean)
-Program: File C:\tmp\aeth.zevtc does not exist
