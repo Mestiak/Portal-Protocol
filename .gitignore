@@ -51,9 +51,13 @@ RELEASE-PREP-*.md
 docs/
 test/
 
-# EI binaries (downloaded via script)
+# EI binaries and data (downloaded via script)
 src-tauri/resources/ei/
 src-tauri/resources/ei_backup/
+src-tauri/resources/ei/Content/
+src-tauri/resources/ei/Settings/
+src-tauri/resources/ei/*.deps.json
+src-tauri/resources/ei/*.runtimeconfig.json
 
 # Graphify output
 graphify-out/
