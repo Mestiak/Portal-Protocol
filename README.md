@@ -1,45 +1,87 @@
 # Portal Protocol
 
-[![Tauri](https://img.shields.io/badge/Tauri-v2-000?logo=tauri&logoColor=fff)](https://tauri.app)
+<div align="center">
+
+[![Tauri](https://img.shields.io/badge/Tauri-v2-24c8db?logo=tauri&logoColor=fff)](https://tauri.app)
 [![Svelte](https://img.shields.io/badge/Svelte-5-ff3e00?logo=svelte&logoColor=fff)](https://svelte.dev)
 [![Rust](https://img.shields.io/badge/Rust-1.70+-dea584?logo=rust&logoColor=fff)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Downloads](https://img.shields.io/github/downloads/Mestiak/Portal-Protocol/total?color=green)](https://github.com/Mestiak/Portal-Protocol/releases)
 
-**GW2 log uploader & log manager suite.** Upload ArcDPS combat logs to dps.report, track raid/strike/fractal clears, manage sessions and folders, send Discord webhooks, and view detailed analytics — all from a single desktop app.
+**GW2 combat log uploader, Discord webhook integration, and analytics suite.**
+
+*Upload ArcDPS logs to dps.report, track clears, manage sessions, and notify your Discord — all from one app.*
+
+[Download](https://github.com/Mestiak/Portal-Protocol/releases) · [Wiki](https://github.com/Mestiak/Portal-Protocol/wiki) · [Issues](https://github.com/Mestiak/Portal-Protocol/issues)
 
 ---
+
+</div>
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Features](#features)
+- [Download](#download)
+- [Development](#development)
+- [Architecture](#architecture)
+- [Configuration](#configuration)
+- [Contributing](#contributing)
+- [License](#license)
+- [Acknowledgments](#acknowledgments)
+
+---
+
+## Overview
+
+Portal Protocol is a desktop app for Guild Wars 2 raid and strike teams. It watches your ArcDPS logs folder, uploads to dps.report, and sends rich Discord notifications — all automatically.
+
+**Built with Tauri v2 + Svelte 5.**
 
 ## Features
 
 ### Log Management
-- **Auto-upload** — Watches your ArcDPS logs folder and uploads new logs to dps.report automatically
-- **Log feed** — Browse all uploads with boss icons, CM/QP badges, kill/wipe status, duration, and squad composition
-- **Folders & sessions** — Organize logs into sessions and subfolders with drag-and-drop
-- **Local fallback** — Enrich logs with HP, phases, and squad data from local EVTC when dps.report is unavailable
+| | Feature | Description |
+|---|---------|-------------|
+| ☁️ | **Auto-Upload** | Watches ArcDPS logs folder, uploads to dps.report automatically |
+| 📜 | **Log Feed** | Browse all uploads with boss icons, CM/QP badges, kill/wipe status |
+| 📂 | **Sessions & Folders** | Organize logs by raid night or custom folders with drag-and-drop |
+| 📝 | **Notes** | Attach notes to individual logs with inline editing |
+| 🔍 | **Search & Filter** | Find logs by boss, mode, outcome, or date |
 
 ### Discord Integration
-- **Rich embeds** — Post formatted kill/wipe notifications to Discord channels
-- **Role pings** — Configurable named role pings per webhook
-- **Thread targeting** — Post to Discord threads instead of channel root
-- **Routing filters** — Filter by encounter type, outcome, mode (CM/LCM), and boss name
-- **Test button** — Send sample embeds to verify webhook configuration
+| | Feature | Description |
+|---|---------|-------------|
+| ✈️ | **Rich Embeds** | Post formatted kill/wipe notifications to Discord |
+| 🔔 | **Role Pings** | Configurable named role pings per webhook |
+| 🧵 | **Thread Targeting** | Post to Discord threads instead of channel root |
+| 🎛️ | **Routing Filters** | Filter by encounter type, outcome, mode, and boss name |
+| 🧪 | **Test Button** | Send sample embeds to verify webhook configuration |
 
 ### Analytics
-- **Encounter statistics** — View clear counts, boss breakdowns, and mode splits
-- **Personal records** — Track best pulls, fastest kills, and CM times
-- **Squad planner** — Plan raid compositions and track subgroup assignments
+| | Feature | Description |
+|---|---------|-------------|
+| 📊 | **Encounter Statistics** | Clear counts, boss breakdowns, mode splits |
+| 🏆 | **Personal Records** | Fastest kills, best pulls, CM times |
+| 👥 | **Squad Planner** | Plan raid compositions and subgroup assignments |
 
 ### Quality of Life
-- **Notes** — Attach notes to individual logs with inline editing
-- **Search & filter** — Find logs by boss, mode, outcome, or date
-- **Export** — Copy formatted log summaries for Discord or forums
-- **Auto-update** — Tauri v2 built-in updater fetches new releases automatically
+| | Feature | Description |
+|---|---------|-------------|
+| 🔄 | **Auto-Update** | Built-in Tauri updater fetches new releases automatically |
+| 📋 | **Export** | Copy formatted log summaries for Discord or forums |
 
 ---
 
 ## Download
 
 Get the latest installer from the [Releases](https://github.com/Mestiak/Portal-Protocol/releases) page.
+
+| Platform | File |
+|----------|------|
+| Windows | `.exe` (NSIS installer) |
+| macOS | `.dmg` (Apple Silicon / Intel) |
+| Linux | `.AppImage` or `.deb` |
 
 > The app uses Tauri's built-in updater. Once installed, new versions download and install automatically.
 
@@ -49,7 +91,7 @@ Get the latest installer from the [Releases](https://github.com/Mestiak/Portal-P
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org) 18+
+- [Node.js](https://nodejs.org) 20+
 - [Rust](https://rustup.rs) 1.70+
 - [pnpm](https://pnpm.io) (recommended) or npm
 
@@ -89,6 +131,10 @@ pnpm run tauri build
 ```bash
 # Bump version, build, sign, and prepare release files
 bash ./scripts/release-update.sh 0.7.0
+
+# Tag and push (triggers GitHub Actions)
+git tag v0.7.0
+git push origin v0.7.0
 ```
 
 ---
@@ -122,7 +168,7 @@ Portal Protocol/
 |-------|-----------|
 | Frontend | Svelte 5, TypeScript, Vite |
 | Backend | Rust, Tauri 2 |
-| Log parsing | Elite Insights (bundled) |
+| Log parsing | Elite Insights (downloaded on setup) |
 | Styling | CSS custom properties, dark theme |
 
 ---
@@ -131,9 +177,11 @@ Portal Protocol/
 
 Portal Protocol stores its config in the platform-specific app data directory:
 
-- **Windows**: `%APPDATA%\com.usuario.gw2-log-uploader\`
-- **macOS**: `~/Library/Application Support/com.usuario.gw2-log-uploader/`
-- **Linux**: `~/.config/com.usuario.gw2-log-uploader/`
+| OS | Path |
+|----|------|
+| Windows | `%APPDATA%\com.usuario.gw2-log-uploader\` |
+| macOS | `~/Library/Application Support/com.usuario.gw2-log-uploader/` |
+| Linux | `~/.config/com.usuario.gw2-log-uploader/` |
 
 The config includes: dps.report token, Discord webhooks, watched folders, and UI preferences.
 
