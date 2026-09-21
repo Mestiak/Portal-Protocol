@@ -23,11 +23,14 @@
 
 <div align="center">
 
-![Feed Tab](https://via.placeholder.com/400x250/1a1a2e/ffffff?text=Feed+Tab)
-![Analytics](https://via.placeholder.com/400x250/1a1a2e/ffffff?text=Analytics)
-![Discord Webhooks](https://via.placeholder.com/400x250/1a1a2e/ffffff?text=Discord+Webhooks)
+### Feed Tab
+![Feed Tab](screenshots/upload_feed.png)
 
-*Screenshots coming soon — upload your app screenshots to `screenshots/` folder*
+### Analytics
+![Analytics](screenshots/analytics_1.png)
+
+### Discord Webhooks
+![Discord Webhooks](screenshots/webhook_1.png)
 
 </div>
 
