@@ -60,12 +60,8 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - name: Debug password
-        run: |
-          echo "Password length: $(echo -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" | wc -c)"
-          echo "Password bytes: $(echo -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" | xxd -p)"
-        env:
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      - name: Download EI parser binaries
+        run: node scripts/download_ei.cjs
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
@@ -103,5 +99,6 @@ jobs:
         with:
           draft: true
           files: portal-protocol-*/**
+          body_path: RELEASE-NOTES.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

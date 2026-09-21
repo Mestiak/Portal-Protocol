@@ -209,7 +209,7 @@ This project is licensed under the [MIT License](LICENSE).
 
 - [dps.report](https://dps.report) — Combat log hosting
 - [GW2 Elite Insights](https://github.com/baaron4/GW2-Elite-Insights-Parser) — Log parsing engine
-- [GW2 Wingman](https://gw2wingman.nevermindcreations.de/rev) — Wingman integration
+- [GW2 Wingman](https://gw2wingman.nevermindcreations.de/) — Wingman integration
 - [Tauri](https://tauri.app) — Desktop app framework
 - [Svelte](https://svelte.dev) — Reactive UI framework
 

@@ -6058,7 +6058,7 @@ async function testWebhook(wh: any) {
             <button class="sidebar-quick-link" onclick={() => openExternalUrl('https://dps.report')}>
               <img src="/dpsreport_icon.png" alt="dps.report" /> Visit dps.report
             </button>
-            <button class="sidebar-quick-link" onclick={() => openExternalUrl('https://gw2wingman.nevermindcreations.de/rev/dashboard')}>
+            <button class="sidebar-quick-link" onclick={() => openExternalUrl('https://gw2wingman.nevermindcreations.de/')}>
               <img src="/wingman_icon.png" alt="Wingman" /> Wingman Dashboard
             </button>
           </div>
