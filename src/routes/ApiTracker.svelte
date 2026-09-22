@@ -534,8 +534,9 @@
       .toLowerCase();
     
     // Handle special cases where rotation names differ from boss labels
-    n = n.replace(/\bvoice and claw of the fallen\b/i, "voice & claw");
-    n = n.replace(/\bmatthias gabrel\b/i, "matthias");
+    // Matches: "Voice and Claw", "Voice & Claw", "Voice and Claw of the Fallen", etc.
+    n = n.replace(/\bvoice\s*(?:and|&)\s*claw(?:\s*of\s*the\s*fallen)?\b/i, "voice & claw");
+    n = n.replace(/\bmatthias\s+gabrel\b/i, "matthias");
     
     return n;
   }
