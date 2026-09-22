@@ -527,11 +527,17 @@
   // We deliberately KEEP " the Peerless" / " the Stormsinger" etc. — those are
   // part of the actual boss name (e.g. "Qadim the Peerless" != "Qadim").
   function normalizeBossName(name: string): string {
-    return name
+    let n = name
       .replace(/\(.*?\)/g, "") // strip "(CA)", "(qTP)", "(SH)"…
       .replace(/\bthe Indomitable\b/i, "") // Cairn's label is "Cairn the Indomitable"
       .trim()
       .toLowerCase();
+    
+    // Handle special cases where rotation names differ from boss labels
+    n = n.replace(/\bvoice and claw of the fallen\b/i, "voice & claw");
+    n = n.replace(/\bmatthias gabrel\b/i, "matthias");
+    
+    return n;
   }
 
   function isDailyBounty(label: string): boolean {
