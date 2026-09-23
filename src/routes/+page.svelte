@@ -484,6 +484,18 @@
   type PatchNoteVersion = { version: string; date: string; image?: string; notes: PatchNoteCategory[] };
   const PATCH_NOTES_DATA: PatchNoteVersion[] = [
     {
+      version: "0.7.1",
+      date: "September 22, 2026",
+      notes: [
+        {
+          category: "🎨 UI Enhancements",
+          items: [
+            { title: "Boss Collapse/Expand in Logs", desc: "Click boss name headers (e.g., DECIMA, URA, GREER) in Uploads Feed, History Log, Folders, and Subfolders to collapse and expand individual boss log groups. Chevron indicator on the left shows state. All sections expanded by default." }
+          ]
+        }
+      ]
+    },
+    {
       version: "0.7.0",
       date: "September 20, 2026",
       notes: [
@@ -3394,6 +3406,7 @@
   // ─── Modal/Troubleshoot State ─────────────────────────────────────────
   let showTroubleshoot = $state<Record<string, boolean>>({});
   let modalWingCollapsed = $state<Record<number, boolean>>({});
+  let modalBossCollapsed = $state<Record<string, boolean>>({});
   let modalCategoryCollapsed = $state<Record<string, boolean>>({});
   let copiedDiagPath = $state<string | null>(null);
   let savedDiagPath = $state<string | null>(null);
@@ -3401,6 +3414,11 @@
   function toggleModalWingCollapsed(wi: number) {
     modalWingCollapsed[wi] = !modalWingCollapsed[wi];
     modalWingCollapsed = { ...modalWingCollapsed };
+  }
+
+  function toggleModalBossCollapsed(bossKey: string) {
+    modalBossCollapsed[bossKey] = !modalBossCollapsed[bossKey];
+    modalBossCollapsed = { ...modalBossCollapsed };
   }
 
   function toggleModalCategoryCollapsed(cat: string) {
@@ -5785,7 +5803,12 @@ async function testWebhook(wh: any) {
         {#if !isCollapsed}
           <div class="wing-body" transition:slide={{ duration: prefersReducedMotion ? 0 : 200 }}>
             {#each item.bossBuckets as bucket}
-              <div class="wing-boss-label">{bucket.bossName}</div>
+              {@const isBossCollapsed = modalBossCollapsed[bucket.bossKey] === true}
+              <div class="wing-boss-header" role="button" tabindex="0" onclick={() => toggleModalBossCollapsed(bucket.bossKey)} onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleModalBossCollapsed(bucket.bossKey); } }} style="cursor: pointer; display: flex; justify-content: flex-start; align-items: center; gap: 6px;">
+                <span class="wing-chevron" class:open={!isBossCollapsed}>›</span>
+                <span class="wing-boss-label">{bucket.bossName}</span>
+              </div>
+              {#if !isBossCollapsed}
               {#each bucket.logs as log (log.file_path)}
                 {@const id = cardId(log)}
                 {@const isExpanded = !!expanded[id]}
@@ -5834,7 +5857,8 @@ async function testWebhook(wh: any) {
                   {/if}
                 </div>
               {/each}
-            {/each}
+                         {/if}
+ {/each}
           </div>
         {/if}
       </div>
@@ -5868,7 +5892,12 @@ async function testWebhook(wh: any) {
         {#if !isCollapsed}
           <div class="wing-body" transition:slide={{ duration: prefersReducedMotion ? 0 : 200 }}>
             {#each item.bossBuckets as bucket}
-              <div class="wing-boss-label">{bucket.bossName}</div>
+              {@const isBossCollapsed = modalBossCollapsed[bucket.bossKey] === true}
+              <div class="wing-boss-header" role="button" tabindex="0" onclick={() => toggleModalBossCollapsed(bucket.bossKey)} onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleModalBossCollapsed(bucket.bossKey); } }} style="cursor: pointer; display: flex; justify-content: flex-start; align-items: center; gap: 6px;">
+                <span class="wing-chevron" class:open={!isBossCollapsed}>›</span>
+                <span class="wing-boss-label">{bucket.bossName}</span>
+              </div>
+              {#if !isBossCollapsed}
             {#each bucket.logs as log (log.file_path)}
                 {@const id = cardId(log)}
                 {@const isExpanded = !!expanded[id]}
@@ -5917,7 +5946,8 @@ async function testWebhook(wh: any) {
                   {/if}
                 </div>
               {/each}
-              {/each}
+                           {/if}
+ {/each}
             </div>
           {/if}
         </div>
@@ -6238,7 +6268,12 @@ async function testWebhook(wh: any) {
                     {#if !isCollapsed}
                       <div class="wing-body" transition:slide={{ duration: prefersReducedMotion ? 0 : 200 }}>
                         {#each item.bossBuckets as bucket}
-                          <div class="wing-boss-label">{bucket.bossName}</div>
+                          {@const isBossCollapsed = modalBossCollapsed[bucket.bossKey] === true}
+              <div class="wing-boss-header" role="button" tabindex="0" onclick={() => toggleModalBossCollapsed(bucket.bossKey)} onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleModalBossCollapsed(bucket.bossKey); } }} style="cursor: pointer; display: flex; justify-content: flex-start; align-items: center; gap: 6px;">
+                <span class="wing-chevron" class:open={!isBossCollapsed}>›</span>
+                <span class="wing-boss-label">{bucket.bossName}</span>
+              </div>
+              {#if !isBossCollapsed}
                           {#each bucket.logs as log (log.file_path)}
                             {@const id = cardId(log)}
                             {@const isExpanded = !!expanded[id]}
@@ -6289,7 +6324,8 @@ async function testWebhook(wh: any) {
                               {/if}
                             </div>
                           {/each}
-                        {/each}
+                                     {/if}
+ {/each}
                       </div>
                     {/if}
                   </div>
@@ -6317,7 +6353,12 @@ async function testWebhook(wh: any) {
                     {#if !isCollapsed}
                       <div class="wing-body" transition:slide={{ duration: prefersReducedMotion ? 0 : 200 }}>
                         {#each item.bossBuckets as bucket}
-                          <div class="wing-boss-label">{bucket.bossName}</div>
+                          {@const isBossCollapsed = modalBossCollapsed[bucket.bossKey] === true}
+              <div class="wing-boss-header" role="button" tabindex="0" onclick={() => toggleModalBossCollapsed(bucket.bossKey)} onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleModalBossCollapsed(bucket.bossKey); } }} style="cursor: pointer; display: flex; justify-content: flex-start; align-items: center; gap: 6px;">
+                <span class="wing-chevron" class:open={!isBossCollapsed}>›</span>
+                <span class="wing-boss-label">{bucket.bossName}</span>
+              </div>
+              {#if !isBossCollapsed}
                         {#each bucket.logs as log (log.file_path)}
                           {@const id = cardId(log)}
                           {@const isExpanded = !!expanded[id]}
@@ -6367,7 +6408,8 @@ async function testWebhook(wh: any) {
                             {/if}
                           </div>
                         {/each}
-                        {/each}
+                                     {/if}
+ {/each}
                       </div>
                     {/if}
                   </div>
