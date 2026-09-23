@@ -6132,7 +6132,7 @@ async function testWebhook(wh: any) {
       </div>
     {/if}
     {#if activeTab === "feed"}
-      <div style="display: flex; flex-direction: column; gap: inherit; min-height: 100%;" in:fly={{ y: 6, duration: prefersReducedMotion ? 0 : 200 }} out:fade={{ duration: prefersReducedMotion ? 0 : 150 }}>
+      <div style="display: flex; flex-direction: column; gap: inherit; height: 100%; overflow-y: auto;" in:fly={{ y: 6, duration: prefersReducedMotion ? 0 : 200 }} out:fade={{ duration: prefersReducedMotion ? 0 : 150 }}>
         <div class="feed-header-row">
         <div>
           <h2 class="feed-title">Uploads Feed</h2>
@@ -6216,7 +6216,7 @@ async function testWebhook(wh: any) {
       </div>
 
       {#if selectedLogs.size > 0}
-        <div class="copy-toolbar" style="position: sticky; top: 0; z-index: 10; margin: 0 0 16px 0; border: 1px solid rgba(99, 102, 241, 0.25); background: rgba(15, 16, 28, 0.95); backdrop-filter: blur(8px);">
+        <div class="copy-toolbar">
           <span class="copy-count">{selectedLogs.size} log{selectedLogs.size > 1 ? 's' : ''} selected</span>
           <button class="btn btn-copy" onclick={() => copySelectedLinks(filteredUploads)} title="Copy links for the selected logs">
             <i class="fa-solid fa-copy" style="margin-right: 4px;"></i> Copy Selected Links
@@ -6481,16 +6481,16 @@ async function testWebhook(wh: any) {
       </div>
       </div>
     {:else if activeTab === "analytics"}
-      <div style="display: flex; flex-direction: column; gap: inherit; min-height: 100%;" in:fly={{ y: 6, duration: prefersReducedMotion ? 0 : 200 }} out:fade={{ duration: prefersReducedMotion ? 0 : 150 }}>
+      <div style="display: flex; flex-direction: column; gap: inherit; height: 100%; overflow-y: auto;" in:fly={{ y: 6, duration: prefersReducedMotion ? 0 : 200 }} out:fade={{ duration: prefersReducedMotion ? 0 : 150 }}>
         <AnalyticsDashboard logs={allHistory} onRefreshHistory={loadFullHistory} isLoading={isHistoryLoading} />
       </div>
     {:else if activeTab === "tracker"}
-      <div style="display: flex; flex-direction: column; gap: inherit; min-height: 100%;" in:fly={{ y: 6, duration: prefersReducedMotion ? 0 : 200 }} out:fade={{ duration: prefersReducedMotion ? 0 : 150 }}>
+      <div style="display: flex; flex-direction: column; gap: inherit; height: 100%; overflow-y: auto;" in:fly={{ y: 6, duration: prefersReducedMotion ? 0 : 200 }} out:fade={{ duration: prefersReducedMotion ? 0 : 150 }}>
         <ApiTracker accounts={gw2_accounts} onSaveAccounts={(val) => { gw2_accounts = val; }} uploadedLogs={allHistory} />
       </div>
     {:else if activeTab === "history"}
       {#if selectedLogs.size > 0}
-        <div class="copy-toolbar" style="position: sticky; top: 0; z-index: 10; margin: 0 0 16px 0; border: 1px solid rgba(99, 102, 241, 0.25); background: rgba(15, 16, 28, 0.95); backdrop-filter: blur(8px);">
+        <div class="copy-toolbar">
           <span class="copy-count">{selectedLogs.size} log{selectedLogs.size > 1 ? 's' : ''} selected</span>
           <button class="btn btn-copy" onclick={() => copySelectedLinks(filteredHistory)} title="Copy links for the selected logs">
             <i class="fa-solid fa-copy" style="margin-right: 4px;"></i> Copy Selected Links
@@ -6503,7 +6503,7 @@ async function testWebhook(wh: any) {
           </button>
         </div>
       {/if}
-      <div style="display: flex; flex-direction: column; gap: inherit; min-height: 100%;" in:fly={{ y: 6, duration: prefersReducedMotion ? 0 : 200 }} out:fade={{ duration: prefersReducedMotion ? 0 : 150 }}>
+      <div style="display: flex; flex-direction: column; gap: inherit; height: 100%; overflow-y: auto;" in:fly={{ y: 6, duration: prefersReducedMotion ? 0 : 200 }} out:fade={{ duration: prefersReducedMotion ? 0 : 150 }}>
 
 
 <!-- repair badge UI removed -->
@@ -6683,11 +6683,11 @@ async function testWebhook(wh: any) {
 
         </div>
         {:else if activeTab === "tracker"}
-      <div style="display: flex; flex-direction: column; gap: inherit; min-height: 100%;" in:fly={{ y: 6, duration: prefersReducedMotion ? 0 : 200 }} out:fade={{ duration: prefersReducedMotion ? 0 : 150 }}>
+      <div style="display: flex; flex-direction: column; gap: inherit; height: 100%; overflow-y: auto;" in:fly={{ y: 6, duration: prefersReducedMotion ? 0 : 200 }} out:fade={{ duration: prefersReducedMotion ? 0 : 150 }}>
         <AnalyticsDashboard logs={allHistory} onRefreshHistory={loadFullHistory} isLoading={isHistoryLoading} />
       </div>
     {:else if activeTab === "settings"}
-      <div style="display: flex; flex-direction: column; gap: inherit; min-height: 100%;" in:fly={{ y: 6, duration: prefersReducedMotion ? 0 : 200 }} out:fade={{ duration: prefersReducedMotion ? 0 : 150 }}>
+      <div style="display: flex; flex-direction: column; gap: inherit; height: 100%; overflow-y: auto;" in:fly={{ y: 6, duration: prefersReducedMotion ? 0 : 200 }} out:fade={{ duration: prefersReducedMotion ? 0 : 150 }}>
         <div class="page-header">
         <h1>Configuration</h1>
         <p>Manage watch folder, tokens, and integrations</p>
@@ -7285,7 +7285,7 @@ async function testWebhook(wh: any) {
       </div>
       </div>
     {:else if activeTab === "folders"}
-      <div style="display: flex; flex-direction: column; gap: inherit; min-height: 100%;" in:fly={{ y: 6, duration: prefersReducedMotion ? 0 : 200 }} out:fade={{ duration: prefersReducedMotion ? 0 : 150 }}>
+      <div style="display: flex; flex-direction: column; gap: inherit; height: 100%; overflow-y: auto;" in:fly={{ y: 6, duration: prefersReducedMotion ? 0 : 200 }} out:fade={{ duration: prefersReducedMotion ? 0 : 150 }}>
         <div class="folders-view">
         <div class="feed-header-row" style="margin-bottom: 16px;">
           <div>
@@ -7338,7 +7338,7 @@ async function testWebhook(wh: any) {
     {:else if activeTab === "session"}
       {@const activeSession = sessions.find(s => s.id === activeSessionId)}
       {#if activeSession}
-        <div style="display: flex; flex-direction: column; gap: inherit; min-height: 100%;" in:fly={{ y: 6, duration: prefersReducedMotion ? 0 : 200 }} out:fade={{ duration: prefersReducedMotion ? 0 : 150 }}>
+        <div style="display: flex; flex-direction: column; gap: inherit; height: 100%; overflow-y: auto;" in:fly={{ y: 6, duration: prefersReducedMotion ? 0 : 200 }} out:fade={{ duration: prefersReducedMotion ? 0 : 150 }}>
           <div class="feed-header-row" style="margin-bottom: 8px;">
           <div>
             <h2 class="feed-title" style="display: flex; align-items: center; gap: 8px;">
@@ -7386,7 +7386,7 @@ async function testWebhook(wh: any) {
         </div>
 
         {#if selectedLogs.size > 0}
-          <div class="copy-toolbar" style="position: sticky; top: 0; z-index: 10; margin: 0 0 16px 0; border: 1px solid rgba(99, 102, 241, 0.25); background: rgba(15, 16, 28, 0.95); backdrop-filter: blur(8px);">
+          <div class="copy-toolbar">
             <span class="copy-count">{selectedLogs.size} log{selectedLogs.size > 1 ? 's' : ''} selected</span>
             <button class="btn btn-copy" onclick={() => copySelectedLinks(getFilteredSessionLogs(activeSession))} title="Copy links for the selected logs">
               <i class="fa-solid fa-copy" style="margin-right: 4px;"></i> Copy Selected Links
