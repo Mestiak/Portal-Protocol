@@ -1887,6 +1887,21 @@ input:focus {
   display: flex;
   align-items: center;
   gap: 14px;
+  padding-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.version-row {
+  display: flex;
+  gap: 16px;
+  font-size: 10px;
+  color: var(--text-muted);
+  padding-bottom: 16px;
+}
+
+.version-row strong {
+  color: var(--text);
+  font-weight: 600;
 }
 
 .save-msg {
