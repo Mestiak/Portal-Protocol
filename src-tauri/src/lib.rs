@@ -966,6 +966,7 @@ pub fn run() {
             add_log_note,
             delete_log_note,
             retry_wingman_import,
+            toggle_favorite,
             get_vl_rank_catalog,
             set_vl_ranks,
             export_config,

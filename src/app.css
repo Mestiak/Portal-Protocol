@@ -485,7 +485,7 @@ body {
 .content-area {
   flex: 1;
   padding: 32px 36px;
-  overflow: hidden;
+  overflow-y: auto;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -1057,17 +1057,12 @@ input:focus {
   gap: 10px;
   padding: 12px 16px;
   background: var(--bg-card);
-  border: 1px solid rgba(99, 102, 241, 0.25);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  margin: 0 0 16px 0;
+  margin-bottom: 6px;
   flex-wrap: wrap;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   animation: toolbar-enter 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  background: rgba(15, 16, 28, 0.95);
-  backdrop-filter: blur(8px);
 }
 
 .copy-count {
@@ -1289,17 +1284,14 @@ input:focus {
 }
 
 .wing-boss-label {
+  position: sticky;
+  top: 0;
+  z-index: 5;
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--accent);
-}
-
-.wing-boss-header {
-  position: sticky;
-  top: 0;
-  z-index: 5;
   padding: 7px 10px 7px;
   border-left: 2px solid var(--accent);
   border-bottom: 1px solid rgba(99, 102, 241, 0.25);
@@ -1310,7 +1302,7 @@ input:focus {
   -webkit-backdrop-filter: blur(8px);
 }
 
-.wing-boss-header:first-child {
+.wing-boss-label:first-child {
   border-top: none;
   margin-top: 0;
 }
@@ -8723,3 +8715,37 @@ input:focus {
   border-color: rgba(192, 132, 252, 0.4);
   color: #c084fc;
 }
+
+/* ── Favorite Button ───────────────────────────────────────────────────── */
+.favorite-btn {
+  background: none;
+  border: none;
+  padding: 4px 6px;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.7);
+  transition: color 0.2s, transform 0.15s;
+  font-size: 14px;
+  line-height: 1;
+  flex-shrink: 0;
+  pointer-events: auto;
+}
+
+.favorite-btn:hover {
+  color: #fff;
+  transform: scale(1.2);
+}
+
+.favorite-btn.favorited {
+  color: #facc15;
+  text-shadow: 0 0 8px rgba(250, 204, 21, 0.6);
+}
+
+.favorite-btn i {
+  pointer-events: none;
+}
+
+.log-card.is-favorite {
+  border-color: rgba(250, 204, 21, 0.4);
+  box-shadow: 0 0 12px rgba(250, 204, 21, 0.15);
+}
+

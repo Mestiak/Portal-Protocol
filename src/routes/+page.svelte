@@ -91,7 +91,8 @@
     dragonvoid_add_evidence?: {
       died: Record<string, boolean>;
       hp_left: Record<string, number>;
-    } | null;
+    }
+    is_favorite?: boolean; // true = log is in favorites | null;
     cerus_empowered_stacks?: number;
     /// Conjured Amalgamated arm breakdown (Normal + CM). Present only for CA
     /// logs; undefined otherwise. `body_hp_left` is the boss body HP; the arm
@@ -469,6 +470,9 @@
   // Installed app version (from tauri.conf.json), shown in Settings next to "Check for updates".
   let appVersion = $state<string>("…");
   getVersion().then((v) => { appVersion = v; }).catch(() => {});
+
+  // Elite Insights version (manually updated when EI is bumped)
+  const EI_VERSION = "3.30.0.0";
 
   // Update native window title with version when appVersion changes
   $effect(() => {
@@ -1063,6 +1067,7 @@
     profession: "all" as string | number, // "all" or a PROFESSIONS key / elite_spec id
     professionKind: "all" as "all" | "core" | "spec",
     hasNotes: false as boolean, // true = only show logs with notes attached
+    isFavorite: false as boolean, // true = only show favorited logs
   });
   let sound_notifications = $state(true);
   let desktop_notifications = $state(true);
@@ -2346,6 +2351,9 @@
     // Has notes filter
     if (f.hasNotes && (!log.notes || log.notes.length === 0)) return false;
 
+    // Favorite filter
+    if (f.isFavorite && log.is_favorite !== true) return false;
+
     if (f.vlRank !== "all") {
       const ranks = vlRanksOf(log);
       if (f.vlRank === "none" && ranks.length > 0) return false;
@@ -3087,6 +3095,13 @@
   }
 
   let noteDraft = $state<Record<string, string>>({});
+    async function toggleFavorite(filePath: string) {
+    const currentVal = allHistory.find((l: any) => l.file_path === filePath)?.is_favorite === true;
+    const newVal = !currentVal;
+    updateLogInUploads(filePath, (l: any) => ({ ...l, is_favorite: newVal }));
+    await invoke("toggle_favorite", { filePath });
+  }
+
   function updateLogInUploads(filePath: string, updater: (log: any) => any) {
     const idx = uploads.findIndex((u: any) => u.file_path === filePath);
     if (idx >= 0) {
@@ -5813,8 +5828,20 @@ async function testWebhook(wh: any) {
                 {@const id = cardId(log)}
                 {@const isExpanded = !!expanded[id]}
                 {@const isSelected = selectedLogs.has(log.file_path)}
-                <div class="log-card card {isExpanded ? 'is-expanded' : ''}" class:menu-open={activeMenuCard === id} style="margin-bottom: 12px; position: relative; cursor: context-menu;" role="button" tabindex="0" oncontextmenu={(e) => handleLogContextMenu(e, log, true, sessionParam.id, () => { if (subFolderIdParam != null) fadeRemoveFromSubFolder(sessionParam.id, subFolderIdParam, log.file_path); else fadeRemoveFromSession(sessionParam.id, log.file_path); })}>
+                <div class="log-card card {isExpanded ? 'is-expanded' : ''}" class:is-favorite={log.is_favorite === true} class:menu-open={activeMenuCard === id} style="margin-bottom: 12px; position: relative; cursor: context-menu;" role="button" tabindex="0" oncontextmenu={(e) => handleLogContextMenu(e, log, true, sessionParam.id, () => { if (subFolderIdParam != null) fadeRemoveFromSubFolder(sessionParam.id, subFolderIdParam, log.file_path); else fadeRemoveFromSession(sessionParam.id, log.file_path); })}>
                   <button class="log-header" onclick={() => toggleExpand(id)}>
+                    <div
+                    class="favorite-btn"
+                    class:favorited={log.is_favorite === true}
+                    role="button"
+                    tabindex="0"
+                    onclick={(e) => { e.stopPropagation(); toggleFavorite(log.file_path); }}
+                    onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); toggleFavorite(log.file_path); } }}
+                    title={log.is_favorite === true ? "Remove from favorites" : "Add to favorites"}
+                    aria-label={log.is_favorite === true ? "Remove from favorites" : "Add to favorites"}
+                    >
+                    <i class={log.is_favorite === true ? "fa-solid fa-star" : "fa-regular fa-star"}></i>
+                    </div>
                     <input type="checkbox" class="log-select-check" checked={isSelected} onclick={(e) => { e.stopPropagation(); toggleSelectLog(log.file_path); }} />
                     {@render logHeaderLeft(log)}
                     <div class="log-right">
@@ -5902,8 +5929,20 @@ async function testWebhook(wh: any) {
                 {@const id = cardId(log)}
                 {@const isExpanded = !!expanded[id]}
                 {@const isSelected = selectedLogs.has(log.file_path)}
-                <div class="log-card card {isExpanded ? 'is-expanded' : ''}" class:menu-open={activeMenuCard === id} style="margin-bottom: 12px; position: relative; cursor: context-menu;" role="button" tabindex="0" oncontextmenu={(e) => handleLogContextMenu(e, log, true, sessionParam.id, () => { if (subFolderIdParam != null) fadeRemoveFromSubFolder(sessionParam.id, subFolderIdParam, log.file_path); else fadeRemoveFromSession(sessionParam.id, log.file_path); })}>
+                <div class="log-card card {isExpanded ? 'is-expanded' : ''}" class:is-favorite={log.is_favorite === true} class:menu-open={activeMenuCard === id} style="margin-bottom: 12px; position: relative; cursor: context-menu;" role="button" tabindex="0" oncontextmenu={(e) => handleLogContextMenu(e, log, true, sessionParam.id, () => { if (subFolderIdParam != null) fadeRemoveFromSubFolder(sessionParam.id, subFolderIdParam, log.file_path); else fadeRemoveFromSession(sessionParam.id, log.file_path); })}>
                   <button class="log-header" onclick={() => toggleExpand(id)}>
+                    <div
+                    class="favorite-btn"
+                    class:favorited={log.is_favorite === true}
+                    role="button"
+                    tabindex="0"
+                    onclick={(e) => { e.stopPropagation(); toggleFavorite(log.file_path); }}
+                    onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); toggleFavorite(log.file_path); } }}
+                    title={log.is_favorite === true ? "Remove from favorites" : "Add to favorites"}
+                    aria-label={log.is_favorite === true ? "Remove from favorites" : "Add to favorites"}
+                    >
+                    <i class={log.is_favorite === true ? "fa-solid fa-star" : "fa-regular fa-star"}></i>
+                    </div>
                     <input type="checkbox" class="log-select-check" checked={isSelected} onclick={(e) => { e.stopPropagation(); toggleSelectLog(log.file_path); }} />
                     {@render logHeaderLeft(log)}
                     <div class="log-right">
@@ -6279,12 +6318,24 @@ async function testWebhook(wh: any) {
                             {@const isExpanded = !!expanded[id]}
                             {@const isSelected = selectedLogs.has(log.file_path)}
                             {@const isCaptured = !!captureSession && captureSession.logPaths.includes(log.file_path)}
-                            <div class="log-card card" class:menu-open={activeMenuCard === id} class:is-expanded={isExpanded} class:uploading={log.status === "Uploading"} class:is-selected={isSelected} class:deleting={deletingLogPaths.has(log.file_path)} class:session-captured={isCaptured} style="position: relative; cursor: context-menu;" oncontextmenu={(e) => handleLogContextMenu(e, log, false)} role="button" tabindex="0">
+                            <div class="log-card card" class:is-favorite={log.is_favorite === true} class:menu-open={activeMenuCard === id} class:is-expanded={isExpanded} class:uploading={log.status === "Uploading"} class:is-selected={isSelected} class:deleting={deletingLogPaths.has(log.file_path)} class:session-captured={isCaptured} style="position: relative; cursor: context-menu;" oncontextmenu={(e) => handleLogContextMenu(e, log, false)} role="button" tabindex="0">
                               {#if log.status === "Uploading"}
                                 <div class="upload-progress-top"></div>
                               {/if}
                               <button class="log-header" onclick={() => toggleExpand(id)}>
-                                <input type="checkbox" class="log-select-check" checked={isSelected} onclick={(e) => { e.stopPropagation(); toggleSelectLog(log.file_path); }} />
+                                <div
+                                class="favorite-btn"
+                                class:favorited={log.is_favorite === true}
+                                role="button"
+                                tabindex="0"
+                                onclick={(e) => { e.stopPropagation(); toggleFavorite(log.file_path); }}
+                                onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); toggleFavorite(log.file_path); } }}
+                                title={log.is_favorite === true ? "Remove from favorites" : "Add to favorites"}
+                                aria-label={log.is_favorite === true ? "Remove from favorites" : "Add to favorites"}
+                    >
+                                <i class={log.is_favorite === true ? "fa-solid fa-star" : "fa-regular fa-star"}></i>
+                    </div>
+                    <input type="checkbox" class="log-select-check" checked={isSelected} onclick={(e) => { e.stopPropagation(); toggleSelectLog(log.file_path); }} />
                                 {@render logHeaderLeft(log)}
                                 <div class="log-right">
                                   <span class="chevron" class:open={isExpanded}>›</span>
@@ -6363,7 +6414,7 @@ async function testWebhook(wh: any) {
                           {@const id = cardId(log)}
                           {@const isExpanded = !!expanded[id]}
                           {@const isSelected = selectedLogs.has(log.file_path)}
-                          <div class="log-card card" class:menu-open={activeMenuCard === id} class:is-expanded={isExpanded} class:uploading={log.status === "Uploading"} class:is-selected={isSelected} class:deleting={deletingLogPaths.has(log.file_path)} style="position: relative; cursor: context-menu;" oncontextmenu={(e) => handleLogContextMenu(e, log, false)} role="button" tabindex="0">
+                          <div class="log-card card" class:is-favorite={log.is_favorite === true} class:menu-open={activeMenuCard === id} class:is-expanded={isExpanded} class:uploading={log.status === "Uploading"} class:is-selected={isSelected} class:deleting={deletingLogPaths.has(log.file_path)} style="position: relative; cursor: context-menu;" oncontextmenu={(e) => handleLogContextMenu(e, log, false)} role="button" tabindex="0">
                             {#if log.status === "Uploading"}
                               <div class="upload-progress-top"></div>
                             {/if}
@@ -6550,12 +6601,24 @@ async function testWebhook(wh: any) {
           {@const id = cardId(log)}
           {@const isExpanded = !!expanded[id]}
           {@const isSelected = selectedLogs.has(log.file_path)}
-          <div class="log-card card" class:menu-open={activeMenuCard === id} class:is-expanded={isExpanded} class:uploading={log.status === "Uploading"} class:is-selected={isSelected} class:deleting={deletingLogPaths.has(log.file_path)} style="position: relative; cursor: context-menu;" oncontextmenu={(e) => handleLogContextMenu(e, log, false)} role="button" tabindex="0">
+          <div class="log-card card" class:is-favorite={log.is_favorite === true} class:menu-open={activeMenuCard === id} class:is-expanded={isExpanded} class:uploading={log.status === "Uploading"} class:is-selected={isSelected} class:deleting={deletingLogPaths.has(log.file_path)} style="position: relative; cursor: context-menu;" oncontextmenu={(e) => handleLogContextMenu(e, log, false)} role="button" tabindex="0">
             {#if log.status === "Uploading"}
               <div class="upload-progress-top"></div>
             {/if}
               <button class="log-header" onclick={() => toggleExpand(id)}>
-                <input type="checkbox" class="log-select-check" checked={isSelected} onclick={(e) => { e.stopPropagation(); toggleSelectLog(log.file_path); }} />
+                <div
+                class="favorite-btn"
+                class:favorited={log.is_favorite === true}
+                role="button"
+                tabindex="0"
+                onclick={(e) => { e.stopPropagation(); toggleFavorite(log.file_path); }}
+                onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); toggleFavorite(log.file_path); } }}
+                title={log.is_favorite === true ? "Remove from favorites" : "Add to favorites"}
+                aria-label={log.is_favorite === true ? "Remove from favorites" : "Add to favorites"}
+                    >
+                <i class={log.is_favorite === true ? "fa-solid fa-star" : "fa-regular fa-star"}></i>
+                    </div>
+                    <input type="checkbox" class="log-select-check" checked={isSelected} onclick={(e) => { e.stopPropagation(); toggleSelectLog(log.file_path); }} />
                 {@render logHeaderLeft(log)}
                 <div class="log-right">
                   {#if getEncounterType(log.boss_name, log.num_players, log.is_convergence) !== 'convergence'}
@@ -7278,9 +7341,9 @@ async function testWebhook(wh: any) {
           {#if saveMessage}
             <span class="save-msg" style="color: #34d399; font-size: 11px; animation: fadeIn 0.2s;">{saveMessage}</span>
           {/if}
-          <span style="font-size: 10px; color: var(--text-muted);">
-            Installed: <strong style="color: var(--text);">v{appVersion}</strong>{#if updateAvailable} · Latest: <strong style="color: #34d399;">v{updateAvailable.version}</strong>{/if}
-          </span>
+        </div>
+        <div class="version-row">
+          App: <strong>v{appVersion}</strong> · EI: <strong>{EI_VERSION}</strong>{#if updateAvailable} · Latest: <strong style="color: #34d399;">v{updateAvailable.version}</strong>{/if}
         </div>
       </div>
       </div>

@@ -4867,6 +4867,7 @@ pub async fn test_webhook(webhook: DiscordWebhook) -> Result<String, String> {
         group_dps: None,
         is_story: Some(false),
         map_id: None,
+        is_favorite: None,
         notes: Vec::new(),
         wingman_status: None,
         discord_pending: None,
