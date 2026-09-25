@@ -1177,6 +1177,10 @@ pub struct UploadRecord {
     pub dragonvoid_add_evidence: Option<crate::evtc_parser::DragonvoidAddEvidence>,
     #[serde(default)]
     pub cerus_empowered_stacks: Option<u32>,
+    /// Favorite flag — user can star logs for quick filtering.
+    /// None = not favorited (default), Some(true) = favorited.
+    #[serde(default)]
+    pub is_favorite: Option<bool>,
 }
 
 /// Backward-compatible deserializer: old data stored `vl_rank` as a single
@@ -2353,6 +2357,7 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
         ura_health_regen: None,
         ei_done: None,
         upload_done: None,
+        is_favorite: None,
     };
 
     let mut diag = Diagnostics::new(file_name.clone(), &path);

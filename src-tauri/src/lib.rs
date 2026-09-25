@@ -512,6 +512,28 @@ async fn delete_log_note(app: AppHandle, file_path: String, note_id: String) -> 
     })
 }
 
+/// Toggle the favorite flag on a log record.
+#[tauri::command]
+async fn toggle_favorite(app: AppHandle, file_path: String) -> Result<bool, String> {
+    let mut new_val = false;
+    config::with_history_mut(&app, |history| {
+        let mut found = false;
+        for rec in history.iter_mut() {
+            if rec.file_path == file_path {
+                rec.is_favorite = match rec.is_favorite {
+                    Some(true) => None,
+                    _ => Some(true),
+                };
+                new_val = rec.is_favorite == Some(true);
+                found = true;
+                break;
+            }
+        }
+        found
+    })?;
+    Ok(new_val)
+}
+
 // Re-attempt a Wingman import for a log whose automatic import failed (e.g. Wingman
 // was briefly down at upload time). Persists the outcome on the record and emits an
 // upload-status event so the UI badge animates in place.
