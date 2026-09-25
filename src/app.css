@@ -1284,14 +1284,18 @@ input:focus {
 }
 
 .wing-boss-label {
-  position: sticky;
-  top: 0;
-  z-index: 5;
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--accent);
+  flex: 1;
+}
+
+.wing-boss-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 7px 10px 7px;
   border-left: 2px solid var(--accent);
   border-bottom: 1px solid rgba(99, 102, 241, 0.25);
@@ -1300,9 +1304,11 @@ input:focus {
   background: color-mix(in srgb, var(--bg-card) 82%, var(--accent) 18%);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+  width: 100%;
+  box-sizing: border-box;
 }
 
-.wing-boss-label:first-child {
+.wing-boss-header:first-child {
   border-top: none;
   margin-top: 0;
 }
