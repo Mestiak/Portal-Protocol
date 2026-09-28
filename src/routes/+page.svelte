@@ -3569,6 +3569,50 @@
     localStorage.setItem("ei_runtime_notice_dismissed", "1");
   }
 
+  $effect(() => {
+    if (activeMenuCard) {
+      const menu = document.querySelector<HTMLElement>(`[data-menu-dropdown="${activeMenuCard}"]`);
+      const btn = document.querySelector<HTMLElement>(`[data-menu-btn="${activeMenuCard}"]`);
+      if (menu && btn) {
+        const btnRect = btn.getBoundingClientRect();
+        const menuRect = menu.getBoundingClientRect();
+        const gap = 6;
+        let top = btnRect.bottom + gap;
+        let right = window.innerWidth - btnRect.right;
+        // Flip left if menu would overflow right edge
+        if (btnRect.right + menuRect.width > window.innerWidth) {
+          right = window.innerWidth - (btnRect.left + menuRect.width);
+        }
+        menu.style.setProperty("--menu-top", `${top}px`);
+        menu.style.setProperty("--menu-right", `${right}px`);
+        menu.dataset.positioned = "true";
+        // Keep positioned when scrolling / resizing while menu is open
+        const reposition = () => {
+          if (!activeMenuCard) return;
+          const btn2 = document.querySelector<HTMLElement>(`[data-menu-btn="${activeMenuCard}"]`);
+          const menu2 = document.querySelector<HTMLElement>(`[data-menu-dropdown="${activeMenuCard}"]`);
+          if (btn2 && menu2) {
+            const r = btn2.getBoundingClientRect();
+            const m = menu2.getBoundingClientRect();
+            let t2 = r.bottom + gap;
+            let rt2 = window.innerWidth - r.right;
+            if (r.right + m.width > window.innerWidth) {
+              rt2 = window.innerWidth - (r.left + m.width);
+            }
+            menu2.style.setProperty("--menu-top", `${t2}px`);
+            menu2.style.setProperty("--menu-right", `${rt2}px`);
+          }
+        };
+        window.addEventListener("scroll", reposition, true);
+        window.addEventListener("resize", reposition);
+        return () => {
+          window.removeEventListener("scroll", reposition, true);
+          window.removeEventListener("resize", reposition);
+        };
+      }
+    }
+  });
+
   onMount(() => {
     const statusInterval = setInterval(() => {
       checkDpsReportStatus();
@@ -5620,11 +5664,11 @@ async function testWebhook(wh: any) {
 
     <!-- More Actions Dropdown Menu (Overflow) -->
     <div class="card-menu-container">
-      <button class="card-menu-btn" onclick={(e) => { e.stopPropagation(); activeMenuCard = activeMenuCard === cardId(log) ? null : cardId(log); }} title="More Actions" aria-label="More actions" aria-haspopup="menu" aria-expanded={activeMenuCard === cardId(log)}>
+      <button class="card-menu-btn" data-menu-btn={cardId(log)} onclick={(e) => { e.stopPropagation(); activeMenuCard = activeMenuCard === cardId(log) ? null : cardId(log); }} title="More Actions" aria-label="More actions" aria-haspopup="menu" aria-expanded={activeMenuCard === cardId(log)}>
         <i class="fa-solid fa-ellipsis"></i>
       </button>
       {#if activeMenuCard === cardId(log)}
-        <div class="card-dropdown-menu" onclick={(e) => e.stopPropagation()} onkeydown={(e) => { if (e.key === "Escape" || e.key === "Enter" || e.key === " ") { e.stopPropagation(); } }} role="menu" aria-label="More actions" tabindex="-1">
+        <div class="card-dropdown-menu" data-menu-dropdown={cardId(log)} onclick={(e) => e.stopPropagation()} onkeydown={(e) => { if (e.key === "Escape" || e.key === "Enter" || e.key === " ") { e.stopPropagation(); } }} role="menu" aria-label="More actions" tabindex="-1">
           <!-- Items shown in overflow menu (always available or revealed on narrow screens) -->
           <button class="card-dropdown-item overflow-item-mobile" disabled={!log.url || !isOnline} onclick={() => { activeMenuCard = null; if (isOnline && log.url) copySingleLink(log.url, log.file_path); }}>
             <i class="fa-solid fa-copy"></i> Copy Link
@@ -6318,7 +6362,7 @@ async function testWebhook(wh: any) {
                             {@const isExpanded = !!expanded[id]}
                             {@const isSelected = selectedLogs.has(log.file_path)}
                             {@const isCaptured = !!captureSession && captureSession.logPaths.includes(log.file_path)}
-                            <div class="log-card card" class:is-favorite={log.is_favorite === true} class:menu-open={activeMenuCard === id} class:is-expanded={isExpanded} class:uploading={log.status === "Uploading"} class:is-selected={isSelected} class:deleting={deletingLogPaths.has(log.file_path)} class:session-captured={isCaptured} style="position: relative; cursor: context-menu;" oncontextmenu={(e) => handleLogContextMenu(e, log, false)} role="button" tabindex="0">
+                            <div class="log-card card" class:is-favorite={log.is_favorite === true} class:menu-open={activeMenuCard === id} class:is-expanded={isExpanded} class:uploading={log.status === "Uploading"} class:is-selected={isSelected} class:deleting={deletingLogPaths.has(log.file_path)} class:session-captured={isCaptured} style="position: relative; cursor: context-menu;" oncontextmenu={(e) => handleLogContextMenu(e, log, false, undefined, () => deleteLogRecord(log.file_path))} role="button" tabindex="0">
                               {#if log.status === "Uploading"}
                                 <div class="upload-progress-top"></div>
                               {/if}
@@ -6414,7 +6458,7 @@ async function testWebhook(wh: any) {
                           {@const id = cardId(log)}
                           {@const isExpanded = !!expanded[id]}
                           {@const isSelected = selectedLogs.has(log.file_path)}
-                          <div class="log-card card" class:is-favorite={log.is_favorite === true} class:menu-open={activeMenuCard === id} class:is-expanded={isExpanded} class:uploading={log.status === "Uploading"} class:is-selected={isSelected} class:deleting={deletingLogPaths.has(log.file_path)} style="position: relative; cursor: context-menu;" oncontextmenu={(e) => handleLogContextMenu(e, log, false)} role="button" tabindex="0">
+                          <div class="log-card card" class:is-favorite={log.is_favorite === true} class:menu-open={activeMenuCard === id} class:is-expanded={isExpanded} class:uploading={log.status === "Uploading"} class:is-selected={isSelected} class:deleting={deletingLogPaths.has(log.file_path)} style="position: relative; cursor: context-menu;" oncontextmenu={(e) => handleLogContextMenu(e, log, false, undefined, () => deleteLogRecord(log.file_path))} role="button" tabindex="0">
                             {#if log.status === "Uploading"}
                               <div class="upload-progress-top"></div>
                             {/if}
@@ -6601,7 +6645,7 @@ async function testWebhook(wh: any) {
           {@const id = cardId(log)}
           {@const isExpanded = !!expanded[id]}
           {@const isSelected = selectedLogs.has(log.file_path)}
-          <div class="log-card card" class:is-favorite={log.is_favorite === true} class:menu-open={activeMenuCard === id} class:is-expanded={isExpanded} class:uploading={log.status === "Uploading"} class:is-selected={isSelected} class:deleting={deletingLogPaths.has(log.file_path)} style="position: relative; cursor: context-menu;" oncontextmenu={(e) => handleLogContextMenu(e, log, false)} role="button" tabindex="0">
+          <div class="log-card card" class:is-favorite={log.is_favorite === true} class:menu-open={activeMenuCard === id} class:is-expanded={isExpanded} class:uploading={log.status === "Uploading"} class:is-selected={isSelected} class:deleting={deletingLogPaths.has(log.file_path)} style="position: relative; cursor: context-menu;" oncontextmenu={(e) => handleLogContextMenu(e, log, false, undefined, () => deleteLogRecord(log.file_path))} role="button" tabindex="0">
             {#if log.status === "Uploading"}
               <div class="upload-progress-top"></div>
             {/if}

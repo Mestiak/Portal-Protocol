@@ -7907,15 +7907,9 @@ html.mode-compact .nav-btn {
 }
 
 .card-dropdown-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  background: rgba(20, 22, 34, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  position: fixed;
+  z-index: 9999;
   min-width: 170px;
-  z-index: 99;
   padding: 4px;
   display: flex;
   flex-direction: column;
@@ -7924,7 +7918,19 @@ html.mode-compact .nav-btn {
   box-sizing: border-box;
   transform-origin: top right;
   animation: context-menu-pop 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  background: rgba(20, 22, 34, 0.95);
 }
+
+.card-dropdown-menu[data-positioned="true"] {
+  top: var(--menu-top, unset);
+  right: var(--menu-right, unset);
+  left: var(--menu-left, unset);
+}
+
+
 
 .card-dropdown-item {
   display: flex;

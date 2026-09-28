@@ -210,8 +210,6 @@
       chips.push({ key: "hasNotes", label: "Has Notes", clear: () => { filters.hasNotes = false; } });
     if (filters.isFavorite)
       chips.push({ key: "isFavorite", label: "Favorites", clear: () => { filters.isFavorite = false; } });
-    if (filters.isFavorite)
-      chips.push({ key: "isFavorite", label: "Favorites", clear: () => { filters.isFavorite = false; } });
     if (filters.search.trim() !== "")
       chips.push({ key: "search", label: `“${filters.search.trim()}”`, clear: () => { filters.search = ""; } });
     return chips;
@@ -508,16 +506,6 @@
           <span>Favorites</span>
         </button>
 
-        <!-- Favorites toggle -->
-        <button
-          class="filter-btn"
-          class:active={filters.isFavorite}
-          onclick={() => { filters.isFavorite = !filters.isFavorite; onchange?.(); }}
-          title="Only show favorited logs"
-        >
-          <i class="fa-solid fa-star"></i>
-          <span>Favorites</span>
-        </button>
       </div>
     </div>
   </div>
