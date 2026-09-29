@@ -33,6 +33,7 @@
     profession: string | number; // "all" or a PROFESSIONS key / elite_spec id
     professionKind: "all" | "core" | "spec"; // distinguishes base-id vs elite-spec-id
     hasNotes: boolean; // true = only show logs with notes attached
+    isFavorite: boolean; // true = only show favorited logs
   }
 
   interface ProfessionOption {
@@ -207,6 +208,8 @@
     }
     if (filters.hasNotes)
       chips.push({ key: "hasNotes", label: "Has Notes", clear: () => { filters.hasNotes = false; } });
+    if (filters.isFavorite)
+      chips.push({ key: "isFavorite", label: "Favorites", clear: () => { filters.isFavorite = false; } });
     if (filters.search.trim() !== "")
       chips.push({ key: "search", label: `“${filters.search.trim()}”`, clear: () => { filters.search = ""; } });
     return chips;
@@ -491,6 +494,18 @@
           <i class="fa-solid fa-note-sticky"></i>
           <span>Has Notes</span>
         </button>
+
+        <!-- Favorites toggle -->
+        <button
+          class="filter-btn"
+          class:active={filters.isFavorite}
+          onclick={() => { filters.isFavorite = !filters.isFavorite; onchange?.(); }}
+          title="Only show favorited logs"
+        >
+          <i class="fa-solid fa-star"></i>
+          <span>Favorites</span>
+        </button>
+
       </div>
     </div>
   </div>
