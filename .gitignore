@@ -50,6 +50,7 @@ plans/
 RELEASE-PREP-*.md
 docs/
 test/
+PERFORMANCE_ENHANCEMENT_PLAN.md
 
 # EI binaries and data (downloaded via script)
 src-tauri/resources/ei/
