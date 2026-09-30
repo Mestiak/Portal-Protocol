@@ -111,7 +111,7 @@ jobs:
           # Generate latest.json
           cat > latest.json << EOF
           {
-            "version": "${{ github.ref_name }}",
+            "version": "$(echo ${{ github.ref_name }} | sed 's/^v//')",
             "notes": "Portal Protocol ${{ github.ref_name }}",
             "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)",
             "platforms": {

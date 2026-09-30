@@ -401,7 +401,7 @@
           <option value="none">No Rank</option>
           <option value="any">Has Rank</option>
           {#each vlRanks as r}
-            <option value={r.id}>{r.icon} {r.label}</option>
+            <option value={r.id}>{r.label}</option>
           {/each}
         </select>
 

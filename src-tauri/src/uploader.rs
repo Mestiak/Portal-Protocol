@@ -5629,6 +5629,9 @@ mod discord_embed_tests {
             dragonvoid_add_evidence: None,
             cerus_empowered_stacks: None,
             ura_health_regen: None,
+            ei_done: None,
+            upload_done: None,
+            kaineng_phases: None,
         }
     }
 
