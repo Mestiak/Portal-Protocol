@@ -456,6 +456,7 @@
     text_color: string;
     bg_color: string;
     description: string;
+    url: string | null;
     auto: string | null;
   }
   interface VlEncounter {
@@ -463,9 +464,33 @@
     display: string;
     ranks: VlRankDef[];
     aliases?: string[];
+    cm_only?: boolean;
+    lcm_only?: boolean;
+  }
+  function vlEncounterFor(log: UploadRecord): VlEncounter | undefined {
+    const key = normalizeBoss(log.boss_name);
+    // For LCM logs, prefer the LCM-specific encounter if one exists for this boss.
+    if (log.is_lcm === true) {
+      const lcmMatch = vlCatalog.find((e) => e.lcm_only === true && (e.key === key || (e.aliases ?? []).includes(key)));
+      if (lcmMatch) return lcmMatch;
+      // No LCM-specific encounter — LCM logs don't fall back to CM encounters.
+      return undefined;
+    }
+    // Fall back to the default (CM or mode-agnostic) encounter.
+    return vlCatalog.find((e) => e.key === key || (e.aliases ?? []).includes(key));
   }
   let vlCatalog = $state<VlEncounter[]>([]);
   invoke("get_vl_rank_catalog").then((c) => { vlCatalog = c as VlEncounter[]; }).catch(() => {});
+
+  /** Ranks for the VL Rank FilterBar dropdown, filtered by the current cmMode. */
+  function vlDropdownRanks(cmMode: "all" | "cm" | "lcm" | "normal" | "quickplay"): { id: string; label: string; icon: string }[] {
+    const visible = vlCatalog.filter((e) => {
+      if (cmMode === "cm") return !e.lcm_only;
+      if (cmMode === "lcm") return !e.cm_only;
+      return true; // "all" | "normal" | "quickplay" — show everything
+    });
+    return visible.flatMap((e) => e.ranks.map((r) => ({ id: r.id, label: r.label, icon: r.icon })));
+  }
 
   // Installed app version (from tauri.conf.json), shown in Settings next to "Check for updates".
   let appVersion = $state<string>("…");
@@ -492,9 +517,38 @@
       date: "September 22, 2026",
       notes: [
         {
+          category: "✨ New Features",
+          items: [
+            { title: "Void Lounge Ranks", desc: "You can now mark your logs with their respective Void Lounge rank to keep track of your log progress. Ranks are shown as color-coded badges on log cards and can be assigned or removed via the VL Rank button on each log. Available for Cerus (Temple of Febe), Harvest Temple (The Dragonvoid), Greer, the Blightbringer, Decima, the Stormsinger, and Ura, the Steamshrieker (CM and LCM)." },
+            { title: "Favorite Logs", desc: "You can now mark logs as favorites with a star button on each log card. Favorites get a dedicated filter in the Filter Bar so you can quickly pull up your important logs across Feed, History, and Folders. Starred logs are persisted across app restarts." },
+            { title: "Boss Collapse/Expand in Logs", desc: "Click boss name headers (e.g., DECIMA, URA, GREER) in Uploads Feed, History Log, Folders, and Subfolders to collapse and expand individual boss log groups. Chevron indicator on the left shows state. All sections expanded by default." }
+          ]
+        },
+        {
+          category: "🙏 Credits & Thanks",
+          items: [
+            { title: "Void Lounge Council", desc: "Thanks to the Void Lounge Council for granting permission to use their authorized rank icons in this app. Their icons give the VL Rank badges their authentic look and feel. Icons provided by the Void Lounge Discord server." }
+          ]
+        },
+        {
           category: "🎨 UI Enhancements",
           items: [
-            { title: "Boss Collapse/Expand in Logs", desc: "Click boss name headers (e.g., DECIMA, URA, GREER) in Uploads Feed, History Log, Folders, and Subfolders to collapse and expand individual boss log groups. Chevron indicator on the left shows state. All sections expanded by default." }
+            { title: "Version Row in Settings", desc: "The Settings screen now shows the installed Portal Protocol version and the bundled Elite Insights version in a dedicated version row, so you can see at a glance which app and parser versions you're running." },
+            { title: "Sticky Toolbar Fix", desc: "Fixed the copy/paste toolbar on log cards not staying visible when scrolling through long log lists. The toolbar now sticks to the top of the viewport as you scroll." }
+          ]
+        },
+        {
+          category: "📦 Dependencies",
+          items: [
+            { title: "Elite Insights Updated to v3.30", desc: "Bundled EI parser updated from v3.29 to v3.30. Adds support for Nexus of Eternity raid and convergence, FlyTo events, new buffs, and more." }
+          ]
+        },
+        {
+          category: "🐞 Bug Fixes",
+          items: [
+            { title: "Cookie Vulnerability Fixed (GHSA-pxg6-pf52-xh8x)", desc: "Fixed a Dependabot-flagged vulnerability in the cookie package by applying an npm override to a patched version. No functional changes to the app." },
+            { title: "Notes State Sync", desc: "Fixed an issue where notes created in one view (e.g., Feed) didn't appear in other views (e.g., Folders) until switching tabs. All source arrays are now updated together." },
+            { title: "Auto-Updater Fixed", desc: "Fixed auto-updater not finding new releases. Now correctly queries GitHub Releases for updates." }
           ]
         }
       ]
@@ -921,14 +975,12 @@
   function normalizeBoss(name?: string): string {
     return (name ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
   }
-  function vlEncounterFor(log: UploadRecord): VlEncounter | undefined {
-    const key = normalizeBoss(log.boss_name);
-    return vlCatalog.find((e) => e.key === key || (e.aliases ?? []).includes(key));
-  }
-  // VL ranks only apply to CM / LCM kills.
   function vlAvailableFor(log: UploadRecord): boolean {
+    if (log.is_convergence === true) return false;
     const enc = vlEncounterFor(log);
     if (!enc) return false;
+    if (enc.cm_only === true) return log.is_cm === true;
+    if (enc.lcm_only === true) return log.is_lcm === true;
     return log.is_cm === true || log.is_lcm === true;
   }
   // Returns the list of awarded VL rank defs for a log (multi-rank aware).
@@ -5246,7 +5298,7 @@ async function testWebhook(wh: any) {
           </span>
         {/if}
         {#each vlCurrentRanks(log) as rk}
-          <span class="vl-badge" role="button" tabindex="0" style="color: {rk.text_color}; background: {rk.bg_color}; border: 1px solid color-mix(in srgb, {rk.text_color} 45%, transparent); cursor: pointer;" title="Filter to {rk.label} logs" onclick={(e) => { e.stopPropagation(); setVlRankFilter(rk.id); }} onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setVlRankFilter(rk.id); } }}><span class="vl-badge-icon">{rk.icon}</span>{rk.label}</span>
+          <span class="vl-badge" role="button" tabindex="0" style="color: {rk.text_color}; background: {rk.bg_color}; border: 1px solid color-mix(in srgb, {rk.text_color} 45%, transparent); cursor: pointer;" title="Filter to {rk.label} logs" onclick={(e) => { e.stopPropagation(); setVlRankFilter(rk.id); }} onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setVlRankFilter(rk.id); } }}><img src={rk.icon} alt="" class="vl-badge-icon" />{rk.label}</span>
         {/each}
         {#if log.status === "On Hold"}
           <span class="status-pill sp-onhold">⧖ On Hold</span>
@@ -6224,7 +6276,7 @@ async function testWebhook(wh: any) {
         <FilterBar
           {filters}
           bosses={distinctBossOptions(uploads)}
-          vlRanks={vlCatalog.flatMap(e => e.ranks.map(r => ({ id: r.id, label: r.label, icon: r.icon })))}
+          vlRanks={vlDropdownRanks(filters.cmMode)}
           professions={PROFESSION_OPTIONS}
           professionGroups={PROFESSION_GROUPS}
           showCounts={true}
@@ -6609,7 +6661,7 @@ async function testWebhook(wh: any) {
         <FilterBar
           {filters}
           bosses={distinctBossOptions(allHistory)}
-          vlRanks={vlCatalog.flatMap(e => e.ranks.map(r => ({ id: r.id, label: r.label, icon: r.icon })))}
+          vlRanks={vlDropdownRanks(filters.cmMode)}
           professions={PROFESSION_OPTIONS}
           professionGroups={PROFESSION_GROUPS}
           showCounts={true}
@@ -7458,7 +7510,7 @@ async function testWebhook(wh: any) {
             <FilterBar
               {filters}
               bosses={distinctBossOptions(sessionDisplayPool(activeSession))}
-              vlRanks={vlCatalog.flatMap(e => e.ranks.map(r => ({ id: r.id, label: r.label, icon: r.icon })))}
+              vlRanks={vlDropdownRanks(filters.cmMode)}
               professions={PROFESSION_OPTIONS}
               professionGroups={PROFESSION_GROUPS}
               showCounts={true}
@@ -8101,11 +8153,12 @@ async function testWebhook(wh: any) {
           {@const selected = vlRanksOf(vlModal.log).includes(rank.id)}
           <button class="vl-rank-card" class:selected onclick={() => setVlRanks(rank.id, !selected)} style="--vl-text: {rank.text_color}; --vl-bg: {rank.bg_color};">
             <div class="vl-rank-card-top">
-              <span class="vl-rank-icon">{rank.icon}</span>
+              <img src={rank.icon} alt="" class="vl-rank-icon" />
               <span class="vl-rank-label">{rank.label}</span>
               {#if selected}<span class="vl-rank-check"><i class="fa-solid fa-circle-check"></i></span>{/if}
             </div>
             <p class="vl-rank-desc">{rank.description}</p>
+            {#if rank.url}<a href={rank.url} target="_blank" rel="noopener noreferrer" class="vl-rank-link">{rank.url} ↗</a>{/if}
             {#if rank.auto}<span class="vl-rank-auto">Auto-awarded on a successful {rank.auto === 'lcm' ? 'Legendary CM' : 'CM'} kill</span>{/if}
           </button>
         {/each}

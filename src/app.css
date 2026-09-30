@@ -5512,7 +5512,12 @@ html.reduce-motion .session-pill {
 }
 
 .vl-badge-icon {
-  font-size: 11px;
+  width: 14px;
+  height: 14px;
+  display: inline-block;
+  object-fit: contain;
+  background: none;
+  border: none;
 }
 
 /* VL rank modal */
@@ -5637,7 +5642,12 @@ html.reduce-motion .session-pill {
 }
 
 .vl-rank-icon {
-  font-size: 18px;
+  width: 28px;
+  height: 28px;
+  display: inline-block;
+  object-fit: contain;
+  background: none;
+  border: none;
 }
 
 .vl-rank-label {
@@ -5672,6 +5682,21 @@ html.reduce-motion .session-pill {
   font-size: 10px;
   font-style: italic;
   color: color-mix(in srgb, var(--vl-text) 80%, transparent);
+}
+
+.vl-rank-link {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--vl-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  word-break: break-all;
+}
+
+.vl-rank-link:hover {
+  color: #fff;
 }
 
 .vl-modal-foot {
