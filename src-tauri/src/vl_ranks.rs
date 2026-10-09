@@ -299,6 +299,44 @@ pub fn catalog() -> &'static [VlEncounter] {
                 },
             ],
         },
+        VlEncounter {
+            key: "kelacm",
+            display: "Kela, the Seneschal of Waves — Challenge Mode",
+            aliases: &["kela", "kelaseneschalofwaves"],
+            cm_only: true,
+            lcm_only: false,
+            ranks: &[
+                VlRankDef {
+                    id: "crustaceancorraler",
+                    label: "Crustacean Corraler",
+                    icon: "/rank_icons/Kela_CM/crustaceancorraler.png",
+                    text_color: "#b64955",
+                    bg_color: "#33272e",
+                    description: "Players that have successfully completed the Challenge Mode whilst being alive in the 10% phase.",
+                    url: None,
+                    auto: Some("cm"),
+                },
+            ],
+        },
+        VlEncounter {
+            key: "vloxxcm",
+            display: "Nexus of Eternity (Vloxx) — Challenge Mode",
+            aliases: &["vloxx", "nexusofeternity", "nexusofeternitycm"],
+            cm_only: true,
+            lcm_only: false,
+            ranks: &[
+                VlRankDef {
+                    id: "truevisionary",
+                    label: "True Visionary",
+                    icon: "/rank_icons/Vloxx_CM/truevisionary.png",
+                    text_color: "#5793df",
+                    bg_color: "#1f2b43",
+                    description: "Players that have successfully completed the Challenge Mode whilst being alive in the 10% phase.",
+                    url: None,
+                    auto: Some("cm"),
+                },
+            ],
+        },
     ]
 }
 
