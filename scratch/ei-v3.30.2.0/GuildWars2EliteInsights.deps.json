@@ -1,0 +1,920 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v8.0/win-x64",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v8.0": {},
+    ".NETCoreApp,Version=v8.0/win-x64": {
+      "GuildWars2EliteInsights/1.0.0": {
+        "dependencies": {
+          "Avalonia": "12.1.2",
+          "Avalonia.Controls.DataGrid": "12.1.2",
+          "Avalonia.Desktop": "12.1.2",
+          "Avalonia.Fonts.Inter": "12.1.2",
+          "Avalonia.Themes.Fluent": "12.1.2",
+          "CommunityToolkit.Mvvm": "8.4.2",
+          "GuildWars2EliteInsights.GW2EIGW2API": "4.1.1",
+          "GuildWars2EliteInsights.GW2EIParserCommons": "0.330.2",
+          "GuildWars2EliteInsights.GW2EIUpdater": "1.2.1",
+          "GuildWars2EliteInsightsUpdater": "0.0.0.0",
+          "GW2EIBuilders": "0.85.2.0",
+          "GW2EIDiscord": "4.1.1.0",
+          "GW2EIDPSReport": "7.1.1.0",
+          "GW2EIEvtcParser": "0.88.2.0",
+          "GW2EIGW2API": "4.1.1.0",
+          "GW2EIJSON": "3.30.2.0",
+          "GW2EIParserCommons": "0.330.2.0"
+        },
+        "runtime": {
+          "GuildWars2EliteInsights.dll": {}
+        }
+      },
+      "Avalonia/12.1.2": {
+        "dependencies": {
+          "Avalonia.Remote.Protocol": "12.1.2",
+          "MicroCom.Runtime": "0.11.6"
+        },
+        "runtime": {
+          "lib/net8.0/Avalonia.Base.dll": {
+            "assemblyVersion": "12.1.2.0",
+            "fileVersion": "12.1.2.0"
+          },
+          "lib/net8.0/Avalonia.Controls.dll": {
+            "assemblyVersion": "12.1.2.0",
+            "fileVersion": "12.1.2.0"
+          },
+          "lib/net8.0/Avalonia.DesignerSupport.dll": {
+            "assemblyVersion": "0.7.0.0",
+            "fileVersion": "0.7.0.0"
+          },
+          "lib/net8.0/Avalonia.Dialogs.dll": {
+            "assemblyVersion": "12.1.2.0",
+            "fileVersion": "12.1.2.0"
+          },
+          "lib/net8.0/Avalonia.Markup.Xaml.dll": {
+            "assemblyVersion": "12.1.2.0",
+            "fileVersion": "12.1.2.0"
+          },
+          "lib/net8.0/Avalonia.Markup.dll": {
+            "assemblyVersion": "12.1.2.0",
+            "fileVersion": "12.1.2.0"
+          },
+          "lib/net8.0/Avalonia.Metal.dll": {
+            "assemblyVersion": "12.1.2.0",
+            "fileVersion": "12.1.2.0"
+          },
+          "lib/net8.0/Avalonia.MicroCom.dll": {
+            "assemblyVersion": "12.1.2.0",
+            "fileVersion": "12.1.2.0"
+          },
+          "lib/net8.0/Avalonia.OpenGL.dll": {
+            "assemblyVersion": "12.1.2.0",
+            "fileVersion": "12.1.2.0"
+          },
+          "lib/net8.0/Avalonia.Vulkan.dll": {
+            "assemblyVersion": "12.1.2.0",
+            "fileVersion": "12.1.2.0"
+          },
+          "lib/net8.0/Avalonia.dll": {
+            "assemblyVersion": "12.1.2.0",
+            "fileVersion": "12.1.2.0"
+          }
+        }
+      },
+      "Avalonia.Angle.Windows.Natives/2.1.27548.20260419": {
+        "native": {
+          "runtimes/win-x64/native/av_libglesv2.dll": {
+            "fileVersion": "2.1.1.0"
+          }
+        }
+      },
+      "Avalonia.Controls.DataGrid/12.1.2": {
+        "dependencies": {
+          "Avalonia": "12.1.2"
+        },
+        "runtime": {
+          "lib/net8.0/Avalonia.Controls.DataGrid.dll": {
+            "assemblyVersion": "12.1.2.0",
+            "fileVersion": "12.1.2.0"
+          }
+        }
+      },
+      "Avalonia.Desktop/12.1.2": {
+        "dependencies": {
+          "Avalonia": "12.1.2",
+          "Avalonia.HarfBuzz": "12.1.2",
+          "Avalonia.Native": "12.1.2",
+          "Avalonia.Skia": "12.1.2",
+          "Avalonia.Win32": "12.1.2",
+          "Avalonia.X11": "12.1.2"
+        },
+        "runtime": {
+          "lib/net8.0/Avalonia.Desktop.dll": {
+            "assemblyVersion": "12.1.2.0",
+            "fileVersion": "12.1.2.0"
+          }
+        }
+      },
+      "Avalonia.Fonts.Inter/12.1.2": {
+        "dependencies": {
+          "Avalonia": "12.1.2"
+        },
+        "runtime": {
+          "lib/net8.0/Avalonia.Fonts.Inter.dll": {
+            "assemblyVersion": "12.1.2.0",
+            "fileVersion": "12.1.2.0"
+          }
+        }
+      },
+      "Avalonia.FreeDesktop/12.1.2": {
+        "dependencies": {
+          "Avalonia": "12.1.2",
+          "Tmds.DBus.Protocol": "0.94.1"
+        },
+        "runtime": {
+          "lib/net8.0/Avalonia.FreeDesktop.dll": {
+            "assemblyVersion": "12.1.2.0",
+            "fileVersion": "12.1.2.0"
+          }
+        }
+      },
+      "Avalonia.FreeDesktop.AtSpi/12.1.2": {
+        "dependencies": {
+          "Avalonia": "12.1.2"
+        },
+        "runtime": {
+          "lib/net8.0/Avalonia.FreeDesktop.AtSpi.dll": {
+            "assemblyVersion": "12.1.2.0",
+            "fileVersion": "12.1.2.0"
+          }
+        }
+      },
+      "Avalonia.HarfBuzz/12.1.2": {
+        "dependencies": {
+          "Avalonia": "12.1.2",
+          "HarfBuzzSharp": "8.3.1.3"
+        },
+        "runtime": {
+          "lib/net8.0/Avalonia.HarfBuzz.dll": {
+            "assemblyVersion": "12.1.2.0",
+            "fileVersion": "12.1.2.0"
+          }
+        }
+      },
+      "Avalonia.Native/12.1.2": {
+        "dependencies": {
+          "Avalonia": "12.1.2"
+        },
+        "runtime": {
+          "lib/net8.0/Avalonia.Native.dll": {
+            "assemblyVersion": "12.1.2.0",
+            "fileVersion": "12.1.2.0"
+          }
+        }
+      },
+      "Avalonia.Remote.Protocol/12.1.2": {
+        "runtime": {
+          "lib/net8.0/Avalonia.Remote.Protocol.dll": {
+            "assemblyVersion": "12.1.2.0",
+            "fileVersion": "12.1.2.0"
+          }
+        }
+      },
+      "Avalonia.Skia/12.1.2": {
+        "dependencies": {
+          "Avalonia": "12.1.2",
+          "HarfBuzzSharp": "8.3.1.3",
+          "SkiaSharp": "3.119.4"
+        },
+        "runtime": {
+          "lib/net8.0/Avalonia.Skia.dll": {
+            "assemblyVersion": "12.1.2.0",
+            "fileVersion": "12.1.2.0"
+          }
+        }
+      },
+      "Avalonia.Themes.Fluent/12.1.2": {
+        "dependencies": {
+          "Avalonia": "12.1.2"
+        },
+        "runtime": {
+          "lib/net8.0/Avalonia.Themes.Fluent.dll": {
+            "assemblyVersion": "12.1.2.0",
+            "fileVersion": "12.1.2.0"
+          }
+        }
+      },
+      "Avalonia.Win32/12.1.2": {
+        "dependencies": {
+          "Avalonia": "12.1.2",
+          "Avalonia.Angle.Windows.Natives": "2.1.27548.20260419"
+        },
+        "runtime": {
+          "lib/net8.0/Avalonia.Win32.Automation.dll": {
+            "assemblyVersion": "12.1.2.0",
+            "fileVersion": "12.1.2.0"
+          },
+          "lib/net8.0/Avalonia.Win32.dll": {
+            "assemblyVersion": "12.1.2.0",
+            "fileVersion": "12.1.2.0"
+          }
+        }
+      },
+      "Avalonia.X11/12.1.2": {
+        "dependencies": {
+          "Avalonia": "12.1.2",
+          "Avalonia.FreeDesktop": "12.1.2",
+          "Avalonia.FreeDesktop.AtSpi": "12.1.2",
+          "Avalonia.Skia": "12.1.2"
+        },
+        "runtime": {
+          "lib/net8.0/Avalonia.X11.dll": {
+            "assemblyVersion": "12.1.2.0",
+            "fileVersion": "12.1.2.0"
+          }
+        }
+      },
+      "CommunityToolkit.Mvvm/8.4.2": {
+        "runtime": {
+          "lib/net8.0/CommunityToolkit.Mvvm.dll": {
+            "assemblyVersion": "8.4.0.0",
+            "fileVersion": "8.4.2.1"
+          }
+        }
+      },
+      "Discord.Net.Core/3.20.1": {
+        "dependencies": {
+          "Newtonsoft.Json": "13.0.4",
+          "System.Linq.AsyncEnumerable": "10.0.0"
+        },
+        "runtime": {
+          "lib/net8.0/Discord.Net.Core.dll": {
+            "assemblyVersion": "3.20.1.0",
+            "fileVersion": "3.20.1.0"
+          }
+        }
+      },
+      "Discord.Net.Rest/3.20.1": {
+        "dependencies": {
+          "Discord.Net.Core": "3.20.1"
+        },
+        "runtime": {
+          "lib/net8.0/Discord.Net.Rest.dll": {
+            "assemblyVersion": "3.20.1.0",
+            "fileVersion": "3.20.1.0"
+          }
+        }
+      },
+      "Discord.Net.Webhook/3.20.1": {
+        "dependencies": {
+          "Discord.Net.Core": "3.20.1",
+          "Discord.Net.Rest": "3.20.1"
+        },
+        "runtime": {
+          "lib/net8.0/Discord.Net.Webhook.dll": {
+            "assemblyVersion": "3.20.1.0",
+            "fileVersion": "3.20.1.0"
+          }
+        }
+      },
+      "HarfBuzzSharp/8.3.1.3": {
+        "dependencies": {
+          "HarfBuzzSharp.NativeAssets.Win32": "8.3.1.3"
+        },
+        "runtime": {
+          "lib/net8.0/HarfBuzzSharp.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "8.3.1.3"
+          }
+        }
+      },
+      "HarfBuzzSharp.NativeAssets.Win32/8.3.1.3": {
+        "native": {
+          "runtimes/win-x64/native/libHarfBuzzSharp.dll": {
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/win-x64/native/libHarfBuzzSharp.pdb": {
+            "fileVersion": "0.0.0.0"
+          }
+        }
+      },
+      "MicroCom.Runtime/0.11.6": {
+        "runtime": {
+          "lib/net8.0/MicroCom.Runtime.dll": {
+            "assemblyVersion": "0.11.6.0",
+            "fileVersion": "0.11.6.0"
+          }
+        }
+      },
+      "Newtonsoft.Json/13.0.4": {
+        "runtime": {
+          "lib/net6.0/Newtonsoft.Json.dll": {
+            "assemblyVersion": "13.0.0.0",
+            "fileVersion": "13.0.4.30916"
+          }
+        }
+      },
+      "SkiaSharp/3.119.4": {
+        "dependencies": {
+          "SkiaSharp.NativeAssets.Win32": "3.119.4"
+        },
+        "runtime": {
+          "lib/net6.0/SkiaSharp.dll": {
+            "assemblyVersion": "3.119.0.0",
+            "fileVersion": "3.119.4.0"
+          }
+        }
+      },
+      "SkiaSharp.NativeAssets.Win32/3.119.4": {
+        "native": {
+          "runtimes/win-x64/native/libSkiaSharp.dll": {
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/win-x64/native/libSkiaSharp.pdb": {
+            "fileVersion": "0.0.0.0"
+          }
+        }
+      },
+      "System.Configuration.ConfigurationManager/10.0.11": {
+        "dependencies": {
+          "System.Diagnostics.EventLog": "10.0.11",
+          "System.Security.Cryptography.ProtectedData": "10.0.11"
+        },
+        "runtime": {
+          "lib/net8.0/System.Configuration.ConfigurationManager.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.1126.37416"
+          }
+        }
+      },
+      "System.Diagnostics.EventLog/10.0.11": {
+        "runtime": {
+          "runtimes/win/lib/net8.0/System.Diagnostics.EventLog.Messages.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/win/lib/net8.0/System.Diagnostics.EventLog.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.1126.37416"
+          }
+        }
+      },
+      "System.IO.Pipelines/10.0.11": {
+        "runtime": {
+          "lib/net8.0/System.IO.Pipelines.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.1126.37416"
+          }
+        }
+      },
+      "System.Linq.AsyncEnumerable/10.0.0": {
+        "runtime": {
+          "lib/net8.0/System.Linq.AsyncEnumerable.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.25.52411"
+          }
+        }
+      },
+      "System.Security.Cryptography.ProtectedData/10.0.11": {
+        "runtime": {
+          "lib/net8.0/System.Security.Cryptography.ProtectedData.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.1126.37416"
+          }
+        }
+      },
+      "System.Text.Encoding.CodePages/10.0.11": {
+        "runtime": {
+          "runtimes/win/lib/net8.0/System.Text.Encoding.CodePages.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.1126.37416"
+          }
+        }
+      },
+      "System.Text.Encodings.Web/10.0.11": {
+        "runtime": {
+          "lib/net8.0/System.Text.Encodings.Web.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.1126.37416"
+          }
+        }
+      },
+      "System.Text.Json/10.0.11": {
+        "dependencies": {
+          "System.IO.Pipelines": "10.0.11",
+          "System.Text.Encodings.Web": "10.0.11"
+        },
+        "runtime": {
+          "lib/net8.0/System.Text.Json.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.1126.37416"
+          }
+        }
+      },
+      "Tmds.DBus.Protocol/0.94.1": {
+        "dependencies": {
+          "System.IO.Pipelines": "10.0.11"
+        },
+        "runtime": {
+          "lib/net8.0/Tmds.DBus.Protocol.dll": {
+            "assemblyVersion": "0.94.1.0",
+            "fileVersion": "0.94.1.0"
+          }
+        }
+      },
+      "GuildWars2EliteInsights.GW2EIBuilders/0.85.2": {
+        "dependencies": {
+          "GuildWars2EliteInsights.GW2EIEvtcParser": "0.88.2",
+          "GuildWars2EliteInsights.GW2EIGW2API": "4.1.1",
+          "GuildWars2EliteInsights.GW2EIJSON": "3.30.2",
+          "System.Text.Encoding.CodePages": "10.0.11"
+        },
+        "runtime": {
+          "GW2EIBuilders.dll": {
+            "assemblyVersion": "0.85.2.0",
+            "fileVersion": "0.85.2.0"
+          }
+        }
+      },
+      "GuildWars2EliteInsights.GW2EIDiscord/4.1.1": {
+        "dependencies": {
+          "Discord.Net.Webhook": "3.20.1"
+        },
+        "runtime": {
+          "GW2EIDiscord.dll": {
+            "assemblyVersion": "4.1.1.0",
+            "fileVersion": "4.1.1.0"
+          }
+        }
+      },
+      "GuildWars2EliteInsights.GW2EIDPSReport/7.1.1": {
+        "dependencies": {
+          "System.Text.Json": "10.0.11"
+        },
+        "runtime": {
+          "GW2EIDPSReport.dll": {
+            "assemblyVersion": "7.1.1.0",
+            "fileVersion": "7.1.1.0"
+          }
+        }
+      },
+      "GuildWars2EliteInsights.GW2EIEvtcParser/0.88.2": {
+        "dependencies": {
+          "GuildWars2EliteInsights.GW2EIGW2API": "4.1.1"
+        },
+        "runtime": {
+          "GW2EIEvtcParser.dll": {
+            "assemblyVersion": "0.88.2.0",
+            "fileVersion": "0.88.2.0"
+          }
+        }
+      },
+      "GuildWars2EliteInsights.GW2EIGW2API/4.1.1": {
+        "dependencies": {
+          "System.Text.Json": "10.0.11"
+        },
+        "runtime": {
+          "GW2EIGW2API.dll": {
+            "assemblyVersion": "4.1.1.0",
+            "fileVersion": "4.1.1.0"
+          }
+        }
+      },
+      "GuildWars2EliteInsights.GW2EIJSON/3.30.2": {
+        "dependencies": {
+          "System.Text.Json": "10.0.11"
+        },
+        "runtime": {
+          "GW2EIJSON.dll": {
+            "assemblyVersion": "3.30.2.0",
+            "fileVersion": "3.30.2.0"
+          }
+        }
+      },
+      "GuildWars2EliteInsights.GW2EIParserCommons/0.330.2": {
+        "dependencies": {
+          "GW2EIWingman": "5.1.1",
+          "GuildWars2EliteInsights.GW2EIBuilders": "0.85.2",
+          "GuildWars2EliteInsights.GW2EIDPSReport": "7.1.1",
+          "GuildWars2EliteInsights.GW2EIDiscord": "4.1.1",
+          "GuildWars2EliteInsights.GW2EIGW2API": "4.1.1",
+          "System.Configuration.ConfigurationManager": "10.0.11"
+        },
+        "runtime": {
+          "GW2EIParserCommons.dll": {
+            "assemblyVersion": "0.330.2.0",
+            "fileVersion": "0.330.2.0"
+          }
+        }
+      },
+      "GuildWars2EliteInsights.GW2EIUpdater/1.2.1": {
+        "runtime": {
+          "GuildWars2EliteInsightsUpdater.dll": {
+            "fileVersion": "0.0.0.0"
+          }
+        }
+      },
+      "GW2EIWingman/5.1.1": {
+        "dependencies": {
+          "GuildWars2EliteInsights.GW2EIJSON": "3.30.2",
+          "System.Text.Json": "10.0.11"
+        },
+        "runtime": {
+          "GW2EIWingman.dll": {
+            "assemblyVersion": "5.1.1.0",
+            "fileVersion": "5.1.1.0"
+          }
+        }
+      },
+      "GuildWars2EliteInsightsUpdater/0.0.0.0": {
+        "runtime": {
+          "GuildWars2EliteInsightsUpdater.dll": {
+            "assemblyVersion": "0.0.0.0",
+            "fileVersion": "0.0.0.0"
+          }
+        }
+      },
+      "GW2EIBuilders/0.85.2.0": {
+        "runtime": {
+          "GW2EIBuilders.dll": {
+            "assemblyVersion": "0.85.2.0",
+            "fileVersion": "0.85.2.0"
+          }
+        }
+      },
+      "GW2EIDiscord/4.1.1.0": {
+        "runtime": {
+          "GW2EIDiscord.dll": {
+            "assemblyVersion": "4.1.1.0",
+            "fileVersion": "4.1.1.0"
+          }
+        }
+      },
+      "GW2EIDPSReport/7.1.1.0": {
+        "runtime": {
+          "GW2EIDPSReport.dll": {
+            "assemblyVersion": "7.1.1.0",
+            "fileVersion": "7.1.1.0"
+          }
+        }
+      },
+      "GW2EIEvtcParser/0.88.2.0": {
+        "runtime": {
+          "GW2EIEvtcParser.dll": {
+            "assemblyVersion": "0.88.2.0",
+            "fileVersion": "0.88.2.0"
+          }
+        }
+      },
+      "GW2EIGW2API/4.1.1.0": {
+        "runtime": {
+          "GW2EIGW2API.dll": {
+            "assemblyVersion": "4.1.1.0",
+            "fileVersion": "4.1.1.0"
+          }
+        }
+      },
+      "GW2EIJSON/3.30.2.0": {
+        "runtime": {
+          "GW2EIJSON.dll": {
+            "assemblyVersion": "3.30.2.0",
+            "fileVersion": "3.30.2.0"
+          }
+        }
+      },
+      "GW2EIParserCommons/0.330.2.0": {
+        "runtime": {
+          "GW2EIParserCommons.dll": {
+            "assemblyVersion": "0.330.2.0",
+            "fileVersion": "0.330.2.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "GuildWars2EliteInsights/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Avalonia/12.1.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-GHSe4qxjbqqxB570xuB4KtoD+Qhk3uKXJUXbelGYhGz/ti8xEoL7e5DGun8hcsXHondszPPBEdcC68szw7vUKg==",
+      "path": "avalonia/12.1.2",
+      "hashPath": "avalonia.12.1.2.nupkg.sha512"
+    },
+    "Avalonia.Angle.Windows.Natives/2.1.27548.20260419": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-l17nI3XVDN3oMnpjf2pnmJg0YTwK4m6NLsn/itAjDMdObTFxN77D5F1M9sRMSfViSY3KKcse1ROczwgoWLJsnA==",
+      "path": "avalonia.angle.windows.natives/2.1.27548.20260419",
+      "hashPath": "avalonia.angle.windows.natives.2.1.27548.20260419.nupkg.sha512"
+    },
+    "Avalonia.Controls.DataGrid/12.1.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-Tw02SZd/B42Gq6/l9IBPfuM+VsHPq7c6LXb9mT0xVjZB2UPeynfKlBgQDcrhu/SOfYUGk7tQSRmLFM2kaAjdrw==",
+      "path": "avalonia.controls.datagrid/12.1.2",
+      "hashPath": "avalonia.controls.datagrid.12.1.2.nupkg.sha512"
+    },
+    "Avalonia.Desktop/12.1.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-ghG7UVnLVhCyWm/74xh24gAkXgEZ41oJTUr7c0VI9BiVSqhpukvU5vm8l8ZY35BZX8VPx1YtXUI1+VbhDTOLMw==",
+      "path": "avalonia.desktop/12.1.2",
+      "hashPath": "avalonia.desktop.12.1.2.nupkg.sha512"
+    },
+    "Avalonia.Fonts.Inter/12.1.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-pFkrNWecSX3wP9kTsMyLKyP29/8T7cYywKuE+DC9HN+BstmcIx5iOi6ZZLYAK1HkNTAGjF+oQf5wpTj3gnkWXA==",
+      "path": "avalonia.fonts.inter/12.1.2",
+      "hashPath": "avalonia.fonts.inter.12.1.2.nupkg.sha512"
+    },
+    "Avalonia.FreeDesktop/12.1.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-RJqKF7djK/lyDBdj24+HKELGe+7I/86NIA57aeiod5k340svbcb9hs1RYkIF8Nga4Xa2Jd/Pzxpkmvdjb1ASiw==",
+      "path": "avalonia.freedesktop/12.1.2",
+      "hashPath": "avalonia.freedesktop.12.1.2.nupkg.sha512"
+    },
+    "Avalonia.FreeDesktop.AtSpi/12.1.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-632PfHnqe7OkzStmDOW2ghXfCcTapGhT46HZGMMOIZFr+I0biyxUk7felBQwNzEk5LJ54y4VfIoiWKTgZK8FnA==",
+      "path": "avalonia.freedesktop.atspi/12.1.2",
+      "hashPath": "avalonia.freedesktop.atspi.12.1.2.nupkg.sha512"
+    },
+    "Avalonia.HarfBuzz/12.1.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-CqYTMnOLuAXjGldTEMdEf5/ozMY1z5ZshpE4YF0i2s2o4ycsYq855BD/eQS0iBt5PbjtlJgk8njILrBwW0HteQ==",
+      "path": "avalonia.harfbuzz/12.1.2",
+      "hashPath": "avalonia.harfbuzz.12.1.2.nupkg.sha512"
+    },
+    "Avalonia.Native/12.1.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-Co60A3FhDiCR022en90e/nUJqn2GtYal353cSUB0lWAd0qb/AuVRdScz9i0QCyglYw+PBfUXSP+9OfI2XvnfCg==",
+      "path": "avalonia.native/12.1.2",
+      "hashPath": "avalonia.native.12.1.2.nupkg.sha512"
+    },
+    "Avalonia.Remote.Protocol/12.1.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-DdLTe9xKXxxfRcXmUw1trXZpBpz1YiZYWXx0DfMVPFAnkCszKsHLi67kaZfGJqtfQq2EySKd2qgRYX2QYkSxcg==",
+      "path": "avalonia.remote.protocol/12.1.2",
+      "hashPath": "avalonia.remote.protocol.12.1.2.nupkg.sha512"
+    },
+    "Avalonia.Skia/12.1.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-x0TDDdZgNepbxRd6gSQyv3A/hHoVJk3kYqjRa1baI43XPGPuO87lArf4DRKAERgWUxUp1ad28aTvVsE3x0JM0g==",
+      "path": "avalonia.skia/12.1.2",
+      "hashPath": "avalonia.skia.12.1.2.nupkg.sha512"
+    },
+    "Avalonia.Themes.Fluent/12.1.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-EKw1PzlIfqB8n0+yGuHThR9cUEiqZYj0EHYp89jrTwSuudu8pji6I4SGe1UmdwJWdgWf+kuss8T7KT+0wsUyow==",
+      "path": "avalonia.themes.fluent/12.1.2",
+      "hashPath": "avalonia.themes.fluent.12.1.2.nupkg.sha512"
+    },
+    "Avalonia.Win32/12.1.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-MjHc5aKNs7Hp/fiX13wTQ3pg+kG9lh+NfqSQGx6/SkfvdO1Hbmribk7Bt0pwFTxcJ6HGlzwGKp1Ur3Ib/tv0ew==",
+      "path": "avalonia.win32/12.1.2",
+      "hashPath": "avalonia.win32.12.1.2.nupkg.sha512"
+    },
+    "Avalonia.X11/12.1.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-wtCAY9k90yrvhzKmesDGGFxYHsgejmLaR7HY36A4VYJ+E1R8AguNZc3hFaVKywnQLpf/eLhAwQWUxoNVFu9h/w==",
+      "path": "avalonia.x11/12.1.2",
+      "hashPath": "avalonia.x11.12.1.2.nupkg.sha512"
+    },
+    "CommunityToolkit.Mvvm/8.4.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-WadCzGEc2U+3e20avRLng4qNtt4zoOGWrdUISqJWrHe3/FSnrYjuM5Sb4yQb09LhkBXrrI4Zt3dLKgRMbItsrg==",
+      "path": "communitytoolkit.mvvm/8.4.2",
+      "hashPath": "communitytoolkit.mvvm.8.4.2.nupkg.sha512"
+    },
+    "Discord.Net.Core/3.20.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-fgWdbTlcd2ck05OoS03UBd/7kyrgHWATV9o2mvTwReqIB2CCcVPf5Qu8BpUpr3IgGYNHeVg+9J4KnK9DznYT4Q==",
+      "path": "discord.net.core/3.20.1",
+      "hashPath": "discord.net.core.3.20.1.nupkg.sha512"
+    },
+    "Discord.Net.Rest/3.20.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-vAmHwdpotchmz/rPicB2BrYoU2yWmMuFJhqDv/Ywi4nelIo/O7VYzzHD82iNGm3fYnD+2m+dCcZZGGgga3A7wQ==",
+      "path": "discord.net.rest/3.20.1",
+      "hashPath": "discord.net.rest.3.20.1.nupkg.sha512"
+    },
+    "Discord.Net.Webhook/3.20.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-HZ37Guk1FMYUmur+G8K3tUQwIst7HJyTziCA7F4F9LsOvluD60YEnz53XqJH+anyFf42t0tQeJFMbaCOy3jIiQ==",
+      "path": "discord.net.webhook/3.20.1",
+      "hashPath": "discord.net.webhook.3.20.1.nupkg.sha512"
+    },
+    "HarfBuzzSharp/8.3.1.3": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-NGZ2+ZVNPM+NdHB/asW0/ykWngyHWwcqjrbN2nDeH1B/aptPGlCUl8wkQ2cSJxw5fdWgdmIPmNuTPWpLwNVXWg==",
+      "path": "harfbuzzsharp/8.3.1.3",
+      "hashPath": "harfbuzzsharp.8.3.1.3.nupkg.sha512"
+    },
+    "HarfBuzzSharp.NativeAssets.Win32/8.3.1.3": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-bx8CE8Js+XGX8PUxAHCBDEORt5aaBYtMN4Hr9QFs57Xithh6yjUyYqksizH6eRDhJkwsGI+SXWmPmMm8lZC9Pw==",
+      "path": "harfbuzzsharp.nativeassets.win32/8.3.1.3",
+      "hashPath": "harfbuzzsharp.nativeassets.win32.8.3.1.3.nupkg.sha512"
+    },
+    "MicroCom.Runtime/0.11.6": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-NdNWGDiZ6eS/Mf/9+QHR91cj1K7Hy+PX9yrHI/zM7xFYuj9IWT2uxtB6sCHjrnxAeLV9fut1R6zHDUGKX6f9lQ==",
+      "path": "microcom.runtime/0.11.6",
+      "hashPath": "microcom.runtime.0.11.6.nupkg.sha512"
+    },
+    "Newtonsoft.Json/13.0.4": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-pdgNNMai3zv51W5aq268sujXUyx7SNdE2bj1wZcWjAQrKMFZV260lbqYop1d2GM67JI1huLRwxo9ZqnfF/lC6A==",
+      "path": "newtonsoft.json/13.0.4",
+      "hashPath": "newtonsoft.json.13.0.4.nupkg.sha512"
+    },
+    "SkiaSharp/3.119.4": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-53NOSUZ1Us+91Sm0uCkIivh/k7jOowRErZT2sIWwPFN9mLUvdxnE6rS4sWo4255+Rd2MWUSF+j0NMZHD6Cke+Q==",
+      "path": "skiasharp/3.119.4",
+      "hashPath": "skiasharp.3.119.4.nupkg.sha512"
+    },
+    "SkiaSharp.NativeAssets.Win32/3.119.4": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-XOpbx/4CReO2wYsq2s6rbvdauc6dntG4Zv499sHGTJ87bwZaFXszFkwql3+FIZMc8kUPeaj3Mx2ezIJmo8a1Kg==",
+      "path": "skiasharp.nativeassets.win32/3.119.4",
+      "hashPath": "skiasharp.nativeassets.win32.3.119.4.nupkg.sha512"
+    },
+    "System.Configuration.ConfigurationManager/10.0.11": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-vFA8K0xj520MnLp+zkpTmLc3LOGUhkIDxHvhfm8Cr4b+ZVVeAXnfe1+2oixuITbsZfr4ALcU2NrAqQKhooX9yw==",
+      "path": "system.configuration.configurationmanager/10.0.11",
+      "hashPath": "system.configuration.configurationmanager.10.0.11.nupkg.sha512"
+    },
+    "System.Diagnostics.EventLog/10.0.11": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-QTXEoQBzz00SFWbo7nAg1Ogd4f99lwqcO9uAJ7MYSLEUR28f6As32QktrqG2Fr9cfAfd1GjLyGYspE7Ipj7P6w==",
+      "path": "system.diagnostics.eventlog/10.0.11",
+      "hashPath": "system.diagnostics.eventlog.10.0.11.nupkg.sha512"
+    },
+    "System.IO.Pipelines/10.0.11": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-rg8LPOZ62quw3aTnsQNh9rssncaMs69WEM1DiJdDkV+o4Llb2s5Pasy5Bulfm8zL+pE4gDcSQo7V2zW2jvxwYg==",
+      "path": "system.io.pipelines/10.0.11",
+      "hashPath": "system.io.pipelines.10.0.11.nupkg.sha512"
+    },
+    "System.Linq.AsyncEnumerable/10.0.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-t1jnw7So3eeZVemma+82w+Y394oPX1bebkr3gY3IzyotP3kKC/JWwGRz2WssoUFODWWvkACT2hXliumgCHu9LQ==",
+      "path": "system.linq.asyncenumerable/10.0.0",
+      "hashPath": "system.linq.asyncenumerable.10.0.0.nupkg.sha512"
+    },
+    "System.Security.Cryptography.ProtectedData/10.0.11": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-PNoxCTPb+Tlux+GJyq4c89ddYdpioVSqfGx8pqOF6shCSKwUNNctXhQtRkCICjbJmGrJJsW8NY52kVYO/b8mlQ==",
+      "path": "system.security.cryptography.protecteddata/10.0.11",
+      "hashPath": "system.security.cryptography.protecteddata.10.0.11.nupkg.sha512"
+    },
+    "System.Text.Encoding.CodePages/10.0.11": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-K00Cn0qXY9jYh7gRemcRDdwj5PhHKMC9UGJjC/dd7Cn9P5yadXDt2SHDC/Q3iVZ+iRnhbwecbvizEtNPBHJ6iA==",
+      "path": "system.text.encoding.codepages/10.0.11",
+      "hashPath": "system.text.encoding.codepages.10.0.11.nupkg.sha512"
+    },
+    "System.Text.Encodings.Web/10.0.11": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-R7H2/Oqr3onFff/JKDpfRjwxcQZlocF/eQ0ce8go/OTjqz+6LEp/fZK8j1YnDobtysChATEg7krVq4hQJ3IoeQ==",
+      "path": "system.text.encodings.web/10.0.11",
+      "hashPath": "system.text.encodings.web.10.0.11.nupkg.sha512"
+    },
+    "System.Text.Json/10.0.11": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-X2rXQy7g8KEUvWVbAz6vOk6byI1eMgmzFeXbKxq4BfZCfFy5S91K+K+hd4ZBlSp0wL1Y8FyGRXs6+hvABTjwQw==",
+      "path": "system.text.json/10.0.11",
+      "hashPath": "system.text.json.10.0.11.nupkg.sha512"
+    },
+    "Tmds.DBus.Protocol/0.94.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-11YMr7FnAbL83bQmVxlhbIKHvSLxjO81D12Ej0QMSGXMDTxNA9MTOa4MQxx43nv5el/efuPHwzyrj6a5ha2gug==",
+      "path": "tmds.dbus.protocol/0.94.1",
+      "hashPath": "tmds.dbus.protocol.0.94.1.nupkg.sha512"
+    },
+    "GuildWars2EliteInsights.GW2EIBuilders/0.85.2": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GuildWars2EliteInsights.GW2EIDiscord/4.1.1": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GuildWars2EliteInsights.GW2EIDPSReport/7.1.1": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GuildWars2EliteInsights.GW2EIEvtcParser/0.88.2": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GuildWars2EliteInsights.GW2EIGW2API/4.1.1": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GuildWars2EliteInsights.GW2EIJSON/3.30.2": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GuildWars2EliteInsights.GW2EIParserCommons/0.330.2": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GuildWars2EliteInsights.GW2EIUpdater/1.2.1": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GW2EIWingman/5.1.1": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GuildWars2EliteInsightsUpdater/0.0.0.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GW2EIBuilders/0.85.2.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GW2EIDiscord/4.1.1.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GW2EIDPSReport/7.1.1.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GW2EIEvtcParser/0.88.2.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GW2EIGW2API/4.1.1.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GW2EIJSON/3.30.2.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "GW2EIParserCommons/0.330.2.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

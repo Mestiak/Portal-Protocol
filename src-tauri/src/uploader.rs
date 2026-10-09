@@ -2211,6 +2211,8 @@ fn schedule_processing_check(
                                             || name == "Healed"
                                             || name.to_lowercase().contains("healed")
                                             || name.contains("100%") && name.contains("1%")
+                                            || name == "70% - 1%"
+                                            || name == "40% - 1%"
                                     })
                                 });
                         if has_healed {
@@ -5686,6 +5688,7 @@ mod discord_embed_tests {
             ei_done: None,
             upload_done: None,
             kaineng_phases: None,
+            is_favorite: None,
         }
     }
 
