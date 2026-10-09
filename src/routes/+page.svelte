@@ -987,6 +987,7 @@
   // Returns the list of awarded VL rank defs for a log (multi-rank aware).
   // `log.vl_rank` may be a single string (old data) or a string[] (new).
   function vlCurrentRanks(log: UploadRecord): VlRankDef[] {
+    if (log.is_convergence === true) return []; // Convergences don't use raid-boss VL ranks
     const enc = vlEncounterFor(log);
     if (!enc || !log.vl_rank) return [];
     const ids = Array.isArray(log.vl_rank) ? log.vl_rank : [log.vl_rank];

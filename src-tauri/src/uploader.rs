@@ -1607,7 +1607,7 @@ pub async fn repair_history_cerus_empowered_stacks(app: AppHandle) {
             .to_lowercase()
             .replace(|c: char| !c.is_ascii_alphanumeric(), "");
         let should_have =
-            crate::vl_ranks::auto_petrified_for(&boss_key, rec.is_cm, rec.is_lcm, stacks);
+            crate::vl_ranks::auto_petrified_for(&boss_key, rec.is_cm, rec.is_lcm, rec.is_convergence == Some(true), stacks);
         let had_petrified = rec
             .vl_rank
             .as_ref()
@@ -1739,7 +1739,7 @@ pub async fn repair_history_vl_ranks(app: AppHandle) {
             .replace(|c: char| !c.is_ascii_alphanumeric(), "");
         // Re-derive the auto rank for this encounter (None if no longer eligible).
         let correct_auto =
-            crate::vl_ranks::auto_rank_for(&boss, rec.is_cm, rec.is_lcm, rec.success);
+            crate::vl_ranks::auto_rank_for(&boss, rec.is_cm, rec.is_lcm, rec.is_convergence == Some(true), rec.success);
         // A manual rank (petrified/insatiable/empowered) was intentionally chosen by
         // the user and is left alone. Only the auto ranks (conqueror/legendary) are
         // repaired — and only when present in the set.
@@ -3135,6 +3135,7 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                                 &boss_key,
                                 record.is_cm,
                                 record.is_lcm,
+                                record.is_convergence == Some(true),
                                 record.success,
                             ) {
                                 let set = record.vl_rank.get_or_insert_with(Vec::new);
@@ -3152,6 +3153,7 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                                 &boss_key,
                                 record.is_cm,
                                 record.is_lcm,
+                                record.is_convergence == Some(true),
                                 record.cerus_empowered_stacks,
                             ) {
                                 let set = record.vl_rank.get_or_insert_with(Vec::new);

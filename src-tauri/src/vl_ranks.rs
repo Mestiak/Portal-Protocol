@@ -370,9 +370,17 @@ pub fn auto_rank_for(
     boss_key: &str,
     is_cm: Option<bool>,
     is_lcm: Option<bool>,
+    is_convergence: bool,
     success: Option<bool>,
 ) -> Option<String> {
     if success != Some(true) {
+        return None;
+    }
+    // Convergence logs (Janthir Wilds) share boss names with raid bosses (e.g.
+    // "Decima, the Stormsinger" appears in both the Decima raid and the
+    // Decima Convergence). VL ranks are for the raid boss, not the convergence
+    // version — skip auto-award for convergencies.
+    if is_convergence {
         return None;
     }
     let cat = catalog();
@@ -430,8 +438,12 @@ pub fn auto_petrified_for(
     boss_key: &str,
     is_cm: Option<bool>,
     is_lcm: Option<bool>,
+    is_convergence: bool,
     stacks: Option<u32>,
 ) -> bool {
+    if is_convergence {
+        return false;
+    }
     if encounter_index(boss_key).is_none() {
         return false;
     }
