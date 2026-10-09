@@ -77,3 +77,5 @@ src-tauri/tmp_*
 src-tauri/testlog.zevtc
 *.bak
 *.broken
+/scratch/
+src-tauri/resources/ei_v3.30.0-backup/
