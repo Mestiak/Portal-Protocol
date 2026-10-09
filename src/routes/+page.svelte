@@ -200,6 +200,7 @@
   let use_backup_dps = $state(true);
   let max_concurrent_uploads = $state(2);
   let watch_stability_delay_ms = $state<number>(500);
+  let watch_poll_interval_ms = $state<number>(5000);
   let max_upload_retries = $state<number>(3);
   let min_log_seconds = $state<number>(0);
   let log_cache_max_files = $state<number>(50);
@@ -1978,6 +1979,10 @@
     "oldlionscourt": { cm: true, lcm: false }, "dagda": { cm: true, lcm: false },
     // Janthir Wilds strikes
     "kela": { cm: true, lcm: false }, "kelaseneschalofwaves": { cm: true, lcm: false },
+    // Visions of Eternity: Nexus of Eternity (Vloxx) — CM detected via 70M HP
+    // threshold, matching Elite Insights v3.30.2's GetLogMode(). LCM not yet
+    // supported by Elite Insights — set lcm: true when it ships.
+    "vloxx": { cm: true, lcm: false },
   };
   function bossCmEligible(cleanName: string): boolean {
     if (FRACTAL_BOSSES.has(cleanName)) return true;
@@ -4555,6 +4560,7 @@
           use_backup_dps,
           max_concurrent_uploads,
           watch_stability_delay_ms,
+          watch_poll_interval_ms,
           max_upload_retries,
           min_log_seconds,
           log_cache_max_files,
@@ -4905,6 +4911,7 @@ async function testWebhook(wh: any) {
       use_backup_dps = config.use_backup_dps ?? true;
       max_concurrent_uploads = config.max_concurrent_uploads ?? 2;
       watch_stability_delay_ms = config.watch_stability_delay_ms ?? 500;
+      watch_poll_interval_ms = config.watch_poll_interval_ms ?? 5000;
       max_upload_retries = config.max_upload_retries ?? 3;
       min_log_seconds = config.min_log_seconds ?? 0;
       log_cache_max_files = config.log_cache_max_files ?? 50;
@@ -4956,7 +4963,7 @@ async function testWebhook(wh: any) {
     logs_directory; dps_report_token; discord_webhook;
     auto_upload; autostart; sound_notifications; desktop_notifications;
     wingman_enabled; wingman_account; use_backup_dps; max_concurrent_uploads;
-    watch_stability_delay_ms; max_upload_retries; min_log_seconds;
+    watch_stability_delay_ms; watch_poll_interval_ms; max_upload_retries; min_log_seconds;
     reduce_motion; hide_on_startup; wvw_enabled; accent; compact_mode; app_font;
     sidebarOpen;
     JSON.stringify(sessions);
@@ -4993,6 +5000,7 @@ async function testWebhook(wh: any) {
           wvw_enabled,
           max_concurrent_uploads,
           watch_stability_delay_ms,
+          watch_poll_interval_ms,
           max_upload_retries,
           min_log_seconds,
           log_cache_max_files,
@@ -7307,6 +7315,11 @@ async function testWebhook(wh: any) {
               <label for="stability-delay" style="min-width: 200px;">File-write settle delay</label>
               <input id="stability-delay" type="number" min="0" max="10000" step="100" bind:value={watch_stability_delay_ms} style="width: 90px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); padding: 6px; border-radius: 4px; color: white; font-size: 11px; outline: none;"/>
               <span style="font-size: 10px; color: var(--text-muted);">ms — debounce against ArcDPS partial writes. Default 500.</span>
+            </div>
+            <div class="form-checkbox" style="display: flex; align-items: center; gap: 10px;">
+              <label for="poll-interval" style="min-width: 200px;">Watcher poll interval</label>
+              <input id="poll-interval" type="number" min="100" max="30000" step="100" bind:value={watch_poll_interval_ms} style="width: 90px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); padding: 6px; border-radius: 4px; color: white; font-size: 11px; outline: none;"/>
+              <span style="font-size: 10px; color: var(--text-muted);">ms — how often the watcher scans for new logs. Default 5000.</span>
             </div>
             <div class="form-checkbox" style="display: flex; align-items: center; gap: 10px;">
               <label for="upload-retries" style="min-width: 200px;">Upload retries</label>

@@ -471,9 +471,14 @@ pub fn enrich_record_from_ei(record: &mut crate::uploader::UploadRecord, ei: &Va
             }
         }
     }
-    // Mode flags are authoritative from EI.
+    // Mode flags: trust the local EVTC parse (health-threshold) for CM-eligible
+    // bosses — it takes priority over dps.report's isCM, which can be stale for
+    // newer encounters (e.g. Vloxx CM). Only fill from EI when local parse was
+    // inconclusive (None) or for non-CM-eligible bosses.
     if let Some(cm) = ei.get("isCM").and_then(|v| v.as_bool()) {
-        record.is_cm = Some(cm);
+        if record.is_cm.is_none() {
+            record.is_cm = Some(cm);
+        }
     }
     // LCM detection: EI doesn't always expose isLegendaryCM for Ura.
     // Trust local EVTC parse (HP threshold detection) over EI for Ura.

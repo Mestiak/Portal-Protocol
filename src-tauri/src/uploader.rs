@@ -221,9 +221,12 @@ fn emit_skipped(app: &AppHandle, file_path: &str, file_name: &str) {
 /// True if this exact log file already exists in the persisted History.
 /// Used at the queue gate so re-drops of an already-uploaded log are skipped,
 /// not re-uploaded to dps.report.
-fn already_in_history(app: &AppHandle, file_path: &str) -> bool {
-    let hist = crate::config::load_history(app);
-    hist.iter().any(|r| r.file_path == file_path)
+fn already_in_history(file_path: &str) -> bool {
+    use crate::config::history_file_set;
+    let normalized = crate::config::normalize_path(file_path);
+    history_file_set()
+        .map(|g| g.contains(&normalized))
+        .unwrap_or(false)
 }
 
 #[tauri::command]
@@ -426,7 +429,7 @@ pub async fn drain_webhook_recovery_on_recovery(app: AppHandle) {
     }
     // Persist the (now empty) queue, then delete the on-disk file so a later
     // reload can't re-drain stale entries.
-    save_webhook_recovery(&app);
+    let _ = crate::uploader::save_webhook_recovery(&app);
     let _ = fs::remove_file(webhook_queue_path(&app));
     let config = crate::config::load_config(&app);
     let client = reqwest::Client::builder()
@@ -1429,6 +1432,13 @@ pub async fn repair_history_cm_flags(app: AppHandle) {
         // once dps.report has been consulted for this record.
         let cm_bad = rec.cm_verified != Some(true)
             && (rec.is_cm.is_none() || (rec.is_cm == Some(false) && boss_cm_eligible(&boss)));
+        // Local EVTC fallback for old records: dps.report's isCM can be wrong for
+        // newer bosses (e.g. Vloxx CM) that don't emit statechange 35 on dps.report's
+        // end. When the boss is CM-eligible and dps.report said Some(false), try the
+        // local parse (HP threshold) — if it says CM, override the stale value.
+        let cm_local_override = rec.cm_verified == Some(true)
+            && rec.is_cm == Some(false)
+            && boss_cm_eligible(&boss);
         // Also re-check records stored as Some(false) — local EVTC parse
         // can't detect Ura LCM (arcdps doesn't emit statechange 36 for it),
         // so early uploads landed at is_lcm=Some(false) and stayed wrong.
@@ -1443,7 +1453,7 @@ pub async fn repair_history_cm_flags(app: AppHandle) {
                 .map(|hp| hp <= SUCCESS_HP_THRESHOLD)
                 .unwrap_or(false);
         let quickplay_bad = rec.is_quick_play.is_none() && rec.url.is_some();
-        if (!cm_bad && !lcm_bad && !success_bad && !quickplay_bad) || rec.url.is_none() {
+        if (!cm_bad && !cm_local_override && !lcm_bad && !success_bad && !quickplay_bad) || rec.url.is_none() {
             continue;
         }
         let permalink = dps_permalink(&rec.url.clone().unwrap());
@@ -1460,6 +1470,21 @@ pub async fn repair_history_cm_flags(app: AppHandle) {
                     // Mark as confirmed so the self-heal never re-queries this
                     // record (a Normal log returns false and would otherwise loop).
                     rec.cm_verified = Some(true);
+                }
+            }
+            // Local EVTC fallback: dps.report's isCM can be stale/wrong for newer
+            // bosses (e.g. Vloxx CM). When the local parse (health-threshold)
+            // says CM=true, override dps.report's Some(false).
+            if cm_local_override {
+                let local_cm = if !rec.file_path.is_empty() {
+                    std::fs::read(&rec.file_path)
+                        .ok()
+                        .map(|bytes| crate::evtc_parser::parse_is_cm(&bytes))
+                } else {
+                    None
+                };
+                if local_cm == Some(Some(true)) {
+                    rec.is_cm = Some(true);
                 }
             }
             if lcm_bad {
@@ -1965,7 +1990,7 @@ async fn spawn_upload(
 
     // 1) Already in History? Skip the re-upload, but keep it visible in the
     //    drawer (state "skipped") for a short window so the user sees the full batch.
-    if already_in_history(app, &file_path) {
+    if already_in_history(&file_path) {
         emit_skipped(app, &file_path, &file_name);
         return;
     }
@@ -2104,6 +2129,21 @@ fn schedule_processing_check(
                         .unwrap_or("")
                         .to_lowercase()
                         .replace(|c: char| !c.is_ascii_alphanumeric(), "");
+                    // Local EVTC fallback: dps.report's isCM can be wrong for
+                    // newer bosses (e.g. Vloxx CM) that don't emit statechange 35
+                    // on dps.report's end. Try the local parse (health threshold).
+                    if rec.is_cm == Some(false) && boss_cm_eligible(&boss_l_for_qp) {
+                        let local_cm = if !rec.file_path.is_empty() {
+                            std::fs::read(&rec.file_path)
+                                .ok()
+                                .map(|bytes| crate::evtc_parser::parse_is_cm(&bytes))
+                        } else {
+                            None
+                        };
+                        if local_cm == Some(Some(true)) {
+                            rec.is_cm = Some(true);
+                        }
+                    }
                     if rec.is_quick_play.is_none() && quick_play_boss(&boss_l_for_qp) {
                         if let Some(phase) = json.get("fightMode").and_then(|v| v.as_str()) {
                             rec.is_quick_play = Some(phase == "Quickplay Normal Mode");
@@ -2902,6 +2942,21 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                                     .unwrap_or_default()
                             );
                             let api_boss = vstr(enc, "boss");
+                            // Capture the local boss name + CM eligibility BEFORE the
+                            // API boss name overwrites ours. dps.report can return a
+                            // different name than what arcDPS recorded internally —
+                            // e.g. "Vloxx" the NPC vs "Nexus of Eternity" the encounter.
+                            // The CM-eligibility table is keyed on the local name, so we
+                            // must snapshot it here to avoid false negatives in the fallback.
+                            let pre_api_boss_name = record.boss_name.clone();
+                            let pre_api_clean: String = pre_api_boss_name
+                                .as_deref()
+                                .unwrap_or("")
+                                .to_lowercase()
+                                .replace(|c: char| !c.is_ascii_alphanumeric(), "");
+                            let pre_api_cm_eligible =
+                                record.is_convergence == Some(true)
+                                    || boss_cm_eligible(&pre_api_clean);
                             // dps.report returns "DPS.Report" for story instances (no real
                             // name); we already set the proper instance name from the map id
                             // above, so keep ours instead of clobbering it with the generic tag.
@@ -2957,17 +3012,13 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                                 .map(|n| n as u32);
                             let api_cm = vbool(enc, "isCm")
                                 .or_else(|| enc.get("isCM").and_then(|v| v.as_bool()));
-                            // dps.report is usually authoritative for CM, but convergences
-                            // are parsed locally. Preserve the local convergence result and
-                            // only apply the API override for non-convergence encounters.
-                            let clean_api = record
-                                .boss_name
-                                .as_deref()
-                                .unwrap_or("")
-                                .to_lowercase()
-                                .replace(|c: char| !c.is_ascii_alphanumeric(), "");
-                            let cm_eligible =
-                                record.is_convergence == Some(true) || boss_cm_eligible(&clean_api);
+                            // Use the boss name / CM-eligibility captured BEFORE the API
+                            // boss name overwrote ours. dps.report can return a different
+                            // name than what arcDPS recorded (e.g. "Vloxx" vs
+                            // "Nexus of Eternity"), and the CM-eligibility table is keyed
+                            // on the local name — so using the post-overwrite name here
+                            // would wrongly mark Vloxx CM as non-eligible and clobber the
+                            // local health-threshold detection.
                             if record.is_convergence == Some(true) {
                                 record.is_cm = Some(local_is_cm.unwrap_or(false));
                             } else if let Some(v) = api_cm {
@@ -2975,10 +3026,10 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                                     record.is_cm = Some(true);
                                 } else {
                                     record.is_cm =
-                                        Some(cm_eligible && local_is_cm.unwrap_or(false));
+                                        Some(pre_api_cm_eligible && local_is_cm.unwrap_or(false));
                                 }
                             } else {
-                                record.is_cm = Some(cm_eligible && local_is_cm.unwrap_or(false));
+                                record.is_cm = Some(pre_api_cm_eligible && local_is_cm.unwrap_or(false));
                             }
 
                             // LCM — only Ura (raid) and Temple of Febe (strike) are LCM-eligible.
@@ -2994,7 +3045,7 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                                 .or_else(|| enc.get("legendaryChallenge"))
                                 .and_then(|v| v.as_bool());
                             let lcm_eligible = record.is_convergence == Some(true)
-                                || boss_lcm_eligible(&clean_api);
+                                || boss_lcm_eligible(&pre_api_clean);
                             record.is_lcm = if record.is_convergence == Some(true) {
                                 local_is_lcm
                             } else if lcm_eligible {
@@ -4368,11 +4419,13 @@ const RAID_CM_INFO: &[(&str, RaidCmInfo)] = &[
             lcm: false,
         },
     ),
-    // Visions of Eternity: Nexus of Eternity (Vloxx) — Normal mode only (no CM yet)
+    // Visions of Eternity: Nexus of Eternity (Vloxx) — CM detected via 70M HP
+    // threshold, matching Elite Insights v3.30.2's GetLogMode(). LCM not yet
+    // supported by Elite Insights — set lcm: true when it ships.
     (
         "vloxx",
         RaidCmInfo {
-            cm: false,
+            cm: true,
             lcm: false,
         },
     ),
@@ -5207,6 +5260,7 @@ pub async fn get_history_cache_size(app: AppHandle) -> Result<(u64, usize), Stri
 /// Delete the entire history cache database.
 pub async fn clear_history_cache(app: AppHandle) -> Result<(), String> {
     crate::config::save_history(&app, &[])?;
+    crate::config::invalidate_history_set(&app);
     Ok(())
 }
 

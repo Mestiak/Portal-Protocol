@@ -2033,6 +2033,7 @@ pub fn parse_is_cm(bytes: &[u8]) -> Option<bool> {
         27124 => Some(55_000_000), // Kela Seneschal of Waves (W8)
         25989 => Some(80_000_000), // Cerus / Temple of Febe (SotO)
         26712 => Some(70_000_000), // Ura the Steamshrieker  (MbW)
+        28106 => Some(70_000_000), // Vloxx / Nexus of Eternity (VoE)
         _ => None,
     };
 
@@ -2108,6 +2109,7 @@ pub fn parse_is_lcm(bytes: &[u8]) -> Option<bool> {
     let lcm_threshold: Option<u64> = match boss_id {
         25989 => Some(115_000_000), // Cerus / Temple of Febe (SotO)
         26712 => Some(90_000_000),  // Ura the Steamshrieker  (MbW)
+        // 28106 (Vloxx / Nexus of Eternity) — LCM threshold not yet known from EI
         _ => None,
     };
 

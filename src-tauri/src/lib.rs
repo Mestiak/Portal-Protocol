@@ -163,6 +163,7 @@ async fn save_config(
                     &new_config.logs_directory,
                     state.upload_tx.clone(),
                     new_config.watch_stability_delay_ms,
+                    new_config.watch_poll_interval_ms,
                 )?;
             } else {
                 watcher.stop();
@@ -430,7 +431,9 @@ async fn get_history_page(
 
 #[tauri::command]
 async fn clear_history(app: AppHandle) -> Result<(), String> {
-    config::save_history(&app, &[])
+    config::save_history(&app, &[])?;
+    config::invalidate_history_set(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -439,7 +442,9 @@ async fn delete_history_log(app: AppHandle, file_path: String) -> Result<(), Str
         let before = history.len();
         history.retain(|r| r.file_path != file_path);
         history.len() != before
-    })
+    })?;
+    config::invalidate_history_set(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -458,7 +463,9 @@ async fn delete_history_logs(app: AppHandle, file_paths: Vec<String>) -> Result<
         let before = history.len();
         history.retain(|r| !file_paths.contains(&r.file_path));
         history.len() != before
-    })
+    })?;
+    config::invalidate_history_set(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -771,6 +778,7 @@ async fn import_config(app: AppHandle, state: State<'_, AppState>) -> Result<(),
                     &imported.logs_directory,
                     state.upload_tx.clone(),
                     imported.watch_stability_delay_ms,
+                    imported.watch_poll_interval_ms,
                 )?;
             } else {
                 watcher.stop();
@@ -875,8 +883,12 @@ pub fn run() {
             // A1: restore any webhook recovery queue persisted before a mid-outage
             // restart, so queued posts drain once dps.report is back.
             crate::uploader::load_webhook_recovery(app.handle());
+            // Populate the in-memory history file-path set from the persisted history.json
+            // so that `already_in_history()` can do an O(1) contains check instead of
+            // loading the full 2000+ record history from disk on every watcher detection.
+            crate::config::load_history_into_set(app.handle());
             if config.auto_upload && !config.logs_directory.is_empty() {
-                let _ = watcher.start(&config.logs_directory, tx.clone(), config.watch_stability_delay_ms);
+                let _ = watcher.start(&config.logs_directory, tx.clone(), config.watch_stability_delay_ms, config.watch_poll_interval_ms);
             }
 
             // Start minimized to the system tray if enabled (window hidden until summoned).

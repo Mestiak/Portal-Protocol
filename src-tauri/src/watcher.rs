@@ -36,6 +36,7 @@ impl LogWatcher {
         path_str: &str,
         tx: AsyncSender<PathBuf>,
         stability_delay_ms: u64,
+        poll_interval_ms: u64,
     ) -> Result<(), String> {
         // Stop existing watcher + forwarding thread if active
         self.stop();
@@ -52,7 +53,7 @@ impl LogWatcher {
 
         let mut watcher = RecommendedWatcher::new(
             std_tx,
-            notify::Config::default().with_poll_interval(Duration::from_secs(1)),
+            notify::Config::default().with_poll_interval(Duration::from_millis(poll_interval_ms.max(100))),
         )
         .map_err(|e| e.to_string())?;
 

@@ -3,8 +3,10 @@
 // Licensed under MIT License
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 use tauri::AppHandle;
 use tauri::Manager;
 
@@ -187,6 +189,13 @@ pub struct AppConfig {
     /// debouncing against ArcDPS partial writes. Default 500 (legacy behaviour).
     #[serde(default = "default_stability_delay")]
     pub watch_stability_delay_ms: u64,
+    /// Interval in ms between directory scans when auto-upload is watching a folder.
+    /// Default 5000 (5 s). Lowering this increases the rate at which background
+    /// file touches (AV, indexing, arcdps internals) re-queue already-processed
+    /// logs; raising it reduces responsiveness to genuine new logs. Floor 100 ms
+    /// enforced on the watcher side.
+    #[serde(default = "default_watch_poll_interval_ms")]
+    pub watch_poll_interval_ms: u64,
     /// Retries for transient dps.report failures (5xx / network). Total attempts
     /// = 1 (initial) + max_upload_retries. Default 3 (was hardcoded 2).
     #[serde(default = "default_upload_retries")]
@@ -340,6 +349,10 @@ pub enum EncounterOutcome {
     Wipe,
 }
 
+fn default_watch_poll_interval_ms() -> u64 {
+    5000
+}
+
 fn default_true() -> bool {
     true
 }
@@ -396,6 +409,7 @@ impl Default for AppConfig {
             wvw_enabled: false,
             max_concurrent_uploads: 2,
             watch_stability_delay_ms: default_stability_delay(),
+            watch_poll_interval_ms: default_watch_poll_interval_ms(),
             max_upload_retries: default_upload_retries(),
             min_log_seconds: 0.0,
             log_cache_max_files: default_log_cache_max_files(),
@@ -567,8 +581,48 @@ pub fn save_history(
 }
 
 /// Normalize a log file path: forward slashes, trim, lowercase — for dedup comparisons.
-pub fn normalize_path(p: &str) -> String {
-    p.replace('/', "\\").to_lowercase()
+pub fn normalize_path(path: &str) -> String {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    let replaced = trimmed.replace('/', "\\");
+    replaced.to_lowercase()
+}
+
+/// In-memory set of normalized file paths present in history.json.
+///
+/// Loaded once at startup from `load_history_into_set`. Used by
+/// `already_in_history()` to do an O(1) dedup check instead of loading
+/// the full history from disk on every watcher detection.
+pub static HISTORY_FILE_SET: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+
+/// Load history.json into the in-memory file-path set. Called once at startup.
+pub fn load_history_into_set(app: &AppHandle) {
+    let set = HISTORY_FILE_SET.get_or_init(|| Mutex::new(HashSet::new()));
+    let mut g = set.lock().unwrap();
+    let history = load_history(app);
+    *g = history
+        .into_iter()
+        .map(|r| normalize_path(&r.file_path))
+        .collect();
+}
+
+/// Get a shared reference to the in-memory file-path set.
+pub fn history_file_set() -> Option<std::sync::MutexGuard<'static, HashSet<String>>> {
+    HISTORY_FILE_SET.get().and_then(|s| s.lock().ok())
+}
+
+/// Rebuild the in-memory file-path set from the current history.json on disk.
+pub fn invalidate_history_set(app: &AppHandle) {
+    let Some(mut g) = history_file_set() else {
+        return;
+    };
+    let history = load_history(app);
+    *g = history
+        .into_iter()
+        .map(|r| normalize_path(&r.file_path))
+        .collect();
 }
 
 /// Persisted set of log file paths the user deleted from the Uploads Feed.
