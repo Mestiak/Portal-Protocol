@@ -1036,21 +1036,23 @@ pub fn enrich_record_from_ei(record: &mut crate::uploader::UploadRecord, ei: &Va
     }
 
     if is_ura && (record.is_cm == Some(true) || record.is_lcm == Some(true)) {
-        // Detect Ura health regeneration. EI creates a phase named "100% - 1%"
-        // when Ura crosses 1% HP and begins regenerating. The "Healed" sub-phase
-        // is only present if the Determined895 buff was removed before wipe.
-        // Check ALL phases[] (not just sub-phases) for matching names.
+        // Detect Ura health regeneration (AHR badge).
+        // EI creates phases when Ura crosses 1% HP and regenerates:
+        // - "100% - 1%" / "Healed" sub-phases (created when Determined895 is detected)
+        // - "70% - 1%" in CM (vs "70% - 0%" in NM) — indicates boss went to 1% without dying
+        // In CM mode, any phase name with "70% - 1%" means the boss was healed from 1%.
         let has_healed_phase =
             ei.get("phases")
                 .and_then(|v| v.as_array())
                 .map_or(false, |phases| {
                     phases.iter().any(|p| {
                         let name = p.get("name").and_then(|n| n.as_str()).unwrap_or("");
-                        // Phase name indicating Ura reached 1% and healed
+                        // Phase names explicitly indicating Ura hit 1% and was healed
                         name == "100% - 1%" || name.contains("100% - 1%") ||
                 name == "Healed" || name.to_lowercase().contains("healed") ||
-                // EI phase names for Ura split phases
-                name.contains("100%") && name.contains("1%")
+                name.contains("100%") && name.contains("1%") ||
+                // CM-only: "70% - 1%" means boss reached 1% and regenerated (NM uses "70% - 0%")
+                name == "70% - 1%" || name == "40% - 1%"
                     })
                 });
         eprintln!("[AHR_DEBUG] has_healed_phase={}", has_healed_phase);
@@ -1229,5 +1231,62 @@ mod tests {
         assert_eq!(phases[1].targets.len(), 3);
         assert_eq!(phases[1].targets[2].key, "theritualist");
         assert_eq!(phases[1].targets[2].hp_left, Some(50.0));
+    }
+
+    #[test]
+    fn test_ura_ahr_detection_with_70_1_percent_phase() {
+        // Simulates EI JSON where the Determined895 buff wasn't detected,
+        // but the "70% - 1%" CM phase name still indicates AHR occurred.
+        let ei = json!({
+            "bossName": "Godscream Ura",
+            "phases": [
+                {"name": "Full Fight", "success": true, "targets": [0]},
+                {"name": "100% - 70%", "success": true, "targets": [0]},
+                {"name": "70% - 1%", "success": true, "targets": [0]},
+                {"name": "40% - 1%", "success": true, "targets": [0]}
+            ]
+        });
+        let mut record = crate::uploader::UploadRecord::default();
+        record.boss_name = Some("Godscream Ura".to_string());
+        record.is_cm = Some(true);
+        enrich_record_from_ei(&mut record, &ei);
+        assert_eq!(record.ura_health_regen, Some("AHR".to_string()));
+    }
+
+    #[test]
+    fn test_ura_ahr_detection_with_100_1_and_healed_phases() {
+        // Traditional case where Determined895 IS detected and "100% - 1%" + "Healed" exist.
+        let ei = json!({
+            "bossName": "Godscream Ura",
+            "phases": [
+                {"name": "Full Fight", "success": true, "targets": [0]},
+                {"name": "100% - 1%", "success": true, "targets": [0]},
+                {"name": "Healed", "success": true, "targets": [0]}
+            ]
+        });
+        let mut record = crate::uploader::UploadRecord::default();
+        record.boss_name = Some("Godscream Ura".to_string());
+        record.is_cm = Some(true);
+        enrich_record_from_ei(&mut record, &ei);
+        assert_eq!(record.ura_health_regen, Some("AHR".to_string()));
+    }
+
+    #[test]
+    fn test_ura_no_ahr_in_nm() {
+        // Normal mode uses "70% - 0%" not "70% - 1%", so no AHR.
+        let ei = json!({
+            "bossName": "Ura, the Steamshrieker",
+            "phases": [
+                {"name": "Full Fight", "success": true, "targets": [0]},
+                {"name": "100% - 70%", "success": true, "targets": [0]},
+                {"name": "70% - 0%", "success": false, "targets": [0]}
+            ]
+        });
+        let mut record = crate::uploader::UploadRecord::default();
+        record.boss_name = Some("Ura, the Steamshrieker".to_string());
+        record.is_cm = None;
+        record.is_lcm = None;
+        enrich_record_from_ei(&mut record, &ei);
+        assert_eq!(record.ura_health_regen, None);
     }
 }
