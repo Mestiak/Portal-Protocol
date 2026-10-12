@@ -471,10 +471,10 @@
               };
             }
           } catch (e: any) {
-            console.warn("[Revealed] local parse failed:", e?.message || e);
+            // Errors are surfaced via the outer catch at line 487.
           }
         } else {
-          console.warn("[Revealed] local merge skipped; localPath=", localPath, "mech=", mech ? "yes" : "no");
+          // Local merge skipped — no error to surface.
         }
         mechanics = mech;
         // Non-Cerus fights only get the Boon Uptime tab — skip Statistics.
