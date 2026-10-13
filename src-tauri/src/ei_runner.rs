@@ -528,6 +528,10 @@ pub fn enrich_record_from_ei(record: &mut crate::uploader::UploadRecord, ei: &Va
         "oldlionscourt",
         "kainengoverlook",
         "ministerli",
+        "prototypevermilion",
+        "prototypearsenite",
+        "prototypeindigo",
+        "prototypegold",
     ];
     let boss_clean = record
         .boss_name

@@ -4531,6 +4531,15 @@ const QUICK_PLAY_BOSS_NAMES: &[&str] = &[
     "templeoffebe",
     "xunlaijadejunkyard",
     "oldlionscourt",
+    // Old Lions Court watchknight variant names (EI reads the NPC name from
+    // the agent table, which is "Prototype Vermilion" / "Prototype Arsenite" /
+    // "Prototype Indigo" / "Prototype Gold", not the encounter name "Old Lions
+    // Court"). Without these here, the allowlist gate silently drops the local
+    // QP buff-scan result and the badge falls through to "Normal Mode".
+    "prototypevermilion",
+    "prototypearsenite",
+    "prototypeindigo",
+    "prototypegold",
     "kainengoverlook",
     "ministerli",
 ];
