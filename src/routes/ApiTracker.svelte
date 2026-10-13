@@ -379,6 +379,10 @@
 
     for (const log of logs) {
       if (log.status !== "Completed" || log.success !== true) continue;
+      // Quick Play logs are difficulty-reduced encounters and must NOT mark
+      // bosses as cleared in the weekly clears tracker — they are excluded
+      // from clears so only genuine Normal/CM/LCM kills count.
+      if (log.is_quick_play === true) continue;
       // Ignore convergence logs when checking raid bosses
       if (isRaid && log.is_convergence === true) continue;
 
@@ -497,6 +501,8 @@
     const hasRecentRaidLogs = (logs || []).some((log) => {
       if (log.status !== "Completed" || log.success !== true) return false;
       if (log.is_convergence === true || log.is_wvw === true) return false;
+      // Quick Play logs must not count as real clears for the staleness check.
+      if (log.is_quick_play === true) return false;
       if (!log.timestamp) return false;
       const logDate = parseLocalTimestamp(log.timestamp);
       if (!logDate || isNaN(logDate.getTime())) return false;

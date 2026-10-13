@@ -1319,7 +1319,8 @@ pub async fn repair_history_cm_flags(app: AppHandle) {
                     .boss_hp_left
                     .map(|hp| hp <= SUCCESS_HP_THRESHOLD)
                     .unwrap_or(false);
-            (cm_bad || lcm_bad || success_bad) && rec.url.is_some()
+            let quickplay_bad = rec.is_quick_play.is_none() && rec.url.is_some();
+            (cm_bad || lcm_bad || success_bad || quickplay_bad) && rec.url.is_some()
         })
         .count();
     if repair_total > 0 {
@@ -3065,6 +3066,19 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                                 Some(false)
                             };
 
+                            // Quick Play: fall back to dps.report's `fightMode` only when the
+                            // local EVTC buff-scan and EI enrich both came up short (None). The
+                            // local scan is authoritative for QP-eligible bosses; dps.report's
+                            // `fightMode` field is the authoritative fallback when the local
+                            // parse couldn't reach the buffs (e.g. encrypted .zevtc / .evtc
+                            // without raw buff events). Only set for QP-eligible bosses so we
+                            // never accidentally tag a non-QP raid as Quick Play.
+                            if record.is_quick_play.is_none() && quick_play_boss(&pre_api_clean) {
+                                if let Some(fm) = enc.get("fightMode").and_then(|v| v.as_str()) {
+                                    record.is_quick_play = Some(fm == "Quickplay Normal Mode");
+                                }
+                            }
+
                             // Ura CM/LCM: detect health regeneration phase (AHR = After Health Regeneration).
                             // Check local EI cache first (has phases), then fall back to local EVTC parse
                             let is_ura = record.boss_name.as_deref().map_or(false, |name| {
@@ -4517,6 +4531,15 @@ const QUICK_PLAY_BOSS_NAMES: &[&str] = &[
     "templeoffebe",
     "xunlaijadejunkyard",
     "oldlionscourt",
+    // Old Lions Court watchknight variant names (EI reads the NPC name from
+    // the agent table, which is "Prototype Vermilion" / "Prototype Arsenite" /
+    // "Prototype Indigo" / "Prototype Gold", not the encounter name "Old Lions
+    // Court"). Without these here, the allowlist gate silently drops the local
+    // QP buff-scan result and the badge falls through to "Normal Mode".
+    "prototypevermilion",
+    "prototypearsenite",
+    "prototypeindigo",
+    "prototypegold",
     "kainengoverlook",
     "ministerli",
 ];

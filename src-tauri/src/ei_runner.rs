@@ -501,6 +501,8 @@ pub fn enrich_record_from_ei(record: &mut crate::uploader::UploadRecord, ei: &Va
     // IMPORTANT: QP is only valid for specific strikes and fractals. Raids like
     // Kaineng Overlook, Convergences, etc. can NEVER be Quick Play, even if EI
     // detects QP buffs incorrectly. Check the boss name against the allowlist.
+    // The allowlist mirrors `QUICK_PLAY_BOSS_NAMES` in uploader.rs so the local
+    // EVTC buff-scan and the EI phase-mode scan agree on which bosses are eligible.
     let qp_allowed_bosses = [
         "aetherbladelet",
         "cliffside",
@@ -517,7 +519,19 @@ pub fn enrich_record_from_ei(record: &mut crate::uploader::UploadRecord, ei: &Va
         "volcanic",
         "captainmaitrin",
         "dagda",
-        // Note: Convergences, Kaineng, etc. are raids, NOT QP
+        "aetherbladehideout",
+        "whisperofjormag",
+        "boneskinner",
+        "cosmicobservatory",
+        "templeoffebe",
+        "xunlaijadejunkyard",
+        "oldlionscourt",
+        "kainengoverlook",
+        "ministerli",
+        "prototypevermilion",
+        "prototypearsenite",
+        "prototypeindigo",
+        "prototypegold",
     ];
     let boss_clean = record
         .boss_name
@@ -526,14 +540,22 @@ pub fn enrich_record_from_ei(record: &mut crate::uploader::UploadRecord, ei: &Va
         .to_lowercase()
         .replace(|c: char| !c.is_ascii_alphanumeric(), "");
     if qp_allowed_bosses.contains(&boss_clean.as_str()) {
-        if let Some(phase) = ei
-            .get("phases")
-            .and_then(|v| v.as_array())
-            .and_then(|arr| arr.first())
-            .and_then(|p| p.get("mode"))
-            .and_then(|v| v.as_str())
-        {
-            record.is_quick_play = Some(phase == "Quickplay Normal Mode");
+        // Only let EI fill in `is_quick_play` when the local EVTC buff-scan was
+        // inconclusive (None). The local scan is authoritative for these bosses
+        // — it reads the raw QP buffs directly — so we must not overwrite a
+        // correct local result with EI's phase-mode field, which can be absent
+        // on edge-case logs (e.g. logs with no phases array) and would clobber
+        // a valid Some(true) with nothing, dropping the QP badge.
+        if record.is_quick_play.is_none() {
+            if let Some(phase) = ei
+                .get("phases")
+                .and_then(|v| v.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|p| p.get("mode"))
+                .and_then(|v| v.as_str())
+            {
+                record.is_quick_play = Some(phase == "Quickplay Normal Mode");
+            }
         }
     }
 
@@ -1288,5 +1310,57 @@ mod tests {
         record.is_lcm = None;
         enrich_record_from_ei(&mut record, &ei);
         assert_eq!(record.ura_health_regen, None);
+    }
+
+    #[test]
+    fn test_qp_not_overwritten_by_ei_when_local_set() {
+        // Local EVTC buff-scan already detected QP (Some(true)). EI enrich
+        // must NOT overwrite it — even if EI's phases[0].mode says "Normal Mode"
+        // (edge case: phase mode field missing or stale).
+        let ei = json!({
+            "bossName": "Whisper of Jormag",
+            "phases": [
+                {"name": "Phase 1", "mode": "Normal Mode", "success": true, "targets": [0]}
+            ]
+        });
+        let mut record = crate::uploader::UploadRecord::default();
+        record.boss_name = Some("Whisper of Jormag".to_string());
+        record.is_quick_play = Some(true); // local parse detected QP buffs
+        enrich_record_from_ei(&mut record, &ei);
+        assert_eq!(record.is_quick_play, Some(true), "EI must not overwrite a correct local QP detection");
+    }
+
+    #[test]
+    fn test_qp_filled_by_ei_when_local_none() {
+        // Local parse was inconclusive (None) for a QP-eligible boss.
+        // EI's phases[0].mode = "Quickplay Normal Mode" should fill it in.
+        let ei = json!({
+            "bossName": "Captain Mai Trin",
+            "phases": [
+                {"name": "Phase 1", "mode": "Quickplay Normal Mode", "success": true, "targets": [0]}
+            ]
+        });
+        let mut record = crate::uploader::UploadRecord::default();
+        record.boss_name = Some("Captain Mai Trin".to_string());
+        record.is_quick_play = None;
+        enrich_record_from_ei(&mut record, &ei);
+        assert_eq!(record.is_quick_play, Some(true), "EI should fill in QP when local parse was inconclusive");
+    }
+
+    #[test]
+    fn test_qp_not_set_for_non_qp_boss() {
+        // A non-QP boss (e.g. Harvest Temple) should never get is_quick_play
+        // set from the EI phase mode, even if the mode string were present.
+        let ei = json!({
+            "bossName": "The Dragonvoid",
+            "phases": [
+                {"name": "Phase 1", "mode": "Normal Mode", "success": true, "targets": [0]}
+            ]
+        });
+        let mut record = crate::uploader::UploadRecord::default();
+        record.boss_name = Some("The Dragonvoid".to_string());
+        record.is_quick_play = None;
+        enrich_record_from_ei(&mut record, &ei);
+        assert_eq!(record.is_quick_play, None, "Non-QP bosses must not get QP flag from EI");
     }
 }
