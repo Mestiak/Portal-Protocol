@@ -83,14 +83,22 @@ jobs:
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
-        with:
-          path: portal-protocol-artifacts
+
+      - name: Debug - list downloaded artifacts
+        run: |
+          echo "=== Downloaded directories ==="
+          ls -d */ 2>/dev/null
+          echo "=== All files ==="
+          find . -type f | sort
 
       - name: Prepare release files
         run: |
           mkdir -p release-binaries
-          for dir in portal-protocol-artifacts/*/; do
-            [ -d "$dir" ] && find "$dir" -type f -exec cp {} release-binaries/ \;
+          for dir in portal-protocol-*/; do
+            if [ -d "$dir" ]; then
+              echo "Processing $dir"
+              find "$dir" -type f -exec cp {} release-binaries/ \;
+            fi
           done
           rm -f release-binaries/latest.json
           echo "=== Flattened files ==="
@@ -137,18 +145,9 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: Portal Protocol ${{ github.ref_name }}
           draft: true
+          files: |
+            release-binaries/*
+            latest.json
           body_path: RELEASE-NOTES.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload binary assets
-        run: |
-          gh release upload ${{ github.ref_name }} release-binaries/*
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload latest.json
-        run: |
-          gh release upload ${{ github.ref_name }} latest.json --clobber
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
