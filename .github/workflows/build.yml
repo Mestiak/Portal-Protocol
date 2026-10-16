@@ -68,7 +68,6 @@ jobs:
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           CI: true
@@ -79,7 +78,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.asset_path }}
+          path: src-tauri/target/release/bundle/**
 
   release:
     needs: build
@@ -93,10 +92,10 @@ jobs:
 
       - name: Generate latest.json
         run: |
-          # Read signature files
-          WIN_SIG=$(cat portal-protocol-windows-x64/*.sig | tr -d '\n')
-          MAC_SIG=$(cat portal-protocol-macos-aarch64/*.sig | tr -d '\n')
-          LINUX_SIG=$(cat portal-protocol-linux-x64/*.sig | tr -d '\n')
+          # Read signature files (search recursively since Tauri puts bundles in subdirs)
+          WIN_SIG=$(find portal-protocol-windows-x64/ -name "*.sig" -print -quit | xargs cat | tr -d '\n')
+          MAC_SIG=$(find portal-protocol-macos-aarch64/ -name "*.sig" -print -quit | xargs cat | tr -d '\n')
+          LINUX_SIG=$(find portal-protocol-linux-x64/ -name "*.sig" -print -quit | xargs cat | tr -d '\n')
           
           # Construct download URLs
           WIN_URL="https://github.com/Mestiak/Portal-Protocol/releases/download/${{ github.ref_name }}/Portal.Protocol_${{ github.ref_name }}_x64-setup.exe"
@@ -127,18 +126,11 @@ jobs:
           EOF
 
       - name: Delete existing release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "Checking for existing release for tag ${{ github.ref_name }}..."
-          EXISTING_ID=$(curl -sf -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ github.ref_name }}" \
-            | jq -r '.id // empty')
-          if [ -n "$EXISTING_ID" ]; then
-            echo "Deleting existing release (ID: $EXISTING_ID) to force fresh asset upload"
-            curl -sf -X DELETE -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-              "https://api.github.com/repos/${{ github.repository }}/releases/$EXISTING_ID"
-          else
-            echo "No existing release found, proceeding with fresh creation"
-          fi
+          gh release delete ${{ github.ref_name }} --yes || echo "No existing release to delete"
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
