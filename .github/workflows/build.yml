@@ -73,6 +73,11 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           CI: true
         with:
+          tagName: ${{ github.ref_name }}
+          releaseName: Portal Protocol ${{ github.ref_name }}
+          releaseBody: ${{ github.event.head_commit.message }}
+          releaseDraft: true
+          prerelease: false
           args: --target ${{ matrix.target }}
 
       - name: Upload artifacts
@@ -97,12 +102,12 @@ jobs:
           WIN_SIG=$(cat portal-protocol-windows-x64/*.sig | tr -d '\n')
           MAC_SIG=$(cat portal-protocol-macos-aarch64/*.sig | tr -d '\n')
           LINUX_SIG=$(cat portal-protocol-linux-x64/*.sig | tr -d '\n')
-          
+
           # Construct download URLs
           WIN_URL="https://github.com/Mestiak/Portal-Protocol/releases/download/${{ github.ref_name }}/Portal.Protocol_${{ github.ref_name }}_x64-setup.exe"
           MAC_URL="https://github.com/Mestiak/Portal-Protocol/releases/download/${{ github.ref_name }}/Portal.Protocol_${{ github.ref_name }}_aarch64.dmg"
           LINUX_URL="https://github.com/Mestiak/Portal-Protocol/releases/download/${{ github.ref_name }}/Portal.Protocol_${{ github.ref_name }}_amd64.AppImage"
-          
+
           # Generate latest.json
           cat > latest.json << EOF
           {
@@ -129,12 +134,15 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.ref_name }}
-          name: Portal Protocol ${{ github.ref_name }}
           draft: true
-          files: |
-            portal-protocol-*/**
-            latest.json
+          files: portal-protocol-*/**
           body_path: RELEASE-NOTES.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload latest.json as release asset
+        uses: softprops/action-gh-release@v1
+        with:
+          files: latest.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
