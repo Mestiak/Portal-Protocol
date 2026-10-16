@@ -73,11 +73,6 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           CI: true
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: Portal Protocol ${{ github.ref_name }}
-          releaseBody: ${{ github.event.head_commit.message }}
-          releaseDraft: true
-          prerelease: false
           args: --target ${{ matrix.target }}
 
       - name: Upload artifacts
@@ -134,15 +129,12 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: ${{ github.ref_name }}
+          name: Portal Protocol ${{ github.ref_name }}
           draft: true
-          files: portal-protocol-*/**
+          files: |
+            portal-protocol-*/**
+            latest.json
           body_path: RELEASE-NOTES.md
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload latest.json as release asset
-        uses: softprops/action-gh-release@v1
-        with:
-          files: latest.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
