@@ -78,7 +78,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: src-tauri/target/release/bundle/**
+          path: src-tauri/target/release/bundle
 
   release:
     needs: build
@@ -134,11 +134,14 @@ jobs:
 
       - name: Prepare release files
         run: |
-          echo "=== Downloaded artifact files ==="
-          find portal-protocol-* -type f | sort
-          echo "=== Copying to release-binaries/ ==="
+          echo "=== Downloaded artifact directories ==="
+          ls -d portal-protocol-*/ 2>/dev/null || echo "No portal-protocol-* dirs found"
+          echo "=== All files ==="
+          find portal-protocol-*/ -type f 2>/dev/null | sort
           mkdir -p release-binaries
-          find portal-protocol-* -type f -exec cp {} release-binaries/ \;
+          for dir in portal-protocol-*/; do
+            [ -d "$dir" ] && find "$dir" -type f -exec cp {} release-binaries/ \;
+          done
           echo "=== Flattened files ==="
           ls -la release-binaries/
 
