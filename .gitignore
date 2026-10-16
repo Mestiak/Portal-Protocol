@@ -8,7 +8,7 @@ build/
 src-tauri/target/
 
 # Tauri
-src-tauri/Cargo.lock
+# src-tauri/Cargo.lock is committed to prevent yanked crates.io version issues (zip v4.x yanked)
 
 # Local tooling
 .hermes/
