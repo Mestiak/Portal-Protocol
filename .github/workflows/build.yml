@@ -132,6 +132,16 @@ jobs:
           echo "Checking for existing release for tag ${{ github.ref_name }}..."
           gh release delete ${{ github.ref_name }} --yes || echo "No existing release to delete"
 
+      - name: Prepare release files
+        run: |
+          echo "=== Downloaded artifact files ==="
+          find portal-protocol-* -type f | sort
+          echo "=== Copying to release-binaries/ ==="
+          mkdir -p release-binaries
+          find portal-protocol-* -type f -exec cp {} release-binaries/ \;
+          echo "=== Flattened files ==="
+          ls -la release-binaries/
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
@@ -139,7 +149,7 @@ jobs:
           name: Portal Protocol ${{ github.ref_name }}
           draft: true
           files: |
-            portal-protocol-*/**
+            release-binaries/**
             latest.json
           body_path: RELEASE-NOTES.md
         env:
