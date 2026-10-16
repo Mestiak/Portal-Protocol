@@ -514,6 +514,25 @@
   type PatchNoteVersion = { version: string; date: string; image?: string; notes: PatchNoteCategory[] };
   const PATCH_NOTES_DATA: PatchNoteVersion[] = [
     {
+      version: "0.7.2",
+      date: "October 12, 2026",
+      notes: [
+        {
+          category: "🐞 Bug Fixes",
+          items: [
+            { title: "Quick Play Badge Detection Fixed", desc: "Quick Play logs were showing as \"Normal Mode\" instead of \"Quick Play.\" Three root causes: (1) the local EVTC parser only checked `isBuff == 1` — the old arcDPS format — and missed new-format state change events (18=_buffInitial, 69=buffApply, 70=buffChange); (2) two typos in the QP boss name allowlist (`prototypvermilion`/`prototyparsenite` missing an 'e'); (3) the EI runner allowlist was missing all four Prototype variant boss names. All fixed. Also added a dps.report fightMode fallback and excluded QP logs from weekly clears tracking." },
+            { title: "Convergence VL Rank Leakage Fixed", desc: "Janthir CM Convergences were incorrectly receiving raid boss Void Lounge ranks (e.g., \"The Stormsinger\" for Decima) because convergences share boss names with raid bosses." }
+          ]
+        },
+        {
+          category: "🙏 Credits & Thanks",
+          items: [
+            { title: "Quick Play Detection Research", desc: "Thanks to the Void Lounge Council for assistance with arcDPS state change format verification." }
+          ]
+        }
+      ]
+    },
+    {
       version: "0.7.1",
       date: "September 22, 2026",
       notes: [
