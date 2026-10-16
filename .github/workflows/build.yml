@@ -83,23 +83,24 @@ jobs:
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
+        with:
+          path: build-artifacts
 
-      - name: Debug - list downloaded artifacts
+      - name: Debug - inspect downloaded structure
         run: |
-          echo "=== Downloaded directories ==="
-          ls -d */ 2>/dev/null
-          echo "=== All files ==="
-          find . -type f | sort
+          echo "=== Top-level directories ==="
+          ls -la
+          echo "=== build-artifacts contents ==="
+          find build-artifacts -type f 2>/dev/null | head -50
+          echo "=== build-artifacts directories ==="
+          find build-artifacts -type d 2>/dev/null
 
       - name: Prepare release files
         run: |
           mkdir -p release-binaries
-          for dir in portal-protocol-*/; do
-            if [ -d "$dir" ]; then
-              echo "Processing $dir"
-              find "$dir" -type f -exec cp {} release-binaries/ \;
-            fi
-          done
+          # Copy all files from all downloaded artifacts
+          find build-artifacts -type f -exec cp {} release-binaries/ \;
+          # Remove any latest.json from artifacts (we generate our own)
           rm -f release-binaries/latest.json
           echo "=== Flattened files ==="
           ls -la release-binaries/
@@ -139,15 +140,17 @@ jobs:
           echo "=== latest.json ==="
           cat latest.json
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: Portal Protocol ${{ github.ref_name }}
-          draft: true
-          files: |
-            release-binaries/*
-            latest.json
-          body_path: RELEASE-NOTES.md
+      - name: Create Release and Upload Assets
+        run: |
+          echo "=== Files for upload ==="
+          ls -la release-binaries/
+          ls -la latest.json
+
+          gh release create ${{ github.ref_name }} \
+            --draft \
+            --title "Portal Protocol ${{ github.ref_name }}" \
+            --notes-file RELEASE-NOTES.md \
+            --generate-static-notes=false \
+            release-binaries/* latest.json
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
