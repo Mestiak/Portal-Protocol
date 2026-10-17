@@ -129,6 +129,14 @@ jobs:
           set -euo pipefail
           TAG="${{ github.ref_name }}"
           echo "=== Uploading all bundle files ==="
+          echo "=== All files in build-artifacts/ ==="
+          find build-artifacts -type f | sort
+          echo "=== Total files: $(find build-artifacts -type f | wc -l) ==="
+          echo ""
+          echo "=== Files matching Portal* ==="
+          find build-artifacts -type f -name "Portal*" | sort
+          echo "=== Portal* files: $(find build-artifacts -type f -name 'Portal*' | wc -l) ==="
+          echo ""
           FAILED=0
           while IFS= read -r -d '' file; do
             FILENAME=$(basename "$file")
@@ -140,7 +148,7 @@ jobs:
               echo "  FAILED"
               FAILED=$((FAILED + 1))
             fi
-          done < <(find build-artifacts -type f -name "Portal.Protocol_*" -print0)
+          done < <(find build-artifacts -type f -name "Portal*" -print0)
           echo "=== Upload complete: ${FAILED} failed ==="
           exit $FAILED
         env:
@@ -219,6 +227,7 @@ jobs:
       - name: Upload latest.json to release
         shell: bash
         run: |
+          set -euo pipefail
           TAG="${{ github.ref_name }}"
           echo "=== Uploading latest.json ==="
           gh release upload "$TAG" latest.json --clobber
