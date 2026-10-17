@@ -133,10 +133,43 @@ jobs:
           find build-artifacts -type f | sort
           echo "=== Total files: $(find build-artifacts -type f | wc -l) ==="
           echo ""
-          echo "=== Files matching Portal* ==="
-          find build-artifacts -type f -name "Portal*" | sort
-          echo "=== Portal* files: $(find build-artifacts -type f -name 'Portal*' | wc -l) ==="
+          echo "=== Bundle files (by extension) ==="
+          find build-artifacts -type f \( \
+            -name "*.exe" -o \
+            -name "*.exe.sig" -o \
+            -name "*.msi" -o \
+            -name "*.msi.sig" -o \
+            -name "*.dmg" -o \
+            -name "*.app.tar.gz" -o \
+            -name "*.app.tar.gz.sig" -o \
+            -name "*.AppImage" -o \
+            -name "*.AppImage.sig" -o \
+            -name "*.deb" -o \
+            -name "*.deb.sig" -o \
+            -name "*.rpm" -o \
+            -name "*.rpm.sig" \
+          \) | sort
+          BUNDLE_COUNT=$(find build-artifacts -type f \( \
+            -name "*.exe" -o \
+            -name "*.exe.sig" -o \
+            -name "*.msi" -o \
+            -name "*.msi.sig" -o \
+            -name "*.dmg" -o \
+            -name "*.app.tar.gz" -o \
+            -name "*.app.tar.gz.sig" -o \
+            -name "*.AppImage" -o \
+            -name "*.AppImage.sig" -o \
+            -name "*.deb" -o \
+            -name "*.deb.sig" -o \
+            -name "*.rpm" -o \
+            -name "*.rpm.sig" \
+          \) | wc -l)
+          echo "=== Bundle files: $BUNDLE_COUNT ==="
           echo ""
+          if [ "$BUNDLE_COUNT" -eq 0 ]; then
+            echo "ERROR: No bundle files found!"
+            exit 1
+          fi
           FAILED=0
           while IFS= read -r -d '' file; do
             FILENAME=$(basename "$file")
@@ -148,9 +181,27 @@ jobs:
               echo "  FAILED"
               FAILED=$((FAILED + 1))
             fi
-          done < <(find build-artifacts -type f -name "Portal*" -print0)
+          done < <(find build-artifacts -type f \( \
+            -name "*.exe" -o \
+            -name "*.exe.sig" -o \
+            -name "*.msi" -o \
+            -name "*.msi.sig" -o \
+            -name "*.dmg" -o \
+            -name "*.app.tar.gz" -o \
+            -name "*.app.tar.gz.sig" -o \
+            -name "*.AppImage" -o \
+            -name "*.AppImage.sig" -o \
+            -name "*.deb" -o \
+            -name "*.deb.sig" -o \
+            -name "*.rpm" -o \
+            -name "*.rpm.sig" \
+          \) -print0)
           echo "=== Upload complete: ${FAILED} failed ==="
-          exit $FAILED
+          if [ "$FAILED" -gt 0 ]; then
+            echo "ERROR: $FAILED uploads failed!"
+            exit 1
+          fi
+          exit 0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
