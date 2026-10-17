@@ -9,7 +9,21 @@ permissions:
   actions: read
 
 jobs:
+  create_release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create Draft Release
+        run: |
+          gh release create ${{ github.ref_name }} \
+            --draft \
+            --title "Portal Protocol ${{ github.ref_name }}" \
+            --notes-file RELEASE-NOTES.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   build:
+    needs: create_release
     strategy:
       fail-fast: false
       matrix:
@@ -17,13 +31,10 @@ jobs:
         include:
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_name: portal-protocol-windows-x64
           - platform: macos-latest
             target: aarch64-apple-darwin
-            artifact_name: portal-protocol-macos-aarch64
           - platform: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-            artifact_name: portal-protocol-linux-x64
 
     runs-on: ${{ matrix.platform }}
 
@@ -69,56 +80,47 @@ jobs:
         with:
           args: --target ${{ matrix.target }}
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact_name }}
-          path: src-tauri/target/release/bundle
+      - name: Upload bundle to release
+        shell: bash
+        run: |
+          echo "=== Bundle files ==="
+          find src-tauri/target/release/bundle -type f | sort
+          echo "=== Uploading ==="
+          find src-tauri/target/release/bundle -type f -print0 | xargs -0 gh release upload ${{ github.ref_name }} --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  release:
+  finalize:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: build-artifacts
-
-      - name: Debug - inspect downloaded structure
+      - name: Download signatures from release
         run: |
-          echo "=== Top-level directories ==="
-          ls -la
-          echo "=== build-artifacts contents ==="
-          find build-artifacts -type f 2>/dev/null | head -50
-          echo "=== build-artifacts directories ==="
-          find build-artifacts -type d 2>/dev/null
-
-      - name: Prepare release files
-        run: |
-          mkdir -p release-binaries
-          # Copy all files from all downloaded artifacts
-          find build-artifacts -type f -exec cp {} release-binaries/ \;
-          # Remove any latest.json from artifacts (we generate our own)
-          rm -f release-binaries/latest.json
-          echo "=== Flattened files ==="
-          ls -la release-binaries/
+          mkdir -p sigs
+          gh release download ${{ github.ref_name }} --pattern "*.sig" --dir sigs
+          echo "=== Downloaded signatures ==="
+          ls -la sigs/
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate latest.json
         run: |
-          WIN_SIG=$(find release-binaries/ -name "*.exe.sig" -print -quit | xargs cat | tr -d '\n')
-          MAC_SIG=$(find release-binaries/ -name "*.dmg.sig" -print -quit | xargs cat | tr -d '\n')
-          LINUX_SIG=$(find release-binaries/ -name "*.AppImage.sig" -print -quit | xargs cat | tr -d '\n')
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
 
-          WIN_URL="https://github.com/Mestiak/Portal-Protocol/releases/download/${{ github.ref_name }}/Portal.Protocol_${{ github.ref_name }}_x64-setup.exe"
-          MAC_URL="https://github.com/Mestiak/Portal-Protocol/releases/download/${{ github.ref_name }}/Portal.Protocol_${{ github.ref_name }}_aarch64.dmg"
-          LINUX_URL="https://github.com/Mestiak/Portal-Protocol/releases/download/${{ github.ref_name }}/Portal.Protocol_${{ github.ref_name }}_amd64.AppImage"
+          WIN_SIG=$(find sigs/ -name "*.exe.sig" -print -quit | xargs cat | tr -d '\n')
+          MAC_SIG=$(find sigs/ -name "*.dmg.sig" -print -quit | xargs cat | tr -d '\n')
+          LINUX_SIG=$(find sigs/ -name "*.AppImage.sig" -print -quit | xargs cat | tr -d '\n')
+
+          WIN_URL="https://github.com/Mestiak/Portal-Protocol/releases/download/${{ github.ref_name }}/Portal.Protocol_${VERSION}_x64-setup.exe"
+          MAC_URL="https://github.com/Mestiak/Portal-Protocol/releases/download/${{ github.ref_name }}/Portal.Protocol_${VERSION}_aarch64.dmg"
+          LINUX_URL="https://github.com/Mestiak/Portal-Protocol/releases/download/${{ github.ref_name }}/Portal.Protocol_${VERSION}_amd64.AppImage"
 
           cat > latest.json << EOF
           {
-            "version": "$(echo ${{ github.ref_name }} | sed 's/^v//')",
+            "version": "$VERSION",
             "notes": "Portal Protocol ${{ github.ref_name }}",
             "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)",
             "platforms": {
@@ -141,17 +143,8 @@ jobs:
           echo "=== latest.json ==="
           cat latest.json
 
-      - name: Create Release and Upload Assets
+      - name: Upload latest.json to release
         run: |
-          echo "=== Files for upload ==="
-          ls -la release-binaries/
-          ls -la latest.json
-
-          gh release create ${{ github.ref_name }} \
-            --draft \
-            --title "Portal Protocol ${{ github.ref_name }}" \
-            --notes-file RELEASE-NOTES.md \
-            --generate-static-notes=false \
-            release-binaries/* latest.json
+          gh release upload ${{ github.ref_name }} latest.json --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
