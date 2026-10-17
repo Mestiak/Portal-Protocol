@@ -3,6 +3,8 @@ name: Build & Release
 on:
   push:
     tags: ['v*']
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
@@ -75,6 +77,7 @@ jobs:
 
   release:
     needs: build
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
 
     steps:
