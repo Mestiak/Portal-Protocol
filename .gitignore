@@ -71,6 +71,7 @@ graphify-out/
 # Scripts (dev-only)
 scripts/
 !scripts/download_ei.cjs
+!scripts/upload_asset.py
 
 # Temp files
 src-tauri/tmp_*
