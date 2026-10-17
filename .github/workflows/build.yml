@@ -15,15 +15,41 @@ jobs:
       - uses: actions/checkout@v4
       - name: Create Draft Release
         run: |
-          gh release create ${{ github.ref_name }} \
-            --draft \
-            --title "Portal Protocol ${{ github.ref_name }}" \
-            --notes-file RELEASE-NOTES.md \
-            --repo Mestiak/Portal-Protocol
-          echo "=== Verify release ==="
-          gh release view ${{ github.ref_name }} --repo Mestiak/Portal-Protocol --json tag_name,url
+          # JSON-encode RELEASE-NOTES.md
+          BODY=$(jq -Rs . < RELEASE-NOTES.md)
+          PAYLOAD=$(jq -n \
+            --arg tag "${TAG_NAME}" \
+            --arg name "Portal Protocol ${TAG_NAME}" \
+            --argjson body "$BODY" \
+            '{tag_name: $tag, name: $name, draft: true, body: $body}')
+
+          echo "=== Creating release for tag: ${TAG_NAME} ==="
+          echo "Payload:"
+          echo "$PAYLOAD" | python3 -m json.tool
+
+          HTTP_RESPONSE=$(curl -sSL -w "\n%{http_code}" -X POST \
+            -H "Authorization: token ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Content-Type: application/json" \
+            "https://api.github.com/repos/Mestiak/Portal-Protocol/releases" \
+            -d "$PAYLOAD")
+
+          HTTP_CODE=$(echo "$HTTP_RESPONSE" | tail -1)
+          RESPONSE_BODY=$(echo "$HTTP_RESPONSE" | head -n -1)
+
+          echo "=== HTTP Status: ${HTTP_CODE} ==="
+          echo "=== Response: ==="
+          echo "$RESPONSE_BODY" | python3 -m json.tool
+
+          if [ "$HTTP_CODE" != "201" ]; then
+            echo "FAILED to create release"
+            exit 1
+          fi
+
+          echo "=== Release created successfully ==="
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
 
   build:
     needs: create_release
