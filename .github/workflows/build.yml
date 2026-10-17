@@ -9,52 +9,7 @@ permissions:
   actions: read
 
 jobs:
-  create_release:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Create Draft Release
-        run: |
-          # JSON-encode RELEASE-NOTES.md
-          BODY=$(jq -Rs . < RELEASE-NOTES.md)
-          PAYLOAD=$(jq -n \
-            --arg tag "${TAG_NAME}" \
-            --arg name "Portal Protocol ${TAG_NAME}" \
-            --argjson body "$BODY" \
-            '{tag_name: $tag, name: $name, draft: true, body: $body}')
-
-          echo "=== Creating release for tag: ${TAG_NAME} ==="
-          echo "Payload:"
-          echo "$PAYLOAD" | python3 -m json.tool
-
-          HTTP_RESPONSE=$(curl -sSL -w "\n%{http_code}" -X POST \
-            -H "Authorization: token ${GITHUB_TOKEN}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            -H "Content-Type: application/json" \
-            "https://api.github.com/repos/Mestiak/Portal-Protocol/releases" \
-            -d "$PAYLOAD")
-
-          HTTP_CODE=$(echo "$HTTP_RESPONSE" | tail -1)
-          RESPONSE_BODY=$(echo "$HTTP_RESPONSE" | head -n -1)
-
-          echo "=== HTTP Status: ${HTTP_CODE} ==="
-          echo "=== Response: ==="
-          echo "$RESPONSE_BODY" | python3 -m json.tool
-
-          if [ "$HTTP_CODE" = "201" ]; then
-            echo "=== Release created successfully ==="
-          elif [ "$HTTP_CODE" = "422" ]; then
-            echo "=== Release already exists, continuing ==="
-          else
-            echo "FAILED to create release"
-            exit 1
-          fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ github.ref_name }}
-
   build:
-    needs: create_release
     strategy:
       fail-fast: false
       matrix:
@@ -110,74 +65,114 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           CI: true
 
-      - name: "Debug: check bundles"
-        shell: bash
-        run: |
-          set +e
-          echo "=== Current directory ==="
-          pwd
-          echo "=== Looking for bundle directory ==="
-          ls -la src-tauri/target/release/bundle/ 2>/dev/null || echo "No bundle dir at src-tauri/target/release/bundle/"
-          ls -la src-tauri/target/release/ 2>/dev/null || echo "No release dir"
-          echo "=== Find bundle files ==="
-          ls -laR src-tauri/target/release/bundle/ 2>/dev/null || echo "No bundle dir"
+      - name: Upload bundles as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundles-${{ matrix.target }}
+          path: |
+            src-tauri/target/release/bundle/
+            src-tauri/target/*/release/bundle/
 
-      - name: Upload bundle to release
-        run: python3 scripts/upload_asset.py
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ github.ref_name }}
-
-  finalize:
+  release:
     needs: build
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download signatures from release
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: build-artifacts
+
+      - name: Inspect downloaded artifacts
+        shell: bash
         run: |
-          mkdir -p sigs
+          echo "=== Artifact files ==="
+          find build-artifacts -type f | sort
+          echo "=== Artifact count ==="
+          find build-artifacts -type f | wc -l
 
-          echo "=== Downloading .sig files from release ==="
-          curl -sSL -H "Authorization: token ${GITHUB_TOKEN}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/Mestiak/Portal-Protocol/releases/tags/${TAG_NAME}" \
-            | jq -r '.assets[] | select(.name | endswith(".sig")) | .browser_download_url' \
-            | while read -r url; do
-              FILENAME=$(basename "$url")
-              echo "Downloading: ${FILENAME}"
-              curl -sSL -H "Authorization: token ${GITHUB_TOKEN}" \
-                -H "Accept: application/octet-stream" \
-                "$url" -o "sigs/${FILENAME}"
-              echo "  Saved: $(wc -c < sigs/${FILENAME}) bytes"
-            done
-
-          echo "=== Downloaded signatures ==="
-          ls -la sigs/
+      - name: Create or verify release
+        shell: bash
+        run: |
+          TAG="${{ github.ref_name }}"
+          echo "=== Checking for existing release: $TAG ==="
+          if gh release view "$TAG" --json id > /dev/null 2>&1; then
+            echo "=== Release already exists ==="
+          else
+            echo "=== Creating draft release ==="
+            gh release create "$TAG" --draft \
+              --title "Portal Protocol $TAG" \
+              --notes-file RELEASE-NOTES.md
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ github.ref_name }}
+
+      - name: Upload bundle assets
+        shell: bash
+        run: |
+          TAG="${{ github.ref_name }}"
+          echo "=== Uploading all bundle files ==="
+          FAILED=0
+          while IFS= read -r -d '' file; do
+            FILENAME=$(basename "$file")
+            SIZE=$(wc -c < "$file")
+            echo "Uploading: ${FILENAME} (${SIZE} bytes)"
+            if gh release upload "$TAG" "$file" --clobber 2>&1; then
+              echo "  SUCCESS"
+            else
+              echo "  FAILED"
+              FAILED=$((FAILED + 1))
+            fi
+          done < <(find build-artifacts -type f -print0)
+          echo "=== Upload complete: ${FAILED} failed ==="
+          exit $FAILED
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate latest.json
+        shell: bash
         run: |
           VERSION="${{ github.ref_name }}"
           VERSION="${VERSION#v}"
 
-          WIN_SIG=$(find sigs/ -name "*.exe.sig" -print -quit | xargs cat | tr -d '\n')
-          MAC_SIG=$(find sigs/ -name "*.dmg.sig" -print -quit | xargs cat | tr -d '\n')
-          LINUX_SIG=$(find sigs/ -name "*.AppImage.sig" -print -quit | xargs cat | tr -d '\n')
+          mkdir -p sigs
+          find build-artifacts -type f -name "*.sig" | sort | while IFS= read -r sigfile; do
+            cp "$sigfile" "sigs/$(basename "$sigfile")"
+          done
+          echo "=== Sig files ==="
+          ls -la sigs/
+
+          WIN_SIG=$(cat sigs/*Setup.exe.sig 2>/dev/null | tr -d '\n' || echo "")
+          MSI_SIG=$(cat sigs/*x64_en-US.msi.sig 2>/dev/null | tr -d '\n' || echo "")
+          MAC_SIG=$(cat sigs/*.app.tar.gz.sig 2>/dev/null | tr -d '\n' || echo "")
+          LINUX_SIG=$(cat sigs/*.AppImage.sig 2>/dev/null | tr -d '\n' || echo "")
+          DEB_SIG=$(cat sigs/*.deb.sig 2>/dev/null | tr -d '\n' || echo "")
+          RPM_SIG=$(cat sigs/*.rpm.sig 2>/dev/null | tr -d '\n' || echo "")
 
           WIN_URL="https://github.com/Mestiak/Portal-Protocol/releases/download/${{ github.ref_name }}/Portal.Protocol_${VERSION}_x64-setup.exe"
+          MSI_URL="https://github.com/Mestiak/Portal-Protocol/releases/download/${{ github.ref_name }}/Portal.Protocol_${VERSION}_x64_en-US.msi"
           MAC_URL="https://github.com/Mestiak/Portal-Protocol/releases/download/${{ github.ref_name }}/Portal.Protocol_${VERSION}_aarch64.dmg"
           LINUX_URL="https://github.com/Mestiak/Portal-Protocol/releases/download/${{ github.ref_name }}/Portal.Protocol_${VERSION}_amd64.AppImage"
+          DEB_URL="https://github.com/Mestiak/Portal-Protocol/releases/download/${{ github.ref_name }}/Portal.Protocol_${VERSION}_amd64.deb"
+          RPM_URL="https://github.com/Mestiak/Portal-Protocol/releases/download/${{ github.ref_name }}/Portal.Protocol-${VERSION}-1.x86_64.rpm"
 
-          cat > latest.json << EOF
+          cat > latest.json << HEREDOC
           {
             "version": "$VERSION",
             "notes": "Portal Protocol ${{ github.ref_name }}",
             "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)",
             "platforms": {
               "windows-x86_64": {
+                "signature": "$WIN_SIG",
+                "url": "$WIN_URL"
+              },
+              "windows-x86_64-msi": {
+                "signature": "$MSI_SIG",
+                "url": "$MSI_URL"
+              },
+              "windows-x86_64-nsis": {
                 "signature": "$WIN_SIG",
                 "url": "$WIN_URL"
               },
@@ -188,18 +183,30 @@ jobs:
               "linux-x86_64": {
                 "signature": "$LINUX_SIG",
                 "url": "$LINUX_URL"
+              },
+              "linux-x86_64-deb": {
+                "signature": "$DEB_SIG",
+                "url": "$DEB_URL"
+              },
+              "linux-x86_64-rpm": {
+                "signature": "$RPM_SIG",
+                "url": "$RPM_URL"
               }
             }
           }
-          EOF
+          HEREDOC
 
           echo "=== latest.json ==="
           cat latest.json
+        env:
+          TAG_NAME: ${{ github.ref_name }}
 
       - name: Upload latest.json to release
+        shell: bash
         run: |
+          TAG="${{ github.ref_name }}"
           echo "=== Uploading latest.json ==="
-          gh release upload "${{ github.ref_name }}" latest.json --clobber
+          gh release upload "$TAG" latest.json --clobber
           echo "=== Latest.json uploaded ==="
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
