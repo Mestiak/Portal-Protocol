@@ -88,9 +88,28 @@ jobs:
         with:
           path: build-artifacts
 
+      - name: Purge existing release assets
+        shell: bash
+        run: |
+          TAG="${{ github.ref_name }}"
+          echo "=== Purging existing assets for $TAG ==="
+          ASSETS=$(gh release view "$TAG" --json assets --jq '.assets[].name' 2>/dev/null || echo "")
+          if [ -n "$ASSETS" ]; then
+            echo "$ASSETS" | while read -r asset; do
+              echo "  Deleting: $asset"
+              gh release delete-asset "$TAG" "$asset" 2>/dev/null || true
+            done
+            echo "  Purge complete"
+          else
+            echo "  No existing release to purge"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create or verify release
         shell: bash
         run: |
+          set -euo pipefail
           TAG="${{ github.ref_name }}"
           echo "=== Checking for existing release: $TAG ==="
           if gh release view "$TAG" --json id > /dev/null 2>&1; then
@@ -107,6 +126,7 @@ jobs:
       - name: Upload bundle assets
         shell: bash
         run: |
+          set -euo pipefail
           TAG="${{ github.ref_name }}"
           echo "=== Uploading all bundle files ==="
           FAILED=0
@@ -120,7 +140,7 @@ jobs:
               echo "  FAILED"
               FAILED=$((FAILED + 1))
             fi
-          done < <(find build-artifacts -type f -print0)
+          done < <(find build-artifacts -type f -name "Portal.Protocol_*" -print0)
           echo "=== Upload complete: ${FAILED} failed ==="
           exit $FAILED
         env:
