@@ -41,12 +41,14 @@ jobs:
           echo "=== Response: ==="
           echo "$RESPONSE_BODY" | python3 -m json.tool
 
-          if [ "$HTTP_CODE" != "201" ]; then
+          if [ "$HTTP_CODE" = "201" ]; then
+            echo "=== Release created successfully ==="
+          elif [ "$HTTP_CODE" = "422" ]; then
+            echo "=== Release already exists, continuing ==="
+          else
             echo "FAILED to create release"
             exit 1
           fi
-
-          echo "=== Release created successfully ==="
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ github.ref_name }}
@@ -104,7 +106,7 @@ jobs:
         run: npm install -g @tauri-apps/cli@^2
 
       - name: Build Tauri app
-        run: npx tauri build --target ${{ matrix.target }}
+        run: tauri build --target ${{ matrix.target }}
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -112,37 +114,55 @@ jobs:
 
       - name: "Debug: check bundles"
         run: |
+          set +e
           echo "=== Current directory ==="
           pwd
           echo "=== Looking for bundle directory ==="
           ls -la src-tauri/target/release/bundle/ 2>/dev/null || echo "No bundle dir at src-tauri/target/release/bundle/"
           ls -la src-tauri/target/release/ 2>/dev/null || echo "No release dir"
-          echo "=== Find all bundle files ==="
-          find . -path "*/bundle/*" -type f 2>/dev/null | sort
+          echo "=== Find bundle files ==="
+          ls -laR src-tauri/target/release/bundle/ 2>/dev/null || echo "No bundle dir"
 
       - name: Upload bundle to release
         shell: bash
         run: |
           echo "=== Bundle files ==="
+          if [ ! -d "src-tauri/target/release/bundle" ]; then
+            echo "ERROR: No bundle directory found!"
+            echo "=== Searching for bundle files anywhere ==="
+            find src-tauri -name "*.exe" -o -name "*.msi" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.sig" 2>/dev/null | sort
+            echo "=== Listing src-tauri/target ==="
+            ls -laR src-tauri/target/ 2>/dev/null | head -50
+            exit 1
+          fi
           find src-tauri/target/release/bundle -type f | sort
 
           echo "=== Getting upload URL ==="
-          UPLOAD_URL=$(curl -sSL -H "Authorization: token ${GITHUB_TOKEN}" \
+          RELEASE_INFO=$(curl -sSL -H "Authorization: token ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/Mestiak/Portal-Protocol/releases/tags/${TAG_NAME}" \
-            | jq -r '.upload_url' | sed 's/{?name,label}/?name=/')
+            "https://api.github.com/repos/Mestiak/Portal-Protocol/releases/tags/${TAG_NAME}")
+          echo "Release API response:"
+          echo "$RELEASE_INFO" | python3 -m json.tool
+
+          UPLOAD_URL=$(echo "$RELEASE_INFO" | jq -r '.upload_url' | sed 's/{?name,label}/?name=/')
           echo "Upload URL: ${UPLOAD_URL}"
+
+          if [ "$UPLOAD_URL" = "null" ] || [ -z "$UPLOAD_URL" ]; then
+            echo "FAILED to get upload URL"
+            exit 1
+          fi
 
           echo "=== Uploading to release ==="
           find src-tauri/target/release/bundle -type f -print0 | while IFS= read -r -d '' file; do
             FILENAME=$(basename "$file")
+            FILENAME_ENC=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${FILENAME}'))")
             FILESIZE=$(wc -c < "$file")
             echo "Uploading: ${FILENAME} (${FILESIZE} bytes)"
             HTTP_CODE=$(curl -sSL -o /tmp/upload_resp.txt -w "%{http_code}" -X POST \
               -H "Authorization: token ${GITHUB_TOKEN}" \
               -H "Content-Type: application/octet-stream" \
               --data-binary "@${file}" \
-              "${UPLOAD_URL}${FILENAME}")
+              "${UPLOAD_URL}${FILENAME_ENC}")
             echo "  HTTP Status: ${HTTP_CODE}"
             cat /tmp/upload_resp.txt
             echo ""
@@ -228,11 +248,19 @@ jobs:
       - name: Upload latest.json to release
         run: |
           echo "=== Getting upload URL ==="
-          UPLOAD_URL=$(curl -sSL -H "Authorization: token ${GITHUB_TOKEN}" \
+          RELEASE_INFO=$(curl -sSL -H "Authorization: token ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/Mestiak/Portal-Protocol/releases/tags/${TAG_NAME}" \
-            | jq -r '.upload_url' | sed 's/{?name,label}/?name=/')
+            "https://api.github.com/repos/Mestiak/Portal-Protocol/releases/tags/${TAG_NAME}")
+          echo "Release API response:"
+          echo "$RELEASE_INFO" | python3 -m json.tool
+
+          UPLOAD_URL=$(echo "$RELEASE_INFO" | jq -r '.upload_url' | sed 's/{?name,label}/?name=/')
           echo "Upload URL: ${UPLOAD_URL}"
+
+          if [ "$UPLOAD_URL" = "null" ] || [ -z "$UPLOAD_URL" ]; then
+            echo "FAILED to get upload URL"
+            exit 1
+          fi
 
           echo "=== Uploading latest.json ==="
           HTTP_CODE=$(curl -sSL -o /tmp/upload_resp.txt -w "%{http_code}" -X POST \
