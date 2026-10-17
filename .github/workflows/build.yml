@@ -115,11 +115,37 @@ jobs:
         run: |
           echo "=== Bundle files ==="
           find src-tauri/target/release/bundle -type f | sort
+
+          echo "=== Getting upload URL ==="
+          UPLOAD_URL=$(curl -sSL -H "Authorization: token ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/Mestiak/Portal-Protocol/releases/tags/${TAG_NAME}" \
+            | jq -r '.upload_url' | sed 's/{?name,label}/?name=/')
+          echo "Upload URL: ${UPLOAD_URL}"
+
           echo "=== Uploading to release ==="
-          find src-tauri/target/release/bundle -type f -print0 | xargs -0 gh release upload ${{ github.ref_name }} --clobber --repo Mestiak/Portal-Protocol
+          find src-tauri/target/release/bundle -type f -print0 | while IFS= read -r -d '' file; do
+            FILENAME=$(basename "$file")
+            FILESIZE=$(wc -c < "$file")
+            echo "Uploading: ${FILENAME} (${FILESIZE} bytes)"
+            HTTP_CODE=$(curl -sSL -o /tmp/upload_resp.txt -w "%{http_code}" -X POST \
+              -H "Authorization: token ${GITHUB_TOKEN}" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary "@${file}" \
+              "${UPLOAD_URL}${FILENAME}")
+            echo "  HTTP Status: ${HTTP_CODE}"
+            cat /tmp/upload_resp.txt
+            echo ""
+            if [ "$HTTP_CODE" != "201" ] && [ "$HTTP_CODE" != "200" ]; then
+              echo "  FAILED to upload ${FILENAME}"
+              exit 1
+            fi
+          done
+
           echo "=== Upload complete ==="
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
 
   finalize:
     needs: build
@@ -130,11 +156,26 @@ jobs:
       - name: Download signatures from release
         run: |
           mkdir -p sigs
-          gh release download ${{ github.ref_name }} --pattern "*.sig" --dir sigs --repo Mestiak/Portal-Protocol
+
+          echo "=== Downloading .sig files from release ==="
+          curl -sSL -H "Authorization: token ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/Mestiak/Portal-Protocol/releases/tags/${TAG_NAME}" \
+            | jq -r '.assets[] | select(.name | endswith(".sig")) | .browser_download_url' \
+            | while read -r url; do
+              FILENAME=$(basename "$url")
+              echo "Downloading: ${FILENAME}"
+              curl -sSL -H "Authorization: token ${GITHUB_TOKEN}" \
+                -H "Accept: application/octet-stream" \
+                "$url" -o "sigs/${FILENAME}"
+              echo "  Saved: $(wc -c < sigs/${FILENAME}) bytes"
+            done
+
           echo "=== Downloaded signatures ==="
           ls -la sigs/
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
 
       - name: Generate latest.json
         run: |
@@ -176,6 +217,29 @@ jobs:
 
       - name: Upload latest.json to release
         run: |
-          gh release upload ${{ github.ref_name }} latest.json --clobber --repo Mestiak/Portal-Protocol
+          echo "=== Getting upload URL ==="
+          UPLOAD_URL=$(curl -sSL -H "Authorization: token ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/Mestiak/Portal-Protocol/releases/tags/${TAG_NAME}" \
+            | jq -r '.upload_url' | sed 's/{?name,label}/?name=/')
+          echo "Upload URL: ${UPLOAD_URL}"
+
+          echo "=== Uploading latest.json ==="
+          HTTP_CODE=$(curl -sSL -o /tmp/upload_resp.txt -w "%{http_code}" -X POST \
+            -H "Authorization: token ${GITHUB_TOKEN}" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary @latest.json \
+            "${UPLOAD_URL}latest.json")
+          echo "HTTP Status: ${HTTP_CODE}"
+          cat /tmp/upload_resp.txt
+          echo ""
+
+          if [ "$HTTP_CODE" != "201" ] && [ "$HTTP_CODE" != "200" ]; then
+            echo "FAILED to upload latest.json"
+            exit 1
+          fi
+
+          echo "=== latest.json uploaded successfully ==="
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
