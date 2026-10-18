@@ -218,7 +218,7 @@ jobs:
           echo "=== Sig files ==="
           ls -la sigs/
 
-          WIN_SIG=$(cat sigs/*Setup.exe.sig 2>/dev/null | tr -d '\n' || echo "")
+          WIN_SIG=$(cat sigs/*.exe.sig 2>/dev/null | tr -d '\n' || echo "")
           MSI_SIG=$(cat sigs/*x64_en-US.msi.sig 2>/dev/null | tr -d '\n' || echo "")
           MAC_SIG=$(cat sigs/*.app.tar.gz.sig 2>/dev/null | tr -d '\n' || echo "")
           LINUX_SIG=$(cat sigs/*.AppImage.sig 2>/dev/null | tr -d '\n' || echo "")
@@ -227,10 +227,17 @@ jobs:
 
           WIN_URL="https://github.com/Mestiak/Portal-Protocol/releases/download/${{ github.ref_name }}/Portal.Protocol_${VERSION}_x64-setup.exe"
           MSI_URL="https://github.com/Mestiak/Portal-Protocol/releases/download/${{ github.ref_name }}/Portal.Protocol_${VERSION}_x64_en-US.msi"
-          MAC_URL="https://github.com/Mestiak/Portal-Protocol/releases/download/${{ github.ref_name }}/Portal.Protocol_${VERSION}_aarch64.dmg"
+          MAC_APP_TAR=$(for f in sigs/*.app.tar.gz.sig; do [ -f "$f" ] && basename "$f" .sig && break; done)
+          MAC_URL="https://github.com/Mestiak/Portal-Protocol/releases/download/${{ github.ref_name }}/${MAC_APP_TAR}"
           LINUX_URL="https://github.com/Mestiak/Portal-Protocol/releases/download/${{ github.ref_name }}/Portal.Protocol_${VERSION}_amd64.AppImage"
           DEB_URL="https://github.com/Mestiak/Portal-Protocol/releases/download/${{ github.ref_name }}/Portal.Protocol_${VERSION}_amd64.deb"
           RPM_URL="https://github.com/Mestiak/Portal-Protocol/releases/download/${{ github.ref_name }}/Portal.Protocol-${VERSION}-1.x86_64.rpm"
+
+          echo "=== Signature verification ==="
+          echo "WIN_SIG length: ${#WIN_SIG}"
+          echo "MSI_SIG length: ${#MSI_SIG}"
+          echo "MAC_SIG length: ${#MAC_SIG}"
+          echo "MAC_APP_TAR: ${MAC_APP_TAR:-NOT FOUND}"
 
           cat > latest.json << HEREDOC
           {
@@ -254,7 +261,15 @@ jobs:
                 "signature": "$MAC_SIG",
                 "url": "$MAC_URL"
               },
+              "darwin-aarch64-app": {
+                "signature": "$MAC_SIG",
+                "url": "$MAC_URL"
+              },
               "linux-x86_64": {
+                "signature": "$LINUX_SIG",
+                "url": "$LINUX_URL"
+              },
+              "linux-x86_64-appimage": {
                 "signature": "$LINUX_SIG",
                 "url": "$LINUX_URL"
               },
