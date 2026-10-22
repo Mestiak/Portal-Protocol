@@ -2873,124 +2873,120 @@ mod harvest_dragon_tests {
             first.time < 10_000_000,
             "expected relative times, got absolute ms={}",
             first.time
-            );
-            }
-            }
+        );
+    }
+}
 
-            #[cfg(test)]
-            mod quick_play_tests {
-            use super::*;
+#[cfg(test)]
+mod quick_play_tests {
+    use super::*;
 
-            /// Build a minimal EVTC revision-1 binary containing one player agent
-            /// (address 2000, profession 1) and one combat event. The caller controls
-            /// the `is_buff` byte (offset 49) and `state_change` byte (offset 56) to
-            /// simulate both old-format buff events and new-format (build >= 20260501)
-            /// state-change-encoded buff events.
-            fn build_minimal_evtc(
-            skill_id: u32,
-            is_buff_byte: u8,
-            state_change_byte: u8,
-            ) -> Vec<u8> {
-            // Header: "EVTC" + build_date(8) + revision(1) + boss_id(2) + pad(1) + agent_count(4)
-            let mut data: Vec<u8> = b"EVTC".to_vec();
-            data.extend_from_slice(&[0u8; 8]); // build date (unused)
-            data.push(1); // revision = 1
-            data.extend_from_slice(&[0u8, 0u8]); // boss_id
-            data.push(0); // padding (revision 1)
-            data.extend_from_slice(&1u32.to_le_bytes()); // agent_count = 1
+    /// Build a minimal EVTC revision-1 binary containing one player agent
+    /// (address 2000, profession 1) and one combat event. The caller controls
+    /// the `is_buff` byte (offset 49) and `state_change` byte (offset 56) to
+    /// simulate both old-format buff events and new-format (build >= 20260501)
+    /// state-change-encoded buff events.
+    fn build_minimal_evtc(skill_id: u32, is_buff_byte: u8, state_change_byte: u8) -> Vec<u8> {
+        // Header: "EVTC" + build_date(8) + revision(1) + boss_id(2) + pad(1) + agent_count(4)
+        let mut data: Vec<u8> = b"EVTC".to_vec();
+        data.extend_from_slice(&[0u8; 8]); // build date (unused)
+        data.push(1); // revision = 1
+        data.extend_from_slice(&[0u8, 0u8]); // boss_id
+        data.push(0); // padding (revision 1)
+        data.extend_from_slice(&1u32.to_le_bytes()); // agent_count = 1
 
-            // Agent (96 bytes): address=2000, prof=1, name="TestChar\0Account.1234\0:1\0"
-            let mut agent = vec![0u8; 96];
-            agent[0..8].copy_from_slice(&2000u64.to_le_bytes()); // address = 0x7d0
-            agent[8..12].copy_from_slice(&1u32.to_le_bytes()); // profession = Guardian
-            agent[12..16].copy_from_slice(&0u32.to_le_bytes()); // elite_spec = 0 (not sentinel)
-            let name = b"TestChar\0Account.1234\0:1\0";
-            agent[28..28 + name.len()].copy_from_slice(name);
-            data.extend_from_slice(&agent);
+        // Agent (96 bytes): address=2000, prof=1, name="TestChar\0Account.1234\0:1\0"
+        let mut agent = vec![0u8; 96];
+        agent[0..8].copy_from_slice(&2000u64.to_le_bytes()); // address = 0x7d0
+        agent[8..12].copy_from_slice(&1u32.to_le_bytes()); // profession = Guardian
+        agent[12..16].copy_from_slice(&0u32.to_le_bytes()); // elite_spec = 0 (not sentinel)
+        let name = b"TestChar\0Account.1234\0:1\0";
+        agent[28..28 + name.len()].copy_from_slice(name);
+        data.extend_from_slice(&agent);
 
-            // Skills: skill_count = 0
-            data.extend_from_slice(&0u32.to_le_bytes());
+        // Skills: skill_count = 0
+        data.extend_from_slice(&0u32.to_le_bytes());
 
-            // Single combat event (64 bytes)
-            let mut ev = vec![0u8; 64];
-            ev[8..16].copy_from_slice(&2000u64.to_le_bytes()); // src_agent = player
-            ev[16..24].copy_from_slice(&2000u64.to_le_bytes()); // dst_agent = player (self)
-            ev[36..40].copy_from_slice(&skill_id.to_le_bytes()); // skill_id
-            ev[49] = is_buff_byte; // isBuff / buff byte
-            ev[56] = state_change_byte; // is_statechange
-            data.extend_from_slice(&ev);
+        // Single combat event (64 bytes)
+        let mut ev = vec![0u8; 64];
+        ev[8..16].copy_from_slice(&2000u64.to_le_bytes()); // src_agent = player
+        ev[16..24].copy_from_slice(&2000u64.to_le_bytes()); // dst_agent = player (self)
+        ev[36..40].copy_from_slice(&skill_id.to_le_bytes()); // skill_id
+        ev[49] = is_buff_byte; // isBuff / buff byte
+        ev[56] = state_change_byte; // is_statechange
+        data.extend_from_slice(&ev);
 
-            data
-            }
+        data
+    }
 
-            #[test]
-            fn qp_new_format_buff_initial() {
-            // arcDPS build >= 20260501: buff applied as state change 18 (BuffInitial).
-            // The isBuff byte is also 18 (not 1).
-            let data = build_minimal_evtc(79492, 18, 18);
-            assert_eq!(
-                parse_is_quick_play(&data),
-                Some(true),
-                "should detect QP with new-format BuffInitial (stateChange=18, isBuff=18)"
-            );
-            }
+    #[test]
+    fn qp_new_format_buff_initial() {
+        // arcDPS build >= 20260501: buff applied as state change 18 (BuffInitial).
+        // The isBuff byte is also 18 (not 1).
+        let data = build_minimal_evtc(79492, 18, 18);
+        assert_eq!(
+            parse_is_quick_play(&data),
+            Some(true),
+            "should detect QP with new-format BuffInitial (stateChange=18, isBuff=18)"
+        );
+    }
 
-            #[test]
-            fn qp_new_format_buff_apply() {
-            // arcDPS build >= 20260501: buff applied as state change 69 (BuffApply).
-            let data = build_minimal_evtc(77676, 1, 69);
-            assert_eq!(
-                parse_is_quick_play(&data),
-                Some(true),
-                "should detect QP with new-format BuffApply (stateChange=69)"
-            );
-            }
+    #[test]
+    fn qp_new_format_buff_apply() {
+        // arcDPS build >= 20260501: buff applied as state change 69 (BuffApply).
+        let data = build_minimal_evtc(77676, 1, 69);
+        assert_eq!(
+            parse_is_quick_play(&data),
+            Some(true),
+            "should detect QP with new-format BuffApply (stateChange=69)"
+        );
+    }
 
-            #[test]
-            fn qp_new_format_buff_change() {
-            // arcDPS build >= 20260501: buff change as state change 70 (BuffChange).
-            let data = build_minimal_evtc(79492, 18, 70);
-            assert_eq!(
-                parse_is_quick_play(&data),
-                Some(true),
-                "should detect QP with new-format BuffChange (stateChange=70)"
-            );
-            }
+    #[test]
+    fn qp_new_format_buff_change() {
+        // arcDPS build >= 20260501: buff change as state change 70 (BuffChange).
+        let data = build_minimal_evtc(79492, 18, 70);
+        assert_eq!(
+            parse_is_quick_play(&data),
+            Some(true),
+            "should detect QP with new-format BuffChange (stateChange=70)"
+        );
+    }
 
-            #[test]
-            fn qp_old_format_buff() {
-            // arcDPS build < 20260501: buff event has isBuff=1, stateChange=0 (Combat).
-            let data = build_minimal_evtc(79492, 1, 0);
-            assert_eq!(
-                parse_is_quick_play(&data),
-                Some(true),
-                "should detect QP with old-format isBuff=1"
-            );
-            }
+    #[test]
+    fn qp_old_format_buff() {
+        // arcDPS build < 20260501: buff event has isBuff=1, stateChange=0 (Combat).
+        let data = build_minimal_evtc(79492, 1, 0);
+        assert_eq!(
+            parse_is_quick_play(&data),
+            Some(true),
+            "should detect QP with old-format isBuff=1"
+        );
+    }
 
-            #[test]
-            fn qp_non_qp_buff_returns_false() {
-            // Non-QP skill ID should not trigger QP detection.
-            let data = build_minimal_evtc(1234, 18, 18);
-            assert_eq!(
-                parse_is_quick_play(&data),
-                Some(false),
-                "should not detect QP for non-QP skill ID"
-            );
-            }
+    #[test]
+    fn qp_non_qp_buff_returns_false() {
+        // Non-QP skill ID should not trigger QP detection.
+        let data = build_minimal_evtc(1234, 18, 18);
+        assert_eq!(
+            parse_is_quick_play(&data),
+            Some(false),
+            "should not detect QP for non-QP skill ID"
+        );
+    }
 
-            #[test]
-            fn qp_non_player_dst_returns_false() {
-            // Event with QP buff ID but dst_agent is not a player should not trigger.
-            let mut data = build_minimal_evtc(79492, 1, 0);
-            // The event is at offset: 20 (header_end+4) + 96 (agent) + 4 (skill_count) = 120
-            let ev_base = 120usize;
-            // Set dst_agent to a non-player agent (0x1234, not in player_addrs)
-            data[ev_base + 16..ev_base + 24].copy_from_slice(&0x1234u64.to_le_bytes());
-            assert_eq!(
-                parse_is_quick_play(&data),
-                Some(false),
-                "should not detect QP when buff is not on a player"
-            );
-            }
-            }
+    #[test]
+    fn qp_non_player_dst_returns_false() {
+        // Event with QP buff ID but dst_agent is not a player should not trigger.
+        let mut data = build_minimal_evtc(79492, 1, 0);
+        // The event is at offset: 20 (header_end+4) + 96 (agent) + 4 (skill_count) = 120
+        let ev_base = 120usize;
+        // Set dst_agent to a non-player agent (0x1234, not in player_addrs)
+        data[ev_base + 16..ev_base + 24].copy_from_slice(&0x1234u64.to_le_bytes());
+        assert_eq!(
+            parse_is_quick_play(&data),
+            Some(false),
+            "should not detect QP when buff is not on a player"
+        );
+    }
+}

@@ -1018,6 +1018,10 @@ pub fn run() {
             crate::uploader::read_webhook_log,
             crate::uploader::resend_failed_webhooks,
             crate::ei_runner::check_ei_runtime,
+            crate::ei_runner::open_ei_html_report,
+            crate::ei_runner::clear_ei_html_cache,
+            crate::ei_runner::get_ei_html_cache_info,
+            crate::ei_runner::prune_ei_html_cache,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

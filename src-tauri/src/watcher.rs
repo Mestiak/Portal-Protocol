@@ -53,7 +53,8 @@ impl LogWatcher {
 
         let mut watcher = RecommendedWatcher::new(
             std_tx,
-            notify::Config::default().with_poll_interval(Duration::from_millis(poll_interval_ms.max(100))),
+            notify::Config::default()
+                .with_poll_interval(Duration::from_millis(poll_interval_ms.max(100))),
         )
         .map_err(|e| e.to_string())?;
 

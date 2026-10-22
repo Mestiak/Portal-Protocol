@@ -352,7 +352,12 @@ pub fn encounter_index(boss_key: &str) -> Option<usize> {
 /// True if the encounter has VL ranks AND the log is a CM or LCM kill (ranks only
 /// apply to challenge-mode runs).
 #[allow(dead_code)] // reserved for UI gating of the VL Rank control on non-CM logs
-pub fn vl_available(boss_key: &str, is_cm: Option<bool>, is_lcm: Option<bool>, lcm_only: bool) -> bool {
+pub fn vl_available(
+    boss_key: &str,
+    is_cm: Option<bool>,
+    is_lcm: Option<bool>,
+    lcm_only: bool,
+) -> bool {
     if encounter_index(boss_key).is_none() {
         return false;
     }
@@ -464,7 +469,8 @@ pub fn auto_petrified_for(
 /// For mode-specific encounters (e.g. Ura CM vs Ura LCM sharing the same boss),
 /// checks all matching encounters so LCM ranks validate on LCM logs and vice versa.
 pub fn rank_is_valid(boss_key: &str, rank_id: &str) -> bool {
-    catalog()
-        .iter()
-        .any(|e| (e.key == boss_key || e.aliases.contains(&boss_key)) && e.ranks.iter().any(|r| r.id == rank_id))
+    catalog().iter().any(|e| {
+        (e.key == boss_key || e.aliases.contains(&boss_key))
+            && e.ranks.iter().any(|r| r.id == rank_id)
+    })
 }

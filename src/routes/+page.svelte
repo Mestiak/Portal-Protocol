@@ -218,6 +218,11 @@
   let historyCacheSize = $state<number>(0);
   let historyCacheCount = $state<number>(0);
   let showClearHistoryModal = $state(false);
+  let html_cache_max_files = $state<number>(50);
+  let htmlCacheSize = $state<number>(0);
+  let htmlCacheCount = $state<number>(0);
+  let showClearHtmlCacheModal = $state(false);
+  let eiReportParsing = $state<string | null>(null);
   // Set true once loadConfig() has finished hydrating state from disk, so the
   // autosave $effect below doesn't fire (and rewrite disk) with empty defaults
   // during startup. Prevents a race where the first computed read re-saves a
@@ -4603,6 +4608,7 @@
           max_upload_retries,
           min_log_seconds,
           log_cache_max_files,
+          html_cache_max_files,
           reduce_motion,
           hide_on_startup,
           wvw_enabled,
@@ -4954,6 +4960,7 @@ async function testWebhook(wh: any) {
       max_upload_retries = config.max_upload_retries ?? 3;
       min_log_seconds = config.min_log_seconds ?? 0;
       log_cache_max_files = config.log_cache_max_files ?? 50;
+      html_cache_max_files = config.html_cache_max_files ?? 50;
       reduce_motion = config.reduce_motion ?? false;
       hide_on_startup = config.hide_on_startup ?? false;
       compact_mode = config.compact_mode ?? false;
@@ -5043,6 +5050,7 @@ async function testWebhook(wh: any) {
           max_upload_retries,
           min_log_seconds,
           log_cache_max_files,
+          html_cache_max_files,
           reduce_motion,
           hide_on_startup,
           accent,
@@ -5113,6 +5121,15 @@ async function testWebhook(wh: any) {
     } catch (e) {
       console.error("Failed to query history cache size:", e);
     }
+    try {
+      const res = await invoke("get_ei_html_cache_info") as [number, number];
+      if (Array.isArray(res)) {
+        htmlCacheSize = res[0] ?? 0;
+        htmlCacheCount = res[1] ?? 0;
+      }
+    } catch (e) {
+      console.error("Failed to query EI HTML cache size:", e);
+    }
   }
 
   function openClearCacheModal() {
@@ -5147,6 +5164,36 @@ async function testWebhook(wh: any) {
       showToast("Analytics & History cache cleared successfully!", "success");
     } catch (e) {
       showToast(`Failed to clear history: ${e}`);
+    }
+  }
+
+  function openClearHtmlCacheModal() {
+    if (htmlCacheCount > 0) {
+      showClearHtmlCacheModal = true;
+    }
+  }
+
+  async function confirmPurgeHtmlCache() {
+    showClearHtmlCacheModal = false;
+    try {
+      const count = await invoke("clear_ei_html_cache") as number;
+      await refreshCacheSize();
+      showToast(`EI HTML report cache cleared (${count} files removed)!`, "success");
+    } catch (e) {
+      showToast(`Failed to clear HTML cache: ${e}`);
+    }
+  }
+
+  async function openEiHtmlReport(log: UploadRecord) {
+    if (!log.file_path) return;
+    eiReportParsing = log.file_path;
+    try {
+      await invoke("open_ei_html_report", { filePath: log.file_path });
+      showToast("EI HTML report opened in browser.", "success");
+    } catch (e) {
+      showToast(`Failed to generate EI report: ${e}`);
+    } finally {
+      eiReportParsing = null;
     }
   }
 
@@ -5704,6 +5751,20 @@ async function testWebhook(wh: any) {
         {:else}
           No report link yet.
         {/if}
+      </div>
+    </div>
+
+    <!-- View EI HTML Report (re-parse local log with HTML config) -->
+    <div class="custom-tooltip-container">
+      <button class="action-btn secondary-action-btn quick-action-desktop-only" disabled={!log.file_path} onclick={(e) => { e.stopPropagation(); openEiHtmlReport(log); }}>
+        {#if eiReportParsing === log.file_path}
+          <i class="fa-solid fa-spinner fa-spin"></i> <span class="btn-text">Parsing...</span>
+        {:else}
+          <i class="fa-solid fa-file-import"></i> <span class="btn-text">View Report</span>
+        {/if}
+      </button>
+      <div class="custom-tooltip">
+        View EI HTML report in browser (cached or re-parse on click)
       </div>
     </div>
 
@@ -7310,6 +7371,61 @@ async function testWebhook(wh: any) {
               </span>
             </div>
 
+            <!-- EI HTML Report Cache -->
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px;">
+                <div>
+                  <div style="font-size: 13px; font-weight: 600; color: var(--text);">EI HTML Report Cache</div>
+                  <div class="tabular-nums" style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                    {htmlCacheCount} report files cached ({formatSize(htmlCacheSize)})
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  class="cache-clear-btn"
+                  onclick={openClearHtmlCacheModal}
+                  disabled={htmlCacheCount === 0}
+                  title="Clear all cached EI HTML reports"
+                >
+                  <i class="fa-solid fa-trash-can"></i> Clear Cache
+                </button>
+              </div>
+              <span style="font-size: 10px; color: var(--text-muted); display: block; margin-left: 4px;">
+                HTML reports are cached locally so the View Report button opens instantly. Clearing cache will re-parse logs on demand.
+              </span>
+            </div>
+
+            <!-- Slider: how many cached HTML reports to keep -->
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <div style="font-size: 13px; font-weight: 600; color: var(--text);">Max Cached HTML Reports to Keep</div>
+                  <span class="custom-tooltip-container" aria-label="How many EI HTML report files the app keeps on disk for instant View Report re-opening. Older reports are auto-deleted to free space. Higher = keep more history ready; lower = save disk. 0 = keep everything (unbounded).">
+                    <i class="fa-solid fa-circle-info" style="font-size: 11px; color: var(--text-muted); cursor: help;"></i>
+                    <span class="custom-tooltip custom-tooltip-box">How many EI HTML report files the app keeps on disk for instant View Report re-opening. Older reports are auto-deleted to free space. Higher = keep more history ready; lower = save disk. <b>0 = keep everything</b> (unbounded).</span>
+                  </span>
+                </div>
+                <span class="tabular-nums" style="font-size: 12px; color: var(--accent); font-weight: 600;">{html_cache_max_files === 0 ? 'Unlimited' : html_cache_max_files + ' reports'}</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 12px; padding: 0 4px;">
+                <span style="font-size: 10px; color: var(--text-muted);">Off</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="200"
+                  step="5"
+                  bind:value={html_cache_max_files}
+                  onchange={async () => { await persistConfig(); try { await invoke('prune_ei_html_cache'); await refreshCacheSize(); } catch (e) { console.error('prune_ei_html_cache failed', e); } }}
+                  style="flex: 1; accent-color: var(--accent); cursor: pointer;"
+                  title="Number of cached HTML reports to retain (0 = unlimited)"
+                />
+                <span style="font-size: 10px; color: var(--text-muted);">200</span>
+              </div>
+              <span style="font-size: 10px; color: var(--text-muted); display: block; margin-left: 4px;">
+                Changing this prunes older cached reports immediately. The View Report button still works for any log — it just re-parses when not cached.
+              </span>
+            </div>
+
             <div style="display: flex; flex-direction: column; gap: 6px;">
               <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px;">
                 <div>
@@ -8368,6 +8484,38 @@ async function testWebhook(wh: any) {
         </button>
         <button type="button" class="confirm-btn danger" onclick={confirmPurgeHistoryCache}>
           <i class="fa-solid fa-trash-can" style="margin-right: 4px;"></i> Purge History
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if showClearHtmlCacheModal}
+  <div
+    class="confirm-modal-overlay"
+    role="button"
+    tabindex="0"
+    aria-label="Close HTML cache confirm modal"
+    onclick={(e) => { if (e.target === e.currentTarget) showClearHtmlCacheModal = false; }}
+    onkeydown={(e) => { if (e.key === 'Escape') showClearHtmlCacheModal = false; }}
+  >
+    <div class="confirm-modal-card" role="dialog" aria-modal="true" aria-label="Clear HTML cache confirmation" tabindex="-1">
+      <div class="confirm-modal-head">
+        <span class="confirm-modal-icon danger"><i class="fa-solid fa-triangle-exclamation"></i></span>
+        <div>
+          <h3 class="confirm-modal-title">Purge EI HTML Report Cache?</h3>
+          <p class="confirm-modal-sub">This action will delete {htmlCacheCount} cached report files ({formatSize(htmlCacheSize)}).</p>
+        </div>
+      </div>
+      <div class="confirm-modal-body">
+        <p>This action will completely empty your local EI HTML report cache. Cached reports will be re-generated from the source <code>.evtc</code> files when you click the View Report button again. This action cannot be undone.</p>
+      </div>
+      <div class="confirm-modal-actions">
+        <button type="button" class="confirm-btn cancel" onclick={() => (showClearHtmlCacheModal = false)}>
+          Cancel
+        </button>
+        <button type="button" class="confirm-btn danger" onclick={confirmPurgeHtmlCache}>
+          <i class="fa-solid fa-trash-can" style="margin-right: 4px;"></i> Purge Cache
         </button>
       </div>
     </div>
