@@ -503,7 +503,7 @@
   getVersion().then((v) => { appVersion = v; }).catch(() => {});
 
   // Elite Insights version (manually updated when EI is bumped)
-  const EI_VERSION = "3.30.0.0";
+  const EI_VERSION = "3.31.0.0";
 
   // Update native window title with version when appVersion changes
   $effect(() => {
@@ -518,6 +518,36 @@
   type PatchNoteCategory = { category: string; items: PatchNoteItem[] };
   type PatchNoteVersion = { version: string; date: string; image?: string; notes: PatchNoteCategory[] };
   const PATCH_NOTES_DATA: PatchNoteVersion[] = [
+    {
+      version: "0.7.3",
+      date: "October 21, 2026",
+      notes: [
+        {
+          category: "✨ New Features",
+          items: [
+            { title: "Open EI HTML Report in Browser", desc: "Logs that have been locally parsed by Elite Insights now have an 'Open in Browser' button that opens the generated HTML report in the user's default browser." }
+          ]
+        },
+        {
+          category: "📦 Dependencies",
+          items: [
+            { title: "Elite Insights CLI Updated to v3.31.0.0", desc: "Bundled EI parser updated from v3.30.2 to v3.31.0.0. Version bumps: GW2EIParserCommons 0.330.2 → 0.331.0.0, GW2EIEvtcParser 0.88.2 → 0.89.0.0 (new file: System.Diagnostics.EventLog.Messages.dll). The download_ei.cjs CI script now renames the GUI exe to the CLI exe name after extraction, so fresh CI builds correctly produce 'GuildWars2EliteInsights-CLI.exe' instead of the GUI 'GuildWars2EliteInsights.exe'." }
+          ]
+        },
+        {
+          category: "🏆 New Void Lounge Ranks",
+          items: [
+            { title: "Legendary Conqueror of Vloxx (LCM)", desc: "New Void Lounge rank for Vloxx (Nexus of Eternity) Legendary Challenge Mode. Auto-awarded on successful LCM clear. Badge: bg #25393f, text #2ff2fc. Icon: /static/rank_icons/Vloxx_LCM/legendaryconquerorofvloxx.png." }
+          ]
+        },
+        {
+          category: "🐉 New Encounters",
+          items: [
+            { title: "Vloxx LCM Support", desc: "Vloxx (Nexus of Eternity) now supports Legendary Challenge Mode detection. LCM threshold set to 85M HP (matching EI v3.31's GetLogMode). The encounter is registered in vl_ranks.rs with the LCM-only 'legendaryconquerorofvloxx' rank, and uploader.rs now marks Vloxx as lcm: true (previously lcm: false, treated as CM-only). EVTC parser updated with the 85M HP LCM threshold for boss ID 28106." }
+          ]
+        }
+      ]
+    },
     {
       version: "0.7.2",
       date: "October 12, 2026",
@@ -2024,9 +2054,8 @@
     // Janthir Wilds strikes
     "kela": { cm: true, lcm: false }, "kelaseneschalofwaves": { cm: true, lcm: false },
     // Visions of Eternity: Nexus of Eternity (Vloxx) — CM detected via 70M HP
-    // threshold, matching Elite Insights v3.30.2's GetLogMode(). LCM not yet
-    // supported by Elite Insights — set lcm: true when it ships.
-    "vloxx": { cm: true, lcm: false },
+    // threshold, LCM via 85M HP threshold (matching Elite Insights v3.31).
+    "vloxx": { cm: true, lcm: true },
   };
   function bossCmEligible(cleanName: string): boolean {
     if (FRACTAL_BOSSES.has(cleanName)) return true;

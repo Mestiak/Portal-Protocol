@@ -4461,13 +4461,13 @@ const RAID_CM_INFO: &[(&str, RaidCmInfo)] = &[
         },
     ),
     // Visions of Eternity: Nexus of Eternity (Vloxx) — CM detected via 70M HP
-    // threshold, matching Elite Insights v3.30.2's GetLogMode(). LCM not yet
-    // supported by Elite Insights — set lcm: true when it ships.
+    // threshold, matching Elite Insights v3.31's GetLogMode(). LCM supported via
+    // 85M HP threshold (same EI detection).
     (
         "vloxx",
         RaidCmInfo {
             cm: true,
-            lcm: false,
+            lcm: true,
         },
     ),
 ];
