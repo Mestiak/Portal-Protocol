@@ -209,6 +209,12 @@ pub struct AppConfig {
     /// growth from the Stats-button fast-load store. 0 = unbounded (legacy).
     #[serde(default = "default_log_cache_max_files")]
     pub log_cache_max_files: usize,
+    /// Max number of cached EI HTML report files kept on disk (the
+    /// "EI HTML Report Cache" in Settings). Oldest are evicted beyond
+    /// this. Bounds disk growth from the View Report button's cache.
+    /// 0 = unbounded.
+    #[serde(default = "default_html_cache_max_files")]
+    pub html_cache_max_files: usize,
     /// Disable UI animations (accessibility / low-end).
     #[serde(default)]
     pub reduce_motion: bool,
@@ -246,6 +252,12 @@ fn default_app_font() -> String {
 
 /// Default log-cache retention (matches the old hard-coded cap).
 fn default_log_cache_max_files() -> usize {
+    50
+}
+
+/// Default HTML report cache retention. HTML files are large (~4 MB each),
+/// so 50 is a reasonable balance of history vs. disk usage.
+fn default_html_cache_max_files() -> usize {
     50
 }
 
@@ -413,6 +425,7 @@ impl Default for AppConfig {
             max_upload_retries: default_upload_retries(),
             min_log_seconds: 0.0,
             log_cache_max_files: default_log_cache_max_files(),
+            html_cache_max_files: default_html_cache_max_files(),
             reduce_motion: false,
             hide_on_startup: false,
             accent: String::new(),

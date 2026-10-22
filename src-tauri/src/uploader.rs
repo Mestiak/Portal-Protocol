@@ -469,8 +469,14 @@ pub async fn drain_webhook_recovery_on_recovery(app: AppHandle) {
             );
             continue;
         }
-        let delivered =
-            send_discord_with_retry(&client, &wh.url, &item.record, build_mention_str(&wh.mention_roles, &wh.mention).as_deref(), wh.thread_id.as_deref()).await;
+        let delivered = send_discord_with_retry(
+            &client,
+            &wh.url,
+            &item.record,
+            build_mention_str(&wh.mention_roles, &wh.mention).as_deref(),
+            wh.thread_id.as_deref(),
+        )
+        .await;
         log_webhook_attempt(
             &app,
             wh,
@@ -541,8 +547,14 @@ pub async fn resend_failed_webhooks(app: AppHandle) -> Result<String, String> {
             if !webhook_matches(&wh.filters, &record) {
                 continue;
             }
-            let delivered =
-                send_discord_with_retry(&client, &wh.url, &record, build_mention_str(&wh.mention_roles, &wh.mention).as_deref(), wh.thread_id.as_deref()).await;
+            let delivered = send_discord_with_retry(
+                &client,
+                &wh.url,
+                &record,
+                build_mention_str(&wh.mention_roles, &wh.mention).as_deref(),
+                wh.thread_id.as_deref(),
+            )
+            .await;
             log_webhook_attempt(
                 &app,
                 wh,
@@ -1437,9 +1449,8 @@ pub async fn repair_history_cm_flags(app: AppHandle) {
         // newer bosses (e.g. Vloxx CM) that don't emit statechange 35 on dps.report's
         // end. When the boss is CM-eligible and dps.report said Some(false), try the
         // local parse (HP threshold) — if it says CM, override the stale value.
-        let cm_local_override = rec.cm_verified == Some(true)
-            && rec.is_cm == Some(false)
-            && boss_cm_eligible(&boss);
+        let cm_local_override =
+            rec.cm_verified == Some(true) && rec.is_cm == Some(false) && boss_cm_eligible(&boss);
         // Also re-check records stored as Some(false) — local EVTC parse
         // can't detect Ura LCM (arcdps doesn't emit statechange 36 for it),
         // so early uploads landed at is_lcm=Some(false) and stayed wrong.
@@ -1454,7 +1465,9 @@ pub async fn repair_history_cm_flags(app: AppHandle) {
                 .map(|hp| hp <= SUCCESS_HP_THRESHOLD)
                 .unwrap_or(false);
         let quickplay_bad = rec.is_quick_play.is_none() && rec.url.is_some();
-        if (!cm_bad && !cm_local_override && !lcm_bad && !success_bad && !quickplay_bad) || rec.url.is_none() {
+        if (!cm_bad && !cm_local_override && !lcm_bad && !success_bad && !quickplay_bad)
+            || rec.url.is_none()
+        {
             continue;
         }
         let permalink = dps_permalink(&rec.url.clone().unwrap());
@@ -1607,8 +1620,13 @@ pub async fn repair_history_cerus_empowered_stacks(app: AppHandle) {
             .unwrap_or("")
             .to_lowercase()
             .replace(|c: char| !c.is_ascii_alphanumeric(), "");
-        let should_have =
-            crate::vl_ranks::auto_petrified_for(&boss_key, rec.is_cm, rec.is_lcm, rec.is_convergence == Some(true), stacks);
+        let should_have = crate::vl_ranks::auto_petrified_for(
+            &boss_key,
+            rec.is_cm,
+            rec.is_lcm,
+            rec.is_convergence == Some(true),
+            stacks,
+        );
         let had_petrified = rec
             .vl_rank
             .as_ref()
@@ -1739,8 +1757,13 @@ pub async fn repair_history_vl_ranks(app: AppHandle) {
             .to_lowercase()
             .replace(|c: char| !c.is_ascii_alphanumeric(), "");
         // Re-derive the auto rank for this encounter (None if no longer eligible).
-        let correct_auto =
-            crate::vl_ranks::auto_rank_for(&boss, rec.is_cm, rec.is_lcm, rec.is_convergence == Some(true), rec.success);
+        let correct_auto = crate::vl_ranks::auto_rank_for(
+            &boss,
+            rec.is_cm,
+            rec.is_lcm,
+            rec.is_convergence == Some(true),
+            rec.success,
+        );
         // A manual rank (petrified/insatiable/empowered) was intentionally chosen by
         // the user and is left alone. Only the auto ranks (conqueror/legendary) are
         // repaired — and only when present in the set.
@@ -2957,9 +2980,8 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                                 .unwrap_or("")
                                 .to_lowercase()
                                 .replace(|c: char| !c.is_ascii_alphanumeric(), "");
-                            let pre_api_cm_eligible =
-                                record.is_convergence == Some(true)
-                                    || boss_cm_eligible(&pre_api_clean);
+                            let pre_api_cm_eligible = record.is_convergence == Some(true)
+                                || boss_cm_eligible(&pre_api_clean);
                             // dps.report returns "DPS.Report" for story instances (no real
                             // name); we already set the proper instance name from the map id
                             // above, so keep ours instead of clobbering it with the generic tag.
@@ -3032,7 +3054,8 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                                         Some(pre_api_cm_eligible && local_is_cm.unwrap_or(false));
                                 }
                             } else {
-                                record.is_cm = Some(pre_api_cm_eligible && local_is_cm.unwrap_or(false));
+                                record.is_cm =
+                                    Some(pre_api_cm_eligible && local_is_cm.unwrap_or(false));
                             }
 
                             // LCM — only Ura (raid) and Temple of Febe (strike) are LCM-eligible.
@@ -4672,13 +4695,21 @@ pub(crate) fn webhook_matches(f: &crate::config::WebhookFilters, r: &UploadRecor
 /// Build the Discord `content` string from webhook's mention_roles tokens.
 /// All non-empty tokens are space-separated so Discord renders every ping.
 /// Falls back to legacy `mention` field if mention_roles is empty.
-fn build_mention_str(mention_roles: &[crate::config::WebhookRole], mention: &Option<String>) -> Option<String> {
+fn build_mention_str(
+    mention_roles: &[crate::config::WebhookRole],
+    mention: &Option<String>,
+) -> Option<String> {
     if !mention_roles.is_empty() {
-        let tokens: Vec<&str> = mention_roles.iter()
+        let tokens: Vec<&str> = mention_roles
+            .iter()
             .map(|r| r.token.trim())
             .filter(|t| !t.is_empty())
             .collect();
-        if tokens.is_empty() { None } else { Some(tokens.join(" ")) }
+        if tokens.is_empty() {
+            None
+        } else {
+            Some(tokens.join(" "))
+        }
     } else {
         mention.clone()
     }
@@ -4694,9 +4725,18 @@ async fn send_discord_with_retry(
     const MAX_TRIES: u32 = 3;
     let payload = build_webhook_payload(record, mention);
     let url = if let Some(tid) = thread_id {
-        if tid.trim().is_empty() { webhook_url.to_string() }
-        else { format!("{}?thread_id={}", webhook_url.trim_end_matches('?'), tid.trim()) }
-    } else { webhook_url.to_string() };
+        if tid.trim().is_empty() {
+            webhook_url.to_string()
+        } else {
+            format!(
+                "{}?thread_id={}",
+                webhook_url.trim_end_matches('?'),
+                tid.trim()
+            )
+        }
+    } else {
+        webhook_url.to_string()
+    };
     for attempt in 1..=MAX_TRIES {
         match client.post(&url).json(&payload).send().await {
             Ok(r) => {
@@ -4969,11 +5009,17 @@ pub async fn test_webhook(webhook: DiscordWebhook) -> Result<String, String> {
         upload_done: None,
     };
     let mention_str = if !webhook.mention_roles.is_empty() {
-        let tokens: Vec<&str> = webhook.mention_roles.iter()
+        let tokens: Vec<&str> = webhook
+            .mention_roles
+            .iter()
             .map(|r| r.token.trim())
             .filter(|t| !t.is_empty())
             .collect();
-        if tokens.is_empty() { None } else { Some(tokens.join(" ")) }
+        if tokens.is_empty() {
+            None
+        } else {
+            Some(tokens.join(" "))
+        }
     } else {
         webhook.mention.clone()
     };
@@ -4981,7 +5027,11 @@ pub async fn test_webhook(webhook: DiscordWebhook) -> Result<String, String> {
     let mut test_url = webhook.url.clone();
     if let Some(ref tid) = webhook.thread_id {
         if !tid.trim().is_empty() {
-            test_url = format!("{}?thread_id={}", webhook.url.trim_end_matches('?'), tid.trim());
+            test_url = format!(
+                "{}?thread_id={}",
+                webhook.url.trim_end_matches('?'),
+                tid.trim()
+            );
         }
     }
     match client.post(&test_url).json(&payload).send().await {
