@@ -300,6 +300,25 @@ pub fn catalog() -> &'static [VlEncounter] {
             ],
         },
         VlEncounter {
+            key: "vloxklcm",
+            display: "Nexus of Eternity (Vloxx) — Legendary Challenge Mode",
+            aliases: &["vloxx", "nexusofeternity", "nexusofeternitycm"],
+            cm_only: false,
+            lcm_only: true,
+            ranks: &[
+                VlRankDef {
+                    id: "legendaryconquerorofvloxx",
+                    label: "Legendary Conqueror of Vloxx",
+                    icon: "/rank_icons/Vloxx_LCM/legendaryconquerorofvloxx.png",
+                    text_color: "#2ff2fc",
+                    bg_color: "#25393f",
+                    description: "Players that have successfully completed the Legendary Challenge Mode of Vloxx (Nexus of Eternity). This rank requires 1 log.",
+                    url: None,
+                    auto: Some("lcm"),
+                },
+            ],
+        },
+        VlEncounter {
             key: "kelacm",
             display: "Kela, the Seneschal of Waves — Challenge Mode",
             aliases: &["kela", "kelaseneschalofwaves"],

@@ -177,6 +177,20 @@ async function main() {
     process.exit(1);
   }
 
+  // The GitHub release ships the GUI executable. Rename it to the CLI
+  // name that ei_runner.rs expects so local EI parsing works.
+  const isWin = process.platform === 'win32';
+  const guiName = isWin ? 'GuildWars2EliteInsights.exe' : 'GuildWars2EliteInsights';
+  const cliName = isWin ? 'GuildWars2EliteInsights-CLI.exe' : 'GuildWars2EliteInsights-CLI';
+  const guiPath = path.join(EI_DIR, guiName);
+  const cliPath = path.join(EI_DIR, cliName);
+  if (fs.existsSync(guiPath)) {
+    fs.renameSync(guiPath, cliPath);
+    console.log(`Renamed ${guiName} → ${cliName}`);
+  } else {
+    console.warn(`WARNING: ${guiName} not found after extraction; local EI parsing may fail.`);
+  }
+
   // Clean up
   fs.rmSync(tmpDir, { recursive: true, force: true });
 
