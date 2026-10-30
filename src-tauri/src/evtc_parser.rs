@@ -857,13 +857,26 @@ pub fn dragon_phase_full_with_adds(
         return None;
     }
 
-    // Build a lookup of phase key -> whether all targets for that phase
-    // were killed. We check each phase's `targets` indices against the
-    // global `targets[]` array's `healthPercentBurned` field. A phase is
-    // considered fully cleared only when every target NPC was killed
-    // (burned >= 99.9). This lets us detect partial clears like Giants
-    // where only 2 of 3 void giants were killed on a successful kill.
+    // Build a lookup of phase key -> whether all add targets for that phase
+    // were killed. We match add NPCs by name in the global `targets[]` array
+    // and check their `healthPercentBurned`. On a kill, non-encounter-phase
+    // targets (like Void Giants) retain their actual burned HP (they are NOT
+    // in the encounter phase's target list, so the encounter-success override
+    // in JsonNPCBuilder does not apply to them). This lets us detect partial
+    // clears like Giants where only 2 of 3 void giants were killed on a
+    // successful kill, even when dps.report omits or renames the phase-level
+    // `targets` field.
     let targets_arr = json.get("targets").and_then(|v| v.as_array());
+    // Map each add phase key to a lowercase name fragment that identifies its
+    // target NPCs in the top-level targets[] array.
+    let add_target_frags: &[(&str, &str)] = &[
+        ("giants", "giant"),
+        ("timecaster", "time caster"),
+        ("saltspray", "saltspray"),
+        ("obliterator", "obliterator"),
+        ("goliath", "goliath"),
+        ("soowon2", "soowon"),
+    ];
     let mut phase_targets_all_dead: std::collections::HashMap<String, bool> =
         std::collections::HashMap::new();
     for phase in phases {
@@ -885,20 +898,39 @@ pub fn dragon_phase_full_with_adds(
                     .map(|(k, _)| *k)
             });
         if let Some(key) = matched_key {
-            let all_dead = phase
-                .get("targets")
-                .and_then(|v| v.as_array())
-                .map(|indices| {
-                    indices.iter().all(|idx| {
-                        idx
-                            .as_u64()
-                            .and_then(|i| targets_arr.and_then(|t| t.get(i as usize)))
-                            .and_then(|t| t.get("healthPercentBurned").and_then(|v| v.as_f64()))
-                            .map(|burned| burned >= 99.9)
-                            .unwrap_or(true) // target not found in array → assume killed
+            // Look up the name fragment for this add phase key
+            let frag = add_target_frags.iter()
+                .find(|(k, _)| *k == key)
+                .map(|(_, f)| *f);
+            let all_dead = frag
+                .and_then(|f| {
+                    // Scan the top-level targets[] array for NPCs matching this
+                    // phase's name fragment. If ALL matching targets are killed
+                    // (burned >= 99.9), the phase is fully cleared.
+                    targets_arr.and_then(|tarr| {
+                        let matching: Vec<&Value> = tarr.iter()
+                            .filter(|t| {
+                                t.get("name")
+                                    .and_then(|v| v.as_str())
+                                    .map(|n| n.to_lowercase().contains(f))
+                                    .unwrap_or(false)
+                            })
+                            .collect();
+                        if matching.is_empty() {
+                            // No targets found for this phase — phase wasn't
+                            // reached, so don't force-clear it.
+                            None
+                        } else {
+                            Some(matching.iter().all(|t| {
+                                t.get("healthPercentBurned")
+                                    .and_then(|v| v.as_f64())
+                                    .map(|burned| burned >= 99.9)
+                                    .unwrap_or(true) // no burned data → assume killed
+                            }))
+                        }
                     })
                 })
-                .unwrap_or(true); // no target indices → assume cleared
+                .unwrap_or(true); // no fragment for dragons → default cleared
             phase_targets_all_dead.insert((*key).to_string(), all_dead);
         }
     }
@@ -3102,7 +3134,12 @@ mod harvest_dragon_tests {
                 {"name": "Purification 3", "failed": false},
                 {"name": "Void Saltspray Dragon", "failed": false},
                 {"name": "Soo-Won"}  // failed omitted — NM kill
-            ]
+            ],
+            "targets": [
+                {"name": "Void Giant", "healthPercentBurned": 0.0},
+                {"name": "Void Giant", "healthPercentBurned": 0.0},
+                {"name": "Void Giant", "healthPercentBurned": 0.0},
+            ],
         } );
         let tl = dragon_phase_full_with_adds(&json, true, None)
             .expect("should build timeline");
@@ -3120,6 +3157,8 @@ mod harvest_dragon_tests {
     /// NM kill where Giants has `failed` omitted (null) but only 2 of 3
     /// Void Giants were killed (verified via `targets[].healthPercentBurned`).
     /// The Giants phase should stay uncleared — not all targets were killed.
+    /// Uses name-based matching on the top-level targets[] array (no phase-level
+    /// `targets` field needed — dps.report may omit it).
     #[test]
     fn nm_kill_giants_partial_kill_stays_uncleared() {
         let json = json!( {
@@ -3130,7 +3169,7 @@ mod harvest_dragon_tests {
                 {"name": "Primordus", "failed": false},
                 {"name": "Kralkatorrik", "failed": false},
                 {"name": "Mordremoth", "failed": false},
-                {"name": "Giants", "targets": [5, 6, 7]},  // failed omitted
+                {"name": "Giants"},  // failed omitted — Giants not killed
                 {"name": "Zhaitan", "failed": false},
                 {"name": "Soo-Won"}  // failed omitted — NM kill
             ],
@@ -3142,7 +3181,7 @@ mod harvest_dragon_tests {
                 {"name": "Zhaitan", "healthPercentBurned": 100.0},
                 {"name": "Void Giant", "healthPercentBurned": 100.0},  // killed
                 {"name": "Void Giant", "healthPercentBurned": 100.0},  // killed
-                {"name": "Void Giant", "healthPercentBurned": 37.0},   // still alive
+                {"name": "Void Giant", "healthPercentBurned": 63.0},   // still alive (37% HP left)
                 {"name": "Soo-Won", "healthPercentBurned": 100.0},
             ],
         } );
