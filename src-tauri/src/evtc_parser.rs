@@ -857,6 +857,52 @@ pub fn dragon_phase_full_with_adds(
         return None;
     }
 
+    // Build a lookup of phase key -> whether all targets for that phase
+    // were killed. We check each phase's `targets` indices against the
+    // global `targets[]` array's `healthPercentBurned` field. A phase is
+    // considered fully cleared only when every target NPC was killed
+    // (burned >= 99.9). This lets us detect partial clears like Giants
+    // where only 2 of 3 void giants were killed on a successful kill.
+    let targets_arr = json.get("targets").and_then(|v| v.as_array());
+    let mut phase_targets_all_dead: std::collections::HashMap<String, bool> =
+        std::collections::HashMap::new();
+    for phase in phases {
+        let name = match phase.get("name").and_then(|v| v.as_str()) {
+            Some(n) => n.to_lowercase(),
+            None => continue,
+        };
+        if name.contains("breakbar") {
+            continue;
+        }
+        let matched_key = INTERPHASE_MATCH
+            .iter()
+            .find(|(_, _, _, _, frags)| frags.iter().any(|f| name.contains(f)))
+            .map(|(k, _, _, _, _)| *k)
+            .or_else(|| {
+                DRAGON_PHASE_MATCH
+                    .iter()
+                    .find(|(_, frags)| frags.iter().any(|f| name.contains(f)))
+                    .map(|(k, _)| *k)
+            });
+        if let Some(key) = matched_key {
+            let all_dead = phase
+                .get("targets")
+                .and_then(|v| v.as_array())
+                .map(|indices| {
+                    indices.iter().all(|idx| {
+                        idx
+                            .as_u64()
+                            .and_then(|i| targets_arr.and_then(|t| t.get(i as usize)))
+                            .and_then(|t| t.get("healthPercentBurned").and_then(|v| v.as_f64()))
+                            .map(|burned| burned >= 99.9)
+                            .unwrap_or(true) // target not found in array → assume killed
+                    })
+                })
+                .unwrap_or(true); // no target indices → assume cleared
+            phase_targets_all_dead.insert((*key).to_string(), all_dead);
+        }
+    }
+
     let mut out: Vec<DragonPhase> = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     let dragon_keys: std::collections::HashSet<&str> =
@@ -944,14 +990,13 @@ pub fn dragon_phase_full_with_adds(
     }
 
     if success {
-        // Encounter success means the instance finished.
+        // Encounter success means the instance finished (kill).
         // Dragons: on a kill, all 6 must be cleared (HT is sequential). Only
         // the last dragon can stay uncleared if explicitly failed (failed=true).
         // Non-dragon phases (adds, purifications, hearts): respect dps.report's
-        // `failed` flag — if a phase was explicitly failed (e.g. Giants in NM
-        // when skipped), it stays uncleared even on a kill. If `failed` is
-        // null/omitted, the phase was cleared (dps.report only omits `failed`
-        // for cleared elements on kill logs).
+        // `failed` flag AND verify via `targets[].healthPercentBurned` that all
+        // target NPCs were actually killed. This catches partial clears like
+        // Giants (3 void giants) where only some were killed on a successful kill.
         let last_dragon_order = out
             .iter()
             .rev()
@@ -968,8 +1013,13 @@ pub fn dragon_phase_full_with_adds(
                     }
                     p.cleared = true;
                 } else if !explicit_failed.contains(p.key.as_str()) {
-                    // Non-dragon phase: only force-clear if not explicitly failed.
-                    p.cleared = true;
+                    // Non-dragon phase: only force-clear if not explicitly
+                    // failed AND all targets for this phase were killed.
+                    let all_targets_dead =
+                        phase_targets_all_dead.get(p.key.as_str()).copied().unwrap_or(true);
+                    if all_targets_dead {
+                        p.cleared = true;
+                    }
                 }
             }
         }
@@ -3065,6 +3115,49 @@ mod harvest_dragon_tests {
         }
         // Giants was explicitly failed → stays uncleared even on a kill
         assert!(!by_key["giants"], "Giants should be uncleared (skipped in NM)");
+    }
+
+    /// NM kill where Giants has `failed` omitted (null) but only 2 of 3
+    /// Void Giants were killed (verified via `targets[].healthPercentBurned`).
+    /// The Giants phase should stay uncleared — not all targets were killed.
+    #[test]
+    fn nm_kill_giants_partial_kill_stays_uncleared() {
+        let json = json!( {
+            "success": true,
+            "phases": [
+                {"name": "Purification 1", "failed": false},
+                {"name": "Jormag", "failed": false},
+                {"name": "Primordus", "failed": false},
+                {"name": "Kralkatorrik", "failed": false},
+                {"name": "Mordremoth", "failed": false},
+                {"name": "Giants", "targets": [5, 6, 7]},  // failed omitted
+                {"name": "Zhaitan", "failed": false},
+                {"name": "Soo-Won"}  // failed omitted — NM kill
+            ],
+            "targets": [
+                {"name": "Jormag", "healthPercentBurned": 100.0},
+                {"name": "Primordus", "healthPercentBurned": 100.0},
+                {"name": "Kralkatorrik", "healthPercentBurned": 100.0},
+                {"name": "Mordremoth", "healthPercentBurned": 100.0},
+                {"name": "Zhaitan", "healthPercentBurned": 100.0},
+                {"name": "Void Giant", "healthPercentBurned": 100.0},  // killed
+                {"name": "Void Giant", "healthPercentBurned": 100.0},  // killed
+                {"name": "Void Giant", "healthPercentBurned": 37.0},   // still alive
+                {"name": "Soo-Won", "healthPercentBurned": 100.0},
+            ],
+        } );
+        let tl = dragon_phase_full_with_adds(&json, true, None)
+            .expect("should build timeline");
+        let by_key: std::collections::HashMap<_, _> =
+            tl.iter().map(|p| (p.key.as_str(), p.cleared)).collect();
+        // All dragons cleared on a NM kill
+        for k in ["jormag", "primordus", "kralkatorrik", "mordremoth",
+                  "zhaitan", "soowon"] {
+            assert!(by_key[k], "{} should be cleared on a NM kill", k);
+        }
+        // Giants: 2 of 3 killed, 1 still at 37% → uncleared
+        assert!(!by_key["giants"],
+            "Giants should be uncleared (only 2 of 3 Void Giants killed)");
     }
 
     /// A wipe: dps.report truncates `phases[]` at the boss you died on, so
