@@ -944,11 +944,14 @@ pub fn dragon_phase_full_with_adds(
     }
 
     if success {
-        // Encounter success means the instance finished. For Harvest Temple,
-        // dps.report may still mark the last dragon as uncleared on a wipe,
-        // or omit `failed` entirely. On a kill, the last dragon is the wipe
-        // point ONLY if it was explicitly failed (failed=true) — otherwise
-        // the dragon was cleared and dps.report simply omitted the field.
+        // Encounter success means the instance finished.
+        // Dragons: on a kill, all 6 must be cleared (HT is sequential). Only
+        // the last dragon can stay uncleared if explicitly failed (failed=true).
+        // Non-dragon phases (adds, purifications, hearts): respect dps.report's
+        // `failed` flag — if a phase was explicitly failed (e.g. Giants in NM
+        // when skipped), it stays uncleared even on a kill. If `failed` is
+        // null/omitted, the phase was cleared (dps.report only omits `failed`
+        // for cleared elements on kill logs).
         let last_dragon_order = out
             .iter()
             .rev()
@@ -963,8 +966,11 @@ pub fn dragon_phase_full_with_adds(
                             continue;
                         }
                     }
+                    p.cleared = true;
+                } else if !explicit_failed.contains(p.key.as_str()) {
+                    // Non-dragon phase: only force-clear if not explicitly failed.
+                    p.cleared = true;
                 }
-                p.cleared = true;
             }
         }
     } else {
@@ -3025,6 +3031,40 @@ mod harvest_dragon_tests {
                   "zhaitan", "soowon"] {
             assert!(by_key[k], "{} should be cleared on a NM kill", k);
         }
+    }
+
+    /// NM kill where Giants was skipped (failed=true). On a kill, all dragons
+    /// are cleared (they must be killed to win), but non-dragon adds like
+    /// Giants that were explicitly failed (not killed) must NOT be force-cleared.
+    #[test]
+    fn nm_kill_giants_skipped_stays_uncleared() {
+        let json = json!( {
+            "success": true,
+            "phases": [
+                {"name": "Purification 1", "failed": false},
+                {"name": "Jormag", "failed": false},
+                {"name": "Primordus", "failed": false},
+                {"name": "Kralkatorrik", "failed": false},
+                {"name": "Purification 2", "failed": false},
+                {"name": "Mordremoth", "failed": false},
+                {"name": "Giants", "failed": true},  // Giants skipped in NM
+                {"name": "Zhaitan", "failed": false},
+                {"name": "Purification 3", "failed": false},
+                {"name": "Void Saltspray Dragon", "failed": false},
+                {"name": "Soo-Won"}  // failed omitted — NM kill
+            ]
+        } );
+        let tl = dragon_phase_full_with_adds(&json, true, None)
+            .expect("should build timeline");
+        let by_key: std::collections::HashMap<_, _> =
+            tl.iter().map(|p| (p.key.as_str(), p.cleared)).collect();
+        // All dragons cleared on a NM kill
+        for k in ["jormag", "primordus", "kralkatorrik", "mordremoth",
+                  "zhaitan", "soowon"] {
+            assert!(by_key[k], "{} should be cleared on a NM kill", k);
+        }
+        // Giants was explicitly failed → stays uncleared even on a kill
+        assert!(!by_key["giants"], "Giants should be uncleared (skipped in NM)");
     }
 
     /// A wipe: dps.report truncates `phases[]` at the boss you died on, so
