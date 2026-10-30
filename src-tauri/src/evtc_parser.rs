@@ -1090,7 +1090,14 @@ pub fn dragon_phase_full_with_adds(
                     }
                     continue;
                 } else if p.order < wipe_order {
-                    p.cleared = true;
+                    // Respect add-specific kill evidence: even if the phase
+                    // appears before the wipe point, it's only cleared if all
+                    // its targets were actually killed (burned >= 99.9).
+                    let all_targets_dead =
+                        phase_targets_all_dead.get(p.key.as_str()).copied().unwrap_or(true);
+                    if all_targets_dead {
+                        p.cleared = true;
+                    }
                 } else if let Some(evidence) = add_evidence {
                     if let Some(died) = evidence.died.get(p.key.as_str()) {
                         p.cleared = *died;
@@ -3329,6 +3336,57 @@ mod harvest_dragon_tests {
             checked += 1;
         }
         assert!(checked > 0, "expected to find real Cerus logs to verify");
+    }
+
+    /// Wipe log where Giants appears BEFORE the wipe point but its targets
+    /// were NOT all killed (some Void Giants still alive). Mirrors the real
+    /// dps.report getJson structure: target names are "Champion Void Giant N"
+    /// and `healthPercentBurned` reflects actual combat state (none reached 100).
+    /// Giants must stay uncleared — the phase-ordering "everything before wipe = cleared"
+    /// rule does NOT override add-specific kill evidence.
+    #[test]
+    fn wipe_giants_before_wipe_point_partial_kills_stays_uncleared() {
+        let json = json!({
+            "success": false,
+            "phases": [
+                {"name": "Full Fight"},
+                {"name": "Purification 1", "failed": null},
+                {"name": "Jormag", "failed": null},
+                {"name": "Primordus", "failed": null},
+                {"name": "Kralkatorrik", "failed": null},
+                {"name": "Purification 2", "failed": null},
+                {"name": "Void Time Caster", "failed": null},
+                {"name": "Mordremoth", "failed": null},
+                {"name": "Giants", "failed": null},  // not explicitly failed
+                {"name": "Zhaitan", "failed": true},  // wipe point
+            ],
+            "targets": [
+                {"name": "The JormagVoid", "healthPercentBurned": 99.68},
+                {"name": "The PrimordusVoid", "healthPercentBurned": 99.82},
+                {"name": "The KralkatorrikVoid", "healthPercentBurned": 98.62},
+                {"name": "The MordremothVoid", "healthPercentBurned": 99.85},
+                {"name": "The ZhaitanVoid", "healthPercentBurned": 8.06},
+                {"name": "Champion Void Giant 1", "healthPercentBurned": 95.47},
+                {"name": "Champion Void Giant 2", "healthPercentBurned": 35.15},
+                {"name": "Champion Void Giant 3", "healthPercentBurned": 90.03},
+            ],
+        });
+        let tl = dragon_phase_full_with_adds(&json, false, None)
+            .expect("should build timeline");
+        let by_key: std::collections::HashMap<_, _> =
+            tl.iter().map(|p| (p.key.as_str(), p.cleared)).collect();
+        // Dragons before Zhaitan (the wipe point) are cleared.
+        for k in ["jormag", "primordus", "kralkatorrik", "mordremoth"] {
+            assert!(by_key[k], "{} should be cleared (before wipe point)", k);
+        }
+        // Zhaitan is the wipe point → uncleared.
+        assert!(!by_key["zhaitan"], "zhaitan should be uncleared (wipe point)");
+        // Giants is before the wipe point but NOT all targets were killed
+        // (95.47, 35.15, 90.03 — none >= 99.9) → must stay uncleared.
+        assert!(
+            !by_key["giants"],
+            "Giants should be uncleared (partial kills before wipe point)"
+        );
     }
 
     #[test]
