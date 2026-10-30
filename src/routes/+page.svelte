@@ -1203,6 +1203,17 @@
     prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   });
 
+  // Exit transition for uploading log cards that have resolved (vanish animation).
+  function resolveVanish(_node: HTMLElement, params: { duration: number }) {
+    return {
+      duration: params.duration,
+      css: (t: number) => `opacity: ${t}; transform: scale(${0.95 + 0.05 * t});`,
+      fallback: (node: HTMLElement, _params: { duration: number }) => {
+        node.style.opacity = "0";
+        node.style.transform = "scale(0.95)";
+      },
+    };
+  }
   const CONVERGENCE_BOSSES = new Set([
     "sorrow", "demonknight", "dreadwing", "hellsister", "umbriel",
     "greer", "greerthebightbringer", "greertheblightbringer", "decima", "decimathestormsinger", "ura", "urathesteamshrieker",
@@ -1505,6 +1516,8 @@
   let selectedLogs = $state<Set<string>>(new Set());
   let wingCollapsed = $state<Record<number, boolean>>({});
   let categoryCollapsed = $state<Record<string, boolean>>({});
+  let showAllUploads = $state(false);
+  let wasResolving = $state<Set<string>>(new Set());
   let copyFeedback = $state("");
   let formatterCopyFeedback = $state(false);
   let isOnline = $state(true);
@@ -1531,7 +1544,7 @@
     if (name === "aetherbladehideout") return "aetherbladehideout";
     if (name === "ministerli" || name === "kainengoverlook") return "kainengoverlook";
     if (name === "ankka" || name === "xunlaijadejunkyard") return "xunlaijadejunkyard";
-    if (name === "dragonvoid" || name === "harvesttemple") return "harvesttemple";
+    if (name === "dragonvoid" || name === "harvesttemple" || name === "harvesttemplecm") return "harvesttemple";
     if (name === "thevoiceandtheclaw" || name === "voiceandclaw" || name === "voiceandclawofthefallen" || name === "voiceofthefallen" || name === "clawofthefallen") return "voiceandclaw";
     if (name === "dagda" || name === "cosmicobservatory") return "cosmicobservatory";
     if (name === "cerus" || name === "templeoffebe") return "templeoffebe";
@@ -1882,23 +1895,33 @@
         p.key === "timecaster" && purification2 != null
           ? purification2.cleared
           : p.cleared;
-      // For the 6 elder dragons the timeline `cleared` flag is the authoritative
-      // source of truth for hover HP: cleared → 0% / Defeated; not cleared → 100%
-      // HP left. dps.report can leave `failed=null` on wiped dragons, which makes
-      // `bosses_hp` show 100% even for dragons that were killed before the wipe.
+      // For the 6 elder dragons the timeline `cleared` flag is the
+      // authoritative source of truth for defeated state: cleared → 0% HP.
+      // For non-cleared dragons, use the actual HP remaining from the
+      // getJson `targets[]` array (extracted by the backend in
+      // dragon_phase_state_with_success). This shows the real HP left when
+      // you wiped on a dragon instead of the placeholder 100%. If no hp
+      // data is available (e.g. the dragon was never reached), fall back
+      // to 100%.
       const isDragon = p.kind === "dragon";
       const died = isDragon ? effectiveCleared : hasHp ? hp!.died : false;
       const hpLeft = isDragon
         ? effectiveCleared
           ? 0
-          : 100
+          : hasHp
+            ? hp!.hp_left
+            : 100
         : hasHp
           ? hp!.hp_left
           : null;
       const hpState = isDragon
         ? effectiveCleared
           ? "dead"
-          : "alive"
+          : hasHp
+            ? hp!.died
+              ? "dead"
+              : "alive"
+            : "alive"
         : hasHp
           ? hp!.died
             ? "dead"
@@ -1999,6 +2022,9 @@
     // Vermilion has its own asset; Indigo & Gold fall back to the court icon.
     prototypeindigo: "oldlionscourt",
     prototypegold: "oldlionscourt",
+    // Harvest Temple: "The Dragonvoid" is the in-game NPC name from EVTC;
+    // canonicalize to the "dragonvoid" local icon asset.
+    thedragonvoid: "dragonvoid",
   };
 
   /** Return an external (dps.report / imgur / GW2 render) icon URL as-is.
@@ -2050,6 +2076,7 @@
     "cerus": { cm: true, lcm: true }, "templeoffebe": { cm: true, lcm: true },
     "aetherbladehideout": { cm: true, lcm: false }, "xunlaijadejunkyard": { cm: true, lcm: false },
     "kainengoverlook": { cm: true, lcm: false }, "harvesttemple": { cm: true, lcm: false },
+    "dragonvoid": { cm: true, lcm: false }, "thedragonvoid": { cm: true, lcm: false },
     "oldlionscourt": { cm: true, lcm: false }, "dagda": { cm: true, lcm: false },
     // Janthir Wilds strikes
     "kela": { cm: true, lcm: false }, "kelaseneschalofwaves": { cm: true, lcm: false },
@@ -3445,11 +3472,9 @@
 
   let groupedFeed = $derived.by(() => {
     const items: FeedItem[] = [];
-    const uploadingLogs = filteredUploads.filter(l => l.status === "Uploading" || !l.boss_name);
+    // Only resolved logs (with boss_name and non-Uploading status) go into the feed groups.
+    // Uploading logs are rendered separately as floating stepper cards above the feed.
     const resolvedLogs = filteredUploads.filter(l => l.status !== "Uploading" && l.boss_name);
-    if (uploadingLogs.length > 0) {
-      items.push({ kind: "group", bossName: "Active Uploads", bossBuckets: [{ bossKey: "active", bossName: "Active Uploads", logs: uploadingLogs }], logs: uploadingLogs });
-    }
     const wingBuckets = new Map<number, Map<string, { bossName: string; logs: UploadRecord[] }>>();
     for (const log of resolvedLogs) {
       if (getEncounterType(log.boss_name, log.num_players, log.is_convergence) !== "raid") continue;
@@ -3503,6 +3528,11 @@
     }
     return items;
   });
+
+  // Uploading logs rendered as floating stepper cards above the feed.
+  let uploadingLogs = $derived(filteredUploads.filter(l => l.status === "Uploading" || !l.boss_name || wasResolving.has(l.file_path)));
+  let visibleUploads = $derived(showAllUploads ? uploadingLogs : uploadingLogs.slice(0, 2));
+  let hiddenUploadCount = $derived(uploadingLogs.length > 2 ? uploadingLogs.length - 2 : 0);
 
   // ─── Formatter State ─────────────────────────────────────────────────
   let editableFormattedText = $state("");
@@ -3916,6 +3946,17 @@
         if (r.status === "Completed" && !wasCompleted) {
           playSuccessSound();
           showDesktopNotification(r);
+        }
+        // Tag the float card for the vanish animation so it stays visible
+        // long enough for @keyframes resolve-vanish to play before removal.
+        if (r.status === "Completed" && !wasCompleted && !wasResolving.has(r.file_path)) {
+          wasResolving.add(r.file_path);
+          wasResolving = new Set(wasResolving);
+          const animMs = prefersReducedMotion ? 0 : 350;
+          setTimeout(() => {
+            wasResolving.delete(r.file_path);
+            wasResolving = new Set(wasResolving);
+          }, animMs);
         }
       });
 
@@ -4763,6 +4804,13 @@ function deleteRole(wh: any, idx: number) {
     const next = [...discord_webhooks];
     next.splice(idx + 1, 0, clone);
     discord_webhooks = next;
+  }
+
+  /** Extract just the filename from a full file path (Windows + Unix separators). */
+  function basename(filePath: string): string {
+    if (!filePath) return "";
+    const parts = filePath.split(/[\/\\]+/);
+    return parts[parts.length - 1];
   }
 
   // ════════════════════════════════════════════════════════════════════════════════
@@ -5752,6 +5800,16 @@ async function testWebhook(wh: any) {
 
 {#snippet logFooter(log: any, onDelete: () => void)}
 <div class="log-footer">
+  {#if log.status === "Uploading" || isReadingLog(log)}
+    <div class="cancel-btn-row">
+      <div class="custom-tooltip-container">
+        <button class="action-btn secondary-action-btn" title="Cancel upload" onclick={(e) => { e.stopPropagation(); deleteLogRecord(log.file_path); }}>
+          <i class="fa-solid fa-square-xmark"></i> Cancel
+        </button>
+        <div class="custom-tooltip">Cancel this upload</div>
+      </div>
+    </div>
+  {/if}
   <div class="log-actions-row">
     <!-- Primary Action 1: Stats Modal -->
     <div class="custom-tooltip-container">
@@ -5913,6 +5971,9 @@ async function testWebhook(wh: any) {
         </div>
       {/if}
     </div>
+  <div class="file-name-bar">
+    <span class="file-name">{basename(log.file_path)}</span>
+  </div>
   </div>
   {#if notesOpen[cardId(log)]}
     <div class="notes-section">
@@ -6507,6 +6568,47 @@ async function testWebhook(wh: any) {
 
       <div style="display: flex; gap: 20px; align-items: flex-start; width: 100%;">
         <div style="flex: {showFormatterPanel ? '0 0 65%' : '1 1 100%'}; min-width: 0;">
+          {#if uploadingLogs.length > 0}
+            <div class="active-uploads-float">
+              {#each visibleUploads as log (log.file_path)}
+                {@const id = cardId(log)}
+                {@const isExpanded = !!expanded[id]}
+                <div class="float-card card uploading" class:float-card-resolving={wasResolving.has(log.file_path)} style="position: relative;" in:fade={{ duration: prefersReducedMotion ? 0 : 200 }} out:resolveVanish={{ duration: prefersReducedMotion ? 0 : 350 }}>
+                  <div class="upload-progress-top"></div>
+                  <button class="log-header" onclick={() => toggleExpand(id)}>
+                    <div
+                      class="favorite-btn"
+                      class:favorited={log.is_favorite === true}
+                      role="button"
+                      tabindex="0"
+                      onclick={(e) => { e.stopPropagation(); toggleFavorite(log.file_path); }}
+                      onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); toggleFavorite(log.file_path); } }}
+                      title={log.is_favorite === true ? "Remove from favorites" : "Add to favorites"}
+                      aria-label={log.is_favorite === true ? "Remove from favorites" : "Add to favorites"}
+                    >
+                      <i class={log.is_favorite === true ? "fa-solid fa-star" : "fa-regular fa-star"}></i>
+                    </div>
+                    {@render logHeaderLeft(log)}
+                    <div class="log-right">
+                      <span class="chevron" class:open={isExpanded}>›</span>
+                    </div>
+                  </button>
+                  {@render logFooter(log, () => deleteLogRecord(log.file_path))}
+                </div>
+              {/each}
+              {#if hiddenUploadCount > 0 && !showAllUploads}
+                <button class="expand-uploads" onclick={() => showAllUploads = true}>
+                  <span>Show {hiddenUploadCount} more</span>
+                  <i>↕</i>
+                </button>
+              {:else if uploadingLogs.length > 2 && showAllUploads}
+                <button class="expand-uploads expanded" onclick={() => showAllUploads = false}>
+                  <span>Collapse</span>
+                  <i>↑</i>
+                </button>
+              {/if}
+            </div>
+          {/if}
           {#if filteredUploads.length === 0}
             <div class="empty-state">
               <span class="empty-icon"><i class="fa-solid fa-folder-open"></i></span>

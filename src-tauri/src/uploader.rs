@@ -1535,8 +1535,17 @@ pub async fn repair_history_cm_flags(app: AppHandle) {
                 }
             }
             if quickplay_bad {
-                if let Some(phase) = json.get("fightMode").and_then(|v| v.as_str()) {
-                    rec.is_quick_play = Some(phase == "Quickplay Normal Mode");
+                if let Some(buffs) = json.get("presentInstanceBuffs").and_then(|v| v.as_array()) {
+                    for entry in buffs {
+                        if let Some(arr) = entry.as_array() {
+                            if let Some(id) = arr.first().and_then(|v| v.as_u64()) {
+                                if [77676u32, 79492].contains(&(id as u32)) {
+                                    rec.is_quick_play = Some(true);
+                                    break;
+                                }
+                            }
+                        }
+                    }
                 }
             }
             updates.insert(rec.file_path.clone(), rec.clone());
@@ -2168,9 +2177,24 @@ fn schedule_processing_check(
                             rec.is_cm = Some(true);
                         }
                     }
+                    // Quick Play: fall back to dps.report's presentInstanceBuffs only when
+                    // the local EVTC buff-scan and EI enrich both came up short (None).
+                    // The local scan is authoritative for QP-eligible bosses.
                     if rec.is_quick_play.is_none() && quick_play_boss(&boss_l_for_qp) {
-                        if let Some(phase) = json.get("fightMode").and_then(|v| v.as_str()) {
-                            rec.is_quick_play = Some(phase == "Quickplay Normal Mode");
+                        // Check presentInstanceBuffs — dps.report's getJson response includes
+                        // this array of [buffId, stacks, phaseIdx]. The QP buffs are
+                        // 77676 (Quickplay Boost) and 79492 (Quickplay Morale).
+                        if let Some(buffs) = json.get("presentInstanceBuffs").and_then(|v| v.as_array()) {
+                            for entry in buffs {
+                                if let Some(arr) = entry.as_array() {
+                                    if let Some(id) = arr.first().and_then(|v| v.as_u64()) {
+                                        if [77676u32, 79492].contains(&(id as u32)) {
+                                            rec.is_quick_play = Some(true);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     // Always apply dps.report's authoritative LCM verdict for
@@ -2266,12 +2290,17 @@ fn schedule_processing_check(
                         }
                     }
                     if is_dv && rec.bosses_phases.is_none() {
-                        if let Some(success) = rec.success {
-                            if let Some(phases) = crate::evtc_parser::dragon_phase_full_with_adds(
-                                &json, success, None,
-                            ) {
-                                rec.bosses_phases = Some(phases);
-                            }
+                        // Use rec.success if known, otherwise fall back to the
+                        // getJson response's own `success` field. This mirrors
+                        // how dragon_phase_state_with_success already resolves
+                        // the success flag (evtc_parser.rs:756).
+                        let success = rec.success
+                            .or_else(|| json.get("success").and_then(|v| v.as_bool()))
+                            .unwrap_or(false);
+                        if let Some(phases) = crate::evtc_parser::dragon_phase_full_with_adds(
+                            &json, success, None,
+                        ) {
+                            rec.bosses_phases = Some(phases);
                         }
                     }
                     // Story steps are linear (no win/lose). dps.report may report
@@ -2566,6 +2595,15 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
         // vs Boneskinner). Fall back to the id->name map if the agent name
         // is missing for some reason.
         record.boss_name = boss_name.or_else(|| Some(evtc_parser::get_boss_name_from_id(boss_id)));
+        // Harvest Temple (boss_id 43488) is The Dragonvoid — a CM-only strike
+        // whose agent-table name is a per-dragon NPC (e.g. "Jormag"), not a
+        // recognizable encounter key. Override to the canonical strike name so
+        // that bossCmEligible(), icon resolution, and the CM badge all work
+        // before EI enrichment arrives.
+        if boss_id == 43488 {
+            record.boss_name = Some("The Dragonvoid".to_string());
+            record.boss_icon = Some("dragonvoid".to_string());
+        }
     }
     let mut is_conv = false;
     if diag_bytes.len() >= 15 && diag_bytes.starts_with(b"EVTC") {
@@ -3089,16 +3127,26 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                                 Some(false)
                             };
 
-                            // Quick Play: fall back to dps.report's `fightMode` only when the
-                            // local EVTC buff-scan and EI enrich both came up short (None). The
-                            // local scan is authoritative for QP-eligible bosses; dps.report's
-                            // `fightMode` field is the authoritative fallback when the local
-                            // parse couldn't reach the buffs (e.g. encrypted .zevtc / .evtc
-                            // without raw buff events). Only set for QP-eligible bosses so we
-                            // never accidentally tag a non-QP raid as Quick Play.
+                            // Quick Play: fall back to dps.report's instance-buff list
+                            // only when the local EVTC buff-scan and EI enrich both came
+                            // up short (None). The local scan is authoritative for
+                            // QP-eligible bosses; the dps.report getJson response includes
+                            // `presentInstanceBuffs` (an array of [buffId, stacks, phaseIdx])
+                            // which lists the QP buffs (77676, 79492) when they were present.
+                            // Only set for QP-eligible bosses so we never accidentally tag a
+                            // non-QP raid as Quick Play.
                             if record.is_quick_play.is_none() && quick_play_boss(&pre_api_clean) {
-                                if let Some(fm) = enc.get("fightMode").and_then(|v| v.as_str()) {
-                                    record.is_quick_play = Some(fm == "Quickplay Normal Mode");
+                                if let Some(buffs) = enc.get("presentInstanceBuffs").and_then(|v| v.as_array()) {
+                                    for entry in buffs {
+                                        if let Some(arr) = entry.as_array() {
+                                            if let Some(id) = arr.first().and_then(|v| v.as_u64()) {
+                                                if [77676u32, 79492].contains(&(id as u32)) {
+                                                    record.is_quick_play = Some(true);
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
 
@@ -3323,15 +3371,24 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                             }
                         }
                         if is_dv && record.bosses_phases.is_none() {
-                            if let Some(ref permalink) = record.url {
-                                if let Some(phases) = fetch_dragon_timeline(
-                                    &client,
-                                    permalink,
-                                    record.success.unwrap_or(false),
-                                )
-                                .await
-                                {
-                                    record.bosses_phases = Some(phases);
+                            // Only fetch the dragon timeline when we know the success
+                            // state. `record.success` can be None at upload-response
+                            // time for HT (the local parser deliberately withholds
+                            // clear/fail verdict, see evtc_parser.rs:363-371). Using
+                            // `unwrap_or(false)` would build a wipe timeline that the
+                            // getJson poll can never correct (because bosses_phases
+                            // is already set). Let the getJson poll handle it instead.
+                            if let Some(success) = record.success {
+                                if let Some(ref permalink) = record.url {
+                                    if let Some(phases) = fetch_dragon_timeline(
+                                        &client,
+                                        permalink,
+                                        success,
+                                    )
+                                    .await
+                                    {
+                                        record.bosses_phases = Some(phases);
+                                    }
                                 }
                             }
                         }
@@ -4422,13 +4479,8 @@ const RAID_CM_INFO: &[(&str, RaidCmInfo)] = &[
             lcm: false,
         },
     ),
-    (
-        "harvesttemple",
-        RaidCmInfo {
-            cm: true,
-            lcm: false,
-        },
-    ),
+    ("harvesttemple", RaidCmInfo { cm: true, lcm: false }),
+    ("harvesttemplecm", RaidCmInfo { cm: true, lcm: false }),
     (
         "oldlionscourt",
         RaidCmInfo {
@@ -4552,7 +4604,9 @@ const QUICK_PLAY_BOSS_NAMES: &[&str] = &[
     "boneskinner",
     "cosmicobservatory",
     "templeoffebe",
+    "cerus",       // Local EVTC parser / EI bossName returns "Cerus" for boss ID 25989
     "xunlaijadejunkyard",
+    "ankka",       // Local EVTC parser / EI bossName returns "Ankka" for boss ID 23957
     "oldlionscourt",
     // Old Lions Court watchknight variant names (EI reads the NPC name from
     // the agent table, which is "Prototype Vermilion" / "Prototype Arsenite" /
@@ -4611,7 +4665,7 @@ fn boss_lcm_eligible(boss_clean: &str) -> bool {
 /// fragment ("jormag" appears in both Whisper of Jormag and Fraenir of Jormag),
 /// so the parser must never build a council for non-Dragonvoid bosses. Gate on
 /// the canonical cleaned boss keys.
-fn is_dragonvoid_boss(boss_clean: &str) -> bool {
+pub fn is_dragonvoid_boss(boss_clean: &str) -> bool {
     matches!(boss_clean, "dragonvoid" | "harvesttemple" | "thedragonvoid")
 }
 

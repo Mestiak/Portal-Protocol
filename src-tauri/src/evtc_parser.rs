@@ -263,6 +263,8 @@ pub fn parse_boss_hp(bytes: &[u8]) -> Option<f64> {
                     prof == 22343 || prof == 22484
                 } else if boss_id == 24033 || boss_id == 24375 || boss_id == 25247 {
                     prof == 24033 || prof == 24375 || prof == 25247
+                } else if boss_id == 43488 {
+                    DRAGONVOID_DRAGON_PROFS.contains(&prof)
                 } else {
                     prof == boss_id as u32
                 };
@@ -572,6 +574,15 @@ const HARVEST_DRAGONS: &[(&str, &str)] = &[
     ("soowon", "Soo-Won"),
 ];
 
+/// Harvest Temple dragon boss agent species IDs as stored in the EVTC agent
+/// table. These differ from the canonical dragon species IDs in DRAGON_SPECIES
+/// because the Harvest Temple dragons are variant NPCs. The EVTC header boss_id
+/// is 43488 (The Dragonvoid) but the actual dragon agents carry these u32
+/// species IDs, so callers matching on boss_id == 43488 must also match these.
+const DRAGONVOID_DRAGON_PROFS: &[u32] = &[
+    4294903138, 4294915107, 4294928978, 4294933916, 4294938189, 4294938636, 4294940077, 4294945248,
+];
+
 /// Substring fragments that identify each dragon's phase in dps.report's
 /// `phases[].name`. The phase titles vary ("Breath of Jormag" vs
 /// "Lightning of Jormag", "Soothing Stone" vs "Soo-Won") so we match on the
@@ -744,6 +755,46 @@ pub fn dragon_phase_state_with_success(
 
     let success = success.or_else(|| json.get("success").and_then(|v| v.as_bool()));
 
+    // Build a per-dragon HP lookup from the getJson `targets[]` array.
+    // Each HT dragon appears as a target with `name`, `healthPercentBurned`,
+    // and optionally `healthPercents` (a [[time, hp%], ...] time series).
+    // We match target names to dragon keys using the same display names as
+    // HARVEST_DRAGONS, then take the last healthPercents entry (the final HP%
+    // at pull end) — or fall back to (100 - healthPercentBurned).
+    let mut dragon_hp_map: std::collections::HashMap<String, f64> =
+        std::collections::HashMap::new();
+    if let Some(targets) = json.get("targets").and_then(|v| v.as_array()) {
+        for target in targets {
+            let tname = match target.get("name").and_then(|v| v.as_str()) {
+                Some(n) => n.to_lowercase(),
+                None => continue,
+            };
+            // Match target name to a known dragon key
+            let matched_key = HARVEST_DRAGONS
+                .iter()
+                .find(|(k, _)| tname == *k || tname.contains(*k))
+                .map(|(k, _)| *k);
+            if let Some(key) = matched_key {
+                let hp = if let Some(hps) =
+                    target.get("healthPercents").and_then(|v| v.as_array())
+                {
+                    // Take the last [time, hp%] pair's hp% value
+                    hps.last()
+                        .and_then(|pair| pair.get(1).and_then(|v| v.as_f64()))
+                        .unwrap_or(100.0)
+                } else {
+                    // Fall back to healthPercentBurned
+                    let burned = target
+                        .get("healthPercentBurned")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0);
+                    100.0 - burned
+                };
+                dragon_hp_map.insert((*key).to_string(), hp);
+            }
+        }
+    }
+
     let out: Vec<DragonHp> = HARVEST_DRAGONS
         .iter()
         .enumerate()
@@ -759,10 +810,18 @@ pub fn dragon_phase_state_with_success(
             } else if success == Some(true) {
                 defeated = true;
             }
+            // Defeated dragons have 0 HP. Non-defeated dragons use the real
+            // HP from the getJson `targets[]` array; if no target was found
+            // (e.g. dragon never reached or targets missing), default to 100%.
+            let hp_left = if defeated {
+                0.0
+            } else {
+                dragon_hp_map.get(*key).copied().unwrap_or(100.0)
+            };
             DragonHp {
                 key: (*key).to_string(),
                 name: (*disp).to_string(),
-                hp_left: if defeated { 0.0 } else { 100.0 },
+                hp_left,
                 died: defeated,
                 order: order as u8,
                 icon: None,
@@ -960,16 +1019,25 @@ pub fn dragon_phase_full_with_adds(
     Some(out)
 }
 
-/// independent of Elite Insights / dps.report. This is the EI-independent fallback
+/// Independent of Elite Insights / dps.report. This is the EI-independent fallback
 /// used when dps.report has no EI JSON for an encounter (common for Convergences).
 ///
-/// Signal: the boss agent's combat window, measured as the span between the first
-/// and last health-update (`StateChange::HealthUpdate = 8`) events on the boss agent.
-/// This starts when the boss first takes damage and ends at the death tick, so it
-/// excludes pre-event navigation — unlike `parse_duration` (full log span).
+/// Mirrors EI's `LogData.LogDuration` (= `LogEnd`), which is the span from
+/// `LogStart` (time 0 after the EVTC time-offset) to `LogEnd`:
+///   - On kill  → `Min(boss_death + ServerDelayConstant(10ms), EvtcLogEnd)`
+///   - On wipe → `boss_last_aware_time` (last combat event on the boss agent)
 ///
-/// Note: arcdps `EnterCombat`/`ExitCombat` (9/10) fire on the *squad* (src_agent == 1),
-/// not the boss agent, so they are NOT a reliable boss-window signal.
+/// Start: `LogStart` (StateChange 1 / earliest event) — NOT the first boss
+/// HealthUpdate, so pre-event navigation is included and matches EI's `durationMS`.
+///
+/// End: boss death (`ChangeDead`, sc=4) + 10 ms, clamped to the last combat event
+/// in the log (`EvtcLogEnd`). On wipes (no death tick) the end is the last event
+/// involving the boss agent — approximating `targets.Max(x => x.LastAware)`.
+///
+/// Note: sc=9 is `SquadCombatStart` (fires on the squad agent, address 1), NOT
+/// "TargetDied." The real death signal is `ChangeDead` (sc=4). arcdps does not
+/// emit a dedicated "TargetDied" state change; boss kills are detected via
+/// `ChangeDead` (sc=4) or `Targetable` off (sc=24) for phasing bosses.
 pub fn parse_boss_fight_duration(bytes: &[u8]) -> Option<f64> {
     let data: Vec<u8> = if bytes.starts_with(b"PK\x03\x04") {
         extract_zip(bytes).ok()?
@@ -1013,7 +1081,12 @@ pub fn parse_boss_fight_duration(bytes: &[u8]) -> Option<f64> {
     for i in 0..agent_count {
         let base = agents_base + i * AGENT_SZ;
         if let (Ok(addr), Ok(prof)) = (ru64(&data, base), ru32(&data, base + 8)) {
-            if prof == boss_id as u32 {
+            let is_boss = if boss_id == 43488 {
+                DRAGONVOID_DRAGON_PROFS.contains(&prof)
+            } else {
+                prof == boss_id as u32
+            };
+            if is_boss {
                 boss_addrs.insert(addr);
             }
         }
@@ -1034,12 +1107,17 @@ pub fn parse_boss_fight_duration(bytes: &[u8]) -> Option<f64> {
     let event_count = (data.len() - events_base) / event_sz;
     let statechange_offset = if revision == 0 { 54 } else { 56 };
 
-    let mut first_hp: Option<u64> = None;
-    let mut first_combat_event: Option<u64> = None;
-    let mut last_hp: Option<u64> = None;
-    let mut boss_death_time: Option<u64> = None;
-    let mut last_boss_event_time: Option<u64> = None;
+    // ServerDelayConstant in EI source: ParserHelper.ServerDelayConstant = 10 (ms).
+    // EI adds this to the boss death time before clamping to EvtcLogEnd.
+    const SERVER_DELAY_CONSTANT: u64 = 10;
 
+    let mut log_start: Option<u64> = None; // earliest LogStart (sc=1)
+    let mut first_evt: Option<u64> = None; // first combat event timestamp
+    let mut evtc_log_end: Option<u64> = None; // last combat event timestamp
+    let mut last_hp: Option<u64> = None; // last HealthUpdate (sc=8) on boss
+    let mut boss_death_time: Option<u64> = None; // ChangeDead (sc=4) on boss agent
+    let mut last_boss_event_time: Option<u64> = None; // last event on any boss agent
+    let mut first_boss_event_time: Option<u64> = None; // first sc=0 event on boss
     for i in 0..event_count {
         let base = events_base + i * event_sz;
         if base + 60 > data.len() {
@@ -1059,6 +1137,16 @@ pub fn parse_boss_fight_duration(bytes: &[u8]) -> Option<f64> {
         };
         let is_statechange = data[base + statechange_offset];
 
+        // Track overall log window (LogStart / EvtcLogEnd)
+        if first_evt.is_none() {
+            first_evt = Some(time);
+        }
+        evtc_log_end = Some(time);
+
+        if is_statechange == 1 {
+            log_start = Some(log_start.map_or(time, |s| s.min(time)));
+        }
+
         let on_boss = boss_addrs.iter().any(|&a| {
             (src_agent & 0xFFFF_FFFF) == (a & 0xFFFF_FFFF)
                 || (dst_agent & 0xFFFF_FFFF) == (a & 0xFFFF_FFFF)
@@ -1066,25 +1154,23 @@ pub fn parse_boss_fight_duration(bytes: &[u8]) -> Option<f64> {
 
         if on_boss {
             last_boss_event_time = Some(time);
-            if is_statechange == 0 {
-                // First normal combat event involving the boss = actual combat engagement start!
-                if first_combat_event.is_none() {
-                    first_combat_event = Some(time);
-                }
+            // First actual combat event on the boss — trims pre-phase spawn delay.
+            if is_statechange == 0 && first_boss_event_time.is_none() {
+                first_boss_event_time = Some(time);
             }
         }
 
+        // HealthUpdate (sc=8): track last HP tick on boss (for wipe fallback)
         if is_statechange == 8 {
             if on_boss {
-                if first_hp.is_none() {
-                    first_hp = Some(time);
-                }
                 last_hp = Some(time);
             }
-        } else if is_statechange == 9 {
-            // TargetDied: emitted on the dead agent. If it belongs to a boss,
-            // record the death tick as the authoritative end of the boss fight,
-            // matching EI/dps.report's phase end timing.
+        }
+
+        // ChangeDead (sc=4): the real "TargetDied" signal in EVTC.
+        // sc=9 is SquadCombatStart (fires on the squad agent), NOT a death event.
+        // Boss death tick → record as authoritative end, matching EI's SetSuccess.
+        if is_statechange == 4 {
             let on_boss_died = boss_addrs
                 .iter()
                 .any(|&a| (src_agent & 0xFFFF_FFFF) == (a & 0xFFFF_FFFF));
@@ -1094,16 +1180,32 @@ pub fn parse_boss_fight_duration(bytes: &[u8]) -> Option<f64> {
         }
     }
 
-    // Start-time hierarchy:
-    // 1) first combat engagement event (most accurate to EI's active fight time)
-    // 2) first observed boss HealthUpdate
-    let start_time = first_combat_event.or(first_hp);
+    // Start: prefer first combat event on the boss (trims pre-phase spawn delay for
+    // encounters like Harvest Temple where LogStart fires before the actual fight).
+    // Fall back to LogStart (sc=1) then first event.
+    let start_time = first_boss_event_time.or(log_start).or(first_evt);
 
-    // End-time hierarchy, mirroring EI's PhaseData.OverrideEndTime():
-    // 1) explicit boss death tick
-    // 2) last boss HealthUpdate when present
-    // 3) last observed boss event (approximates LastAware / despawn fallback)
-    let end_time = boss_death_time.or(last_hp).or(last_boss_event_time);
+    // End-time hierarchy, mirroring EI's LogEnd computation:
+    //   Kill:   Min(boss_death + ServerDelayConstant, EvtcLogEnd)
+    //   Wipe:   last boss event (or last HP tick, or EvtcLogEnd as last resort)
+    //
+    // The +10ms (ServerDelayConstant) and clamp to EvtcLogEnd replicate EI's:
+    //   LogEnd = Success ? Min(boss_death + ServerDelayConstant, EvtcLogEnd) : EvtcLogEnd
+    //
+    // For wipes (no ChangeDead), prefer the last boss-related event over the raw
+    // log-end timestamp — Harvest Temple logs have post-wipe events (players leaving,
+    // buff cleanup) that inflate the duration if EvtcLogEnd is used directly.
+    let end_time = if let Some(death) = boss_death_time {
+        let death_plus_delay = death.saturating_add(SERVER_DELAY_CONSTANT);
+        Some(std::cmp::min(
+            death_plus_delay,
+            evtc_log_end.unwrap_or(death_plus_delay),
+        ))
+    } else {
+        // Wipe / boss phases out without ChangeDead: use last boss event.
+        last_boss_event_time.or(last_hp).or(evtc_log_end)
+    };
+
     match (start_time, end_time) {
         (Some(f), Some(l)) if l >= f => {
             let secs = (l - f) as f64 / 1000.0;
@@ -1160,7 +1262,12 @@ pub fn parse_full_fight_duration(bytes: &[u8]) -> Option<f64> {
     for i in 0..agent_count {
         let base = agents_base + i * AGENT_SZ;
         if let (Ok(addr), Ok(prof)) = (ru64(&data, base), ru32(&data, base + 8)) {
-            if prof == boss_id as u32 {
+            let is_boss = if boss_id == 43488 {
+                DRAGONVOID_DRAGON_PROFS.contains(&prof)
+            } else {
+                prof == boss_id as u32
+            };
+            if is_boss {
                 boss_addrs.insert(addr);
             }
         }
@@ -1182,6 +1289,7 @@ pub fn parse_full_fight_duration(bytes: &[u8]) -> Option<f64> {
     let statechange_offset = if revision == 0 { 54 } else { 56 };
 
     let mut pre_event_start: Option<u64> = None; // earliest LogStart (1)
+    let mut first_boss_event: Option<u64> = None; // first sc=0 event on boss
     let mut boss_death: Option<u64> = None; // boss's last HealthUpdate (8)
 
     for i in 0..event_count {
@@ -1212,10 +1320,30 @@ pub fn parse_full_fight_duration(bytes: &[u8]) -> Option<f64> {
             if on_boss {
                 boss_death = Some(time);
             }
+        } else if is_statechange == 0 {
+            // Track first actual combat event on the boss (trims pre-phase spawn delay).
+            let src_agent = match ru64(&data, base + 8) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            let dst_agent = match ru64(&data, base + 16) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            let on_boss = boss_addrs.iter().any(|&a| {
+                (src_agent & 0xFFFF_FFFF) == (a & 0xFFFF_FFFF)
+                    || (dst_agent & 0xFFFF_FFFF) == (a & 0xFFFF_FFFF)
+            });
+            if on_boss && first_boss_event.is_none() {
+                first_boss_event = Some(time);
+            }
         }
     }
 
-    match (pre_event_start, boss_death) {
+    // Start: prefer first combat event on the boss; fall back to LogStart (sc=1).
+    let start_time = first_boss_event.or(pre_event_start);
+
+    match (start_time, boss_death) {
         (Some(s), Some(e)) if e >= s => {
             let secs = (e - s) as f64 / 1000.0;
             if secs > 0.0 {
@@ -1317,7 +1445,9 @@ pub fn parse_dragonvoid_add_evidence(
             if !matches {
                 continue;
             }
-            if is_statechange == 9 {
+            // ChangeDead (sc=4): the real death signal in EVTC.
+            // sc=9 is SquadCombatStart, NOT TargetDied.
+            if is_statechange == 4 {
                 died.insert((*key).to_string(), true);
             } else if is_statechange == 8 && dst_agent <= 10000 {
                 hp_left.insert((*key).to_string(), dst_agent as f64 / 100.0);
@@ -1566,6 +1696,8 @@ pub fn parse_boss_id(bytes: &[u8]) -> Option<(u16, Option<String>)> {
                 prof == 21105 || prof == 21085
             } else if boss_id == 22343 || boss_id == 22484 {
                 prof == 22343 || prof == 22484
+            } else if boss_id == 43488 {
+                DRAGONVOID_DRAGON_PROFS.contains(&prof)
             } else {
                 prof == boss_id as u32
             };
@@ -1933,7 +2065,14 @@ pub fn parse_is_quick_play(bytes: &[u8]) -> Option<bool> {
             return Some(true);
         }
     }
-    Some(false)
+    // Return None (inconclusive) instead of Some(false). A negative local scan
+    // is not authoritative — QP buff events can be absent from the EVTC when:
+    //   1. arcDPS started recording after the buff was applied (strikes where
+    //      the QP buff is granted at instance-join, before arcDPS begins).
+    //   2. The EVTC is encrypted (.zevtc) and the raw buff events aren't extracted.
+    // Returning None lets the EI/dps.report fallbacks run; returning Some(false)
+    // would block them since all fallbacks guard on `is_quick_play.is_none()`.
+    None
 }
 
 /// Parse the CM flag from an EVTC header (statechange 35/36).
@@ -1967,6 +2106,15 @@ pub fn parse_is_cm(bytes: &[u8]) -> Option<bool> {
     }
 
     // ── Special cases: CM detected without health or statechange events ─────────
+
+    // Harvest Temple (The Dragonvoid, boss_id 43488) has BOTH Normal and CM modes.
+    // arcdps does not emit statechange 35 (CBTEVT_CHALLENGEMODE) for it, so the
+    // generic fallback below cannot detect CM. Mirror EI's GetLogMode:
+    //   - CM: any dragon MaxHealthUpdate (sc=12) > 10_000_000
+    //   - Otherwise: Normal.
+    if boss_id == 43488 {
+        return detect_harvest_temple_cm(&data, agents_base, agent_count, revision);
+    }
 
     // Decima the Stormsinger (MbW): CM and Normal are recorded as two completely
     // different species IDs. If the boss_id is the CM variant, it is always CM.
@@ -2078,6 +2226,81 @@ pub fn parse_is_cm(bytes: &[u8]) -> Option<bool> {
             return Some(val == 1 || val == 1065353216);
         }
     }
+    Some(false)
+}
+
+/// Detects Challenge Mode for Harvest Temple (boss_id 43488 / The Dragonvoid).
+///
+/// Mirrors EI's `HarvestTemple.GetLogMode`: checks whether any dragon
+/// MaxHealthUpdate (statechange 12) value exceeds 10_000_000. Dragons in CM
+/// have larger HP pools than Normal mode. The EVTC binary stores max-HP via
+/// MaxHealthUpdate events where `dst_agent` holds the HP value and `src_agent`
+/// identifies the agent.
+fn detect_harvest_temple_cm(
+    data: &[u8],
+    agents_base: usize,
+    agent_count: usize,
+    revision: u8,
+) -> Option<bool> {
+    const AGENT_SZ: usize = 96;
+
+    let skills_base = agents_base + agent_count * AGENT_SZ;
+    let skill_count = ru32(data, skills_base).ok()? as usize;
+    let skill_sz = if revision == 0 { 64 } else { 68 };
+    let events_base = skills_base + 4 + skill_count * skill_sz;
+    if events_base + 64 > data.len() {
+        return Some(false);
+    }
+
+    let event_sz = 64;
+    let event_count = (data.len() - events_base) / event_sz;
+    let sc_offset = if revision == 0 { 54 } else { 56 };
+
+    // Collect dragon agent addresses (any of DRAGONVOID_DRAGON_PROFS)
+    let mut dragon_addrs: std::collections::HashSet<u64> = std::collections::HashSet::new();
+    for i in 0..agent_count {
+        let base = agents_base + i * AGENT_SZ;
+        if base + AGENT_SZ > data.len() {
+            break;
+        }
+        let prof = ru32(data, base + 8).unwrap_or(0);
+        if DRAGONVOID_DRAGON_PROFS.contains(&prof) {
+            if let Ok(addr) = ru64(data, base) {
+                dragon_addrs.insert(addr);
+            }
+        }
+    }
+
+    // Check 1: Dragon MaxHealthUpdate (sc=12) > 10_000_000 → CM
+    // This is EI's primary and only signal. Dragons in CM have HP pools > 10M.
+    for i in 0..event_count {
+        let base = events_base + i * event_sz;
+        if base + 60 > data.len() {
+            break;
+        }
+        if data[base + sc_offset] == 12 {
+            // MaxHealthUpdate
+            let src_agent = ru64(data, base + 8).unwrap_or(0);
+            let hp = ru64(data, base + 16).unwrap_or(0);
+            if dragon_addrs.contains(&src_agent) && hp > 10_000_000 {
+                return Some(true);
+            }
+        }
+    }
+
+    // Fallback: generic statechange 35 check (arcdps normally doesn't emit it,
+    // but newer versions may, so it's a cheap safety net)
+    for i in 0..event_count {
+        let base = events_base + i * event_sz;
+        if base + 60 > data.len() {
+            break;
+        }
+        if data[base + sc_offset] == 35 {
+            let val = ru32(data, base + 24).unwrap_or(0);
+            return Some(val == 1 || val == 1065353216);
+        }
+    }
+
     Some(false)
 }
 
@@ -2636,7 +2859,54 @@ mod harvest_dragon_tests {
         assert!(dragon_phase_state(&json).is_none());
     }
 
-    /// The full left→right timeline (dragons + interphases) for a successful
+    /// Verifies that per-dragon HP is extracted from the getJson `targets[]`
+    /// array instead of defaulting to 100% for wiped-on dragons. The test
+    /// simulates a wipe on Zhaitan with ~37% HP remaining (extracted from
+    /// `healthPercents`) and confirms the council shows 37.0, not 100.0.
+    #[test]
+    fn dragon_hp_from_targets_array() {
+        let json = json!( {
+            "success": false,
+            "phases": [
+                {"name": "Purification 1", "failed": false},
+                {"name": "Jormag", "failed": false},
+                {"name": "Primordus", "failed": false},
+                {"name": "Kralkatorrik", "failed": false},
+                {"name": "Mordremoth", "failed": false},
+                {"name": "Zhaitan", "failed": true},
+                {"name": "Void Saltspray Dragon", "failed": false},
+            ],
+            "targets": [
+                {"name": "Jormag", "healthPercentBurned": 100.0},
+                {"name": "Primordus", "healthPercentBurned": 100.0},
+                {"name": "Kralkatorrik", "healthPercentBurned": 100.0},
+                {"name": "Mordremoth", "healthPercentBurned": 100.0},
+                {"name": "Zhaitan", "healthPercents": [[1000, 63.2], [2000, 37.0]]},
+                {"name": "Soo-Won", "healthPercentBurned": 0.0},
+            ],
+        } );
+        let dragons = dragon_phase_state_with_success(&json, Some(false))
+            .expect("should detect dragon phases");
+        let by_key: std::collections::HashMap<_, _> =
+            dragons.iter().map(|d| (d.key.as_str(), d)).collect();
+
+        // Defeated dragons have 0 HP
+        for k in ["jormag", "primordus", "kralkatorrik", "mordremoth"] {
+            assert_eq!(by_key[k].hp_left, 0.0, "{} should be defeated → 0 HP", k);
+        }
+
+        // Zhaitan was wiped on with 37% HP remaining (from healthPercents)
+        assert!(!by_key["zhaitan"].died);
+        assert!((by_key["zhaitan"].hp_left - 37.0).abs() < 0.01,
+            "Zhaitan should show ~37% HP left, got {}", by_key["zhaitan"].hp_left);
+
+        // Soo-Won was never reached → no specific HP from targets (burned 0)
+        // but since it wasn't reached, defaults to 100.0
+        assert!(!by_key["soowon"].died);
+        assert_eq!(by_key["soowon"].hp_left, 100.0,
+            "Soo-Won was never reached → default 100% HP");
+    }
+
     /// Dragonvoid CM kill, using the exact dps.report `phases[]` schema captured
     /// live. Asserts ordering, element coverage, and cleared flags.
     #[test]
@@ -2967,10 +3237,12 @@ mod quick_play_tests {
     #[test]
     fn qp_non_qp_buff_returns_false() {
         // Non-QP skill ID should not trigger QP detection.
+        // Returns None (inconclusive) — not Some(false) — so downstream
+        // fallbacks (EI, dps.report) get a chance to check.
         let data = build_minimal_evtc(1234, 18, 18);
         assert_eq!(
             parse_is_quick_play(&data),
-            Some(false),
+            None,
             "should not detect QP for non-QP skill ID"
         );
     }
@@ -2978,6 +3250,8 @@ mod quick_play_tests {
     #[test]
     fn qp_non_player_dst_returns_false() {
         // Event with QP buff ID but dst_agent is not a player should not trigger.
+        // Returns None (inconclusive) — not Some(false) — so downstream
+        // fallbacks (EI, dps.report) get a chance to check.
         let mut data = build_minimal_evtc(79492, 1, 0);
         // The event is at offset: 20 (header_end+4) + 96 (agent) + 4 (skill_count) = 120
         let ev_base = 120usize;
@@ -2985,8 +3259,39 @@ mod quick_play_tests {
         data[ev_base + 16..ev_base + 24].copy_from_slice(&0x1234u64.to_le_bytes());
         assert_eq!(
             parse_is_quick_play(&data),
-            Some(false),
+            None,
             "should not detect QP when buff is not on a player"
         );
+    }
+
+    #[test]
+    #[ignore]
+    fn debug_harvest_temple_duration() {
+        let path = r"D:\ArcLogs\arcdps.cbtlogs\The Dragonvoid (43488)\20261025-213341.zevtc";
+        let bytes = std::fs::read(path).expect("Failed to read log file");
+
+        let boss_dur = parse_boss_fight_duration(&bytes);
+        let full_dur = parse_full_fight_duration(&bytes);
+        let raw_dur = parse_duration(&bytes);
+        let is_cm = parse_is_cm(&bytes);
+        let hp = parse_boss_hp(&bytes);
+
+        println!("parse_boss_fight_duration = {:?}", boss_dur);
+        println!("parse_full_fight_duration = {:?}", full_dur);
+        println!("parse_duration = {:?}", raw_dur);
+        println!("parse_is_cm              = {:?}", is_cm);
+        println!("parse_boss_hp            = {:?}", hp);
+
+        // Key fields observed from debug output for this specific wipe log:
+        //   log_start (sc=1)            = 9067442  — fires during pre-phase gathering
+        //   first_boss_event (sc=0)     = 9125826  — actual fight start (+58.4s)
+        //   last_boss_event_time        = 9695947  — last event on dragon agents
+        //   evtc_log_end                = 9698488  — includes +2.5s post-wipe events
+        //   last_hp_update (sc=8)       = 9621577
+        //   boss_max_hp                 = 9711000  (< 10M → Normal mode)
+        //
+        // After start/end time fix:
+        //   boss_fight_duration: start=9125826, end=9695947 → 570.121 sec
+        //   full_fight_duration:  start=9125826, end=9621577 → 495.751 sec
     }
 }
