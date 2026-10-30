@@ -775,13 +775,25 @@ pub fn dragon_phase_state_with_success(
                 .find(|(k, _)| tname == *k || tname.contains(*k))
                 .map(|(k, _)| *k);
             if let Some(key) = matched_key {
+                // Prefer `healthPercents` (a [[time, hp%], ...] time series)
+                // for the final HP value. If it's absent OR empty/malformed,
+                // fall back to `healthPercentBurned` (100 - burned = HP left).
                 let hp = if let Some(hps) =
                     target.get("healthPercents").and_then(|v| v.as_array())
                 {
-                    // Take the last [time, hp%] pair's hp% value
-                    hps.last()
-                        .and_then(|pair| pair.get(1).and_then(|v| v.as_f64()))
-                        .unwrap_or(100.0)
+                    let from_series = hps
+                        .last()
+                        .and_then(|pair| pair.get(1).and_then(|v| v.as_f64()));
+                    if let Some(val) = from_series {
+                        val
+                    } else {
+                        // healthPercents present but empty/malformed — use burn
+                        let burned = target
+                            .get("healthPercentBurned")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0);
+                        100.0 - burned
+                    }
                 } else {
                     // Fall back to healthPercentBurned
                     let burned = target
