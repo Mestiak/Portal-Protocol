@@ -946,10 +946,9 @@ pub fn dragon_phase_full_with_adds(
     if success {
         // Encounter success means the instance finished. For Harvest Temple,
         // dps.report may still mark the last dragon as uncleared on a wipe,
-        // or omit `failed` entirely. Derive the wipe point from the LAST
-        // dragon's initial cleared state: if it was explicitly cleared
-        // (`failed=false`), this is a kill and all dragons are cleared.
-        // Otherwise the last dragon is the wipe point and stays uncleared.
+        // or omit `failed` entirely. On a kill, the last dragon is the wipe
+        // point ONLY if it was explicitly failed (failed=true) — otherwise
+        // the dragon was cleared and dps.report simply omitted the field.
         let last_dragon_order = out
             .iter()
             .rev()
@@ -959,8 +958,8 @@ pub fn dragon_phase_full_with_adds(
             for p in out.iter_mut() {
                 if dragon_keys.contains(p.key.as_str()) {
                     if p.order == lo {
-                        if !p.cleared {
-                            // Wipe point stays uncleared.
+                        if explicit_failed.contains(p.key.as_str()) {
+                            // Explicitly failed dragon — wipe point stays uncleared.
                             continue;
                         }
                     }
@@ -2990,6 +2989,42 @@ mod harvest_dragon_tests {
         assert_eq!(name_by_key["jormag"], "Jormag");
         assert_eq!(name_by_key["soowon"], "Soo-Won");
         assert_eq!(name_by_key["kralkatorrik"], "Kralkatorrik");
+    }
+
+    /// Regression: NM HT kill where dps.report omits `failed` for the last
+    /// dragon (Soo-Won). Previously, success=true + cleared=false on the last
+    /// dragon was treated as a "wipe point" and left Soo-Won uncleared.
+    /// On success=true, only explicitly failed=true dragons should stay
+    /// uncleared — null/omitted `failed` on a kill means "cleared".
+    #[test]
+    fn nm_kill_last_dragon_failed_omitted_is_cleared() {
+        let json = json!( {
+            "success": true,
+            "phases": [
+                {"name": "Purification 1", "failed": false},
+                {"name": "Heart 1 Breakbar 1", "failed": false},
+                {"name": "Jormag", "failed": false},
+                {"name": "Primordus", "failed": false},
+                {"name": "Kralkatorrik", "failed": false},
+                {"name": "Purification 2", "failed": false},
+                {"name": "Mordremoth", "failed": false},
+                {"name": "Giants", "failed": false},
+                {"name": "Zhaitan", "failed": false},
+                {"name": "Purification 3", "failed": false},
+                {"name": "Void Saltspray Dragon", "failed": false},
+                {"name": "Soo-Won"}  // `failed` omitted — NM kill
+            ]
+        } );
+        let tl = dragon_phase_full_with_adds(&json, true, None)
+            .expect("should build timeline");
+        let by_key: std::collections::HashMap<_, _> =
+            tl.iter().map(|p| (p.key.as_str(), p.cleared)).collect();
+        // All dragons must be cleared on a successful NM kill, even when
+        // dps.report omitted `failed` on the last one.
+        for k in ["jormag", "primordus", "kralkatorrik", "mordremoth",
+                  "zhaitan", "soowon"] {
+            assert!(by_key[k], "{} should be cleared on a NM kill", k);
+        }
     }
 
     /// A wipe: dps.report truncates `phases[]` at the boss you died on, so

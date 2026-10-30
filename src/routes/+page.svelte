@@ -5519,7 +5519,7 @@ async function testWebhook(wh: any) {
             >
               <img class="dragon-icon" src={p.icon} alt={p.name} onerror={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden'; }} />
               {#if p.hp != null}
-                <div class="dragon-bar"><div class="dragon-fill dstate-{p.hpState}" style="width:{p.hp}%;"></div></div>
+                <span class="dragon-hp-text">{p.died ? 'Defeated' : p.hp!.toFixed(1) + '% left'}</span>
               {/if}
               <span class="dragon-name">{p.name}</span>
               <span class="phase-mark"><i class="fa-solid {p.cleared ? 'fa-check' : 'fa-xmark'}"></i></span>
@@ -5545,7 +5545,9 @@ async function testWebhook(wh: any) {
               title="{d.name}: {d.state === 'dead' ? 'Defeated' : d.state === 'alive' ? d.hp_left.toFixed(1) + '% HP left' : 'Not reached'}"
             >
               <img class="dragon-icon" src="/bosses/the{d.key}void.png" alt={d.name} onerror={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden'; }} />
-              <div class="dragon-bar"><div class="dragon-fill" style="width:{d.pct}%;"></div></div>
+              {#if d.state !== 'unreached'}
+                <span class="dragon-hp-text">{d.state === 'dead' ? 'Defeated' : d.hp_left.toFixed(1) + '% left'}</span>
+              {/if}
               <span class="dragon-name">{d.name}</span>
             </div>
           {/each}
