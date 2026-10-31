@@ -775,32 +775,29 @@ pub fn dragon_phase_state_with_success(
                 .find(|(k, _)| tname == *k || tname.contains(*k))
                 .map(|(k, _)| *k);
             if let Some(key) = matched_key {
-                // Prefer `healthPercents` (a [[time, hp%], ...] time series)
-                // for the final HP value. If it's absent OR empty/malformed,
-                // fall back to `healthPercentBurned` (100 - burned = HP left).
-                let hp = if let Some(hps) =
-                    target.get("healthPercents").and_then(|v| v.as_array())
-                {
-                    let from_series = hps
-                        .last()
-                        .and_then(|pair| pair.get(1).and_then(|v| v.as_f64()));
-                    if let Some(val) = from_series {
-                        val
-                    } else {
-                        // healthPercents present but empty/malformed — use burn
-                        let burned = target
-                            .get("healthPercentBurned")
-                            .and_then(|v| v.as_f64())
-                            .unwrap_or(0.0);
-                        100.0 - burned
-                    }
-                } else {
-                    // Fall back to healthPercentBurned
-                    let burned = target
-                        .get("healthPercentBurned")
-                        .and_then(|v| v.as_f64())
-                        .unwrap_or(0.0);
+                // Skip green-direction environmental targets (e.g. "zhaitan green ne")
+                // that dps.report emits alongside the real Void dragon targets.
+                // Only the "Void" targets (e.g. "The ZhaitanVoid") carry the real
+                // boss HP — green targets always report 100% burned and would
+                // overwrite the correct value since HashMap::insert overwrites.
+                if !tname.contains("void") {
+                    continue;
+                }
+                // Prefer `healthPercentBurned` — it's the cumulative burn % over
+                // the entire fight and always reflects total damage. `healthPercents`
+                // is a sampled time series that may not cover the actual damage phase
+                // (e.g. [[0, 100]] when the dragon was never damaged in-sample), so
+                // using it naively can report 100% for a wiped dragon. Fall back to
+                // `healthPercents` (last entry) only when `healthPercentBurned` is absent.
+                let hp = if let Some(burned) = target.get("healthPercentBurned").and_then(|v| v.as_f64()) {
                     100.0 - burned
+                } else if let Some(hps) = target.get("healthPercents").and_then(|v| v.as_array()) {
+                    hps
+                        .last()
+                        .and_then(|pair| pair.get(1).and_then(|v| v.as_f64()))
+                        .unwrap_or(100.0)
+                } else {
+                    100.0
                 };
                 dragon_hp_map.insert((*key).to_string(), hp);
             }
@@ -2983,12 +2980,12 @@ mod harvest_dragon_tests {
                 {"name": "Void Saltspray Dragon", "failed": false},
             ],
             "targets": [
-                {"name": "Jormag", "healthPercentBurned": 100.0},
-                {"name": "Primordus", "healthPercentBurned": 100.0},
-                {"name": "Kralkatorrik", "healthPercentBurned": 100.0},
-                {"name": "Mordremoth", "healthPercentBurned": 100.0},
-                {"name": "Zhaitan", "healthPercents": [[1000, 63.2], [2000, 37.0]]},
-                {"name": "Soo-Won", "healthPercentBurned": 0.0},
+                {"name": "The JormagVoid", "healthPercentBurned": 100.0},
+                {"name": "The PrimordusVoid", "healthPercentBurned": 100.0},
+                {"name": "The KralkatorrikVoid", "healthPercentBurned": 100.0},
+                {"name": "The MordremothVoid", "healthPercentBurned": 100.0},
+                {"name": "The ZhaitanVoid", "healthPercents": [[1000, 63.2], [2000, 37.0]]},
+                {"name": "The SooWonVoid", "healthPercentBurned": 0.0},
             ],
         } );
         let dragons = dragon_phase_state_with_success(&json, Some(false))
@@ -3011,6 +3008,74 @@ mod harvest_dragon_tests {
         assert!(!by_key["soowon"].died);
         assert_eq!(by_key["soowon"].hp_left, 100.0,
             "Soo-Won was never reached → default 100% HP");
+    }
+
+    /// When BOTH `healthPercentBurned` and `healthPercents` are present, prefer
+    /// `healthPercentBurned` (cumulative burn % over the full fight) because
+    /// `healthPercents` is a sampled time series that may not cover the actual
+    /// damage phase (e.g. only [[0, 100]] — the starting HP).
+    #[test]
+    fn dragon_hp_prefers_healthPercentBurned_over_time_series() {
+        let json = json!({
+            "success": false,
+            "phases": [
+                {"name": "Jormag", "failed": false},
+                {"name": "Zhaitan", "failed": true},
+            ],
+            "targets": [
+                {"name": "The JormagVoid", "healthPercentBurned": 100.0},
+                {"name": "The ZhaitanVoid", "healthPercents": [[0, 100]], "healthPercentBurned": 8.06},
+            ],
+        });
+        let dragons = dragon_phase_state_with_success(&json, Some(false))
+            .expect("should detect dragon phases");
+        let by_key: std::collections::HashMap<_, _> =
+            dragons.iter().map(|d| (d.key.as_str(), d)).collect();
+
+        assert_eq!(by_key["jormag"].hp_left, 0.0, "Jormag defeated → 0 HP");
+        assert!(
+            (by_key["zhaitan"].hp_left - 91.94).abs() < 0.01,
+            "Zhaitan should show ~91.94% HP left (from healthPercentBurned, not time series), got {}",
+            by_key["zhaitan"].hp_left
+        );
+    }
+
+    /// dps.report emits BOTH the real dragon targets ("The ZhaitanVoid") AND
+    /// green-direction environmental targets ("Zhaitan green NE") that always
+    /// report 100% burned. The green targets must not overwrite the real HP.
+    #[test]
+    fn dragon_hp_ignores_green_direction_targets() {
+        let json = json!({
+            "success": false,
+            "phases": [
+                {"name": "Jormag", "failed": false},
+                {"name": "Zhaitan", "failed": true},
+            ],
+            "targets": [
+                {"name": "The JormagVoid", "healthPercentBurned": 100.0},
+                {"name": "The ZhaitanVoid", "healthPercentBurned": 8.06},
+                // Green-direction targets must NOT override the real dragon HP
+                {"name": "Jormag green east", "healthPercentBurned": 0.0},
+                {"name": "Jormag green west", "healthPercentBurned": 0.0},
+                {"name": "Zhaitan green NE", "healthPercentBurned": 0.0},
+                {"name": "Zhaitan green NW", "healthPercentBurned": 0.0},
+                {"name": "Zhaitan green S", "healthPercentBurned": 0.0},
+            ],
+        });
+        let dragons = dragon_phase_state_with_success(&json, Some(false))
+            .expect("should detect dragon phases");
+        let by_key: std::collections::HashMap<_, _> =
+            dragons.iter().map(|d| (d.key.as_str(), d)).collect();
+
+        // Jormag: defeated → 0 HP (not overwritten by green targets)
+        assert_eq!(by_key["jormag"].hp_left, 0.0, "Jormag defeated → 0 HP");
+
+        // Zhaitan: wiped, 8.06% burned → 91.94% HP left (NOT overwritten by green targets at 100)
+        assert!(
+            (by_key["zhaitan"].hp_left - 91.94).abs() < 0.01,
+            "Zhaitan should show ~91.94% HP left, got {}",
+            by_key["zhaitan"].hp_left
+        );
     }
 
     /// Dragonvoid CM kill, using the exact dps.report `phases[]` schema captured
