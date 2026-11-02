@@ -5468,8 +5468,13 @@ async function testWebhook(wh: any) {
         {:else if log.status === "Processing"}
           <span class="status-pill sp-processing">⧗ Elite Insights processing</span>
         {/if}
-        {#if wingman_enabled && (log.wingman_status === "failed" || log.wingman_status === "imported" || wingmanUi[log.file_path] === "sending" || log.wingman_status === "done")}
-          {@const wmState = wingmanUi[log.file_path] === "sending" ? "sending" : (log.wingman_status ?? "failed")}
+        {#if wingman_enabled && wingmanQueue.includes(log.file_path)}
+          <span class="wm-chip wm-sending" title="Queued for Wingman import — will be processed shortly.">
+            <img src="/wingman_icon.png" alt="" class="wm-spin" style="width:14px;height:14px;vertical-align:middle;" /> Queued
+          </span>
+        {/if}
+        {#if wingman_enabled && (log.wingman_status === "failed" || log.wingman_status === "imported" || wingmanUi[log.file_path] === "sending" || log.wingman_status === "done" || log.wingman_status === "in_progress")}
+          {@const wmState = wingmanUi[log.file_path] === "sending" ? "sending" : (log.wingman_status === "in_progress" ? "sending" : (log.wingman_status ?? "failed"))}
           {#if wmState === "imported"}
             <span class="wm-chip wm-imported" title="This log was already imported into Wingman.">
               <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Imported

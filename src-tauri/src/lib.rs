@@ -581,23 +581,55 @@ async fn retry_wingman_import(app: AppHandle, file_path: String) -> Result<(), S
         permalink
     );
 
-    let outcome = match client.get(&url).send().await {
-        Ok(resp) => {
-            let status = resp.status();
-            let text = resp.text().await.unwrap_or_default();
-            eprintln!(
-                "[uploader] Wingman retry status for {}: {}, body: {}",
-                permalink, status, text
-            );
-            if status.is_success() {
-                "done".to_string()
-            } else {
-                "failed".to_string()
+    // Pre-check against Wingman's own queue/DB state.
+    let mut known_outcome: Option<String> = None;
+    let precheck_url = format!(
+        "https://gw2wingman.nevermindcreations.de/api/checkLogQueuedOrDB?link={}",
+        permalink
+    );
+    if let Ok(resp) = client.get(&precheck_url).send().await {
+        if let Ok(text) = resp.text().await {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+                if v.get("inDB").and_then(|b| b.as_bool()) == Some(true) {
+                    known_outcome = Some("imported".to_string());
+                } else if v.get("inQueue").and_then(|b| b.as_bool()) == Some(true) {
+                    known_outcome = Some("in_progress".to_string());
+                }
             }
         }
-        Err(e) => {
-            eprintln!("[uploader] Wingman retry error for {}: {}", permalink, e);
-            "failed".to_string()
+    }
+
+    let outcome = if let Some(o) = known_outcome {
+        o
+    } else {
+        match client.get(&url).send().await {
+            Ok(resp) => {
+                let status = resp.status();
+                let text = resp.text().await.unwrap_or_default();
+                eprintln!(
+                    "[uploader] Wingman retry status for {}: {}, body: {}",
+                    permalink, status, text
+                );
+                if status.is_success() {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+                        let success = v.get("success").and_then(|s| s.as_i64());
+                        let note = v.get("note").and_then(|s| s.as_str()).unwrap_or("").to_lowercase();
+                        if success == Some(0) || note.contains("already") || note.contains("in wingman") {
+                            "imported".to_string()
+                        } else {
+                            "done".to_string()
+                        }
+                    } else {
+                        "done".to_string()
+                    }
+                } else {
+                    "failed".to_string()
+                }
+            }
+            Err(e) => {
+                eprintln!("[uploader] Wingman retry error for {}: {}", permalink, e);
+                "failed".to_string()
+            }
         }
     };
 

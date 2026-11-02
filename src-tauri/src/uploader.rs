@@ -3667,11 +3667,13 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
             let history = crate::config::load_history(&app_clone);
             if history.iter().any(|r| {
                 r.url.as_deref() == Some(permalink.as_str())
-                    && r.wingman_status.as_deref() == Some("imported")
+                    && (r.wingman_status.as_deref() == Some("imported")
+                        || r.wingman_status.as_deref() == Some("in_progress"))
             }) {
                 return;
             }
             let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(15))
                 .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new());
@@ -3679,7 +3681,29 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                 "https://gw2wingman.nevermindcreations.de/api/importLogQueued?link={}",
                 permalink
             );
-            let outcome = match client.get(&url).send().await {
+            // Pre-check against Wingman's own queue/DB state so we don't
+            // re-import (or mis-label) a log that is already known there.
+            let mut known_outcome: Option<&str> = None;
+            let precheck_url = format!(
+                "https://gw2wingman.nevermindcreations.de/api/checkLogQueuedOrDB?link={}",
+                permalink
+            );
+            if let Ok(resp) = client.get(&precheck_url).send().await {
+                if let Ok(text) = resp.text().await {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+                        if v.get("inDB").and_then(|b| b.as_bool()) == Some(true) {
+                            known_outcome = Some("imported");
+                        } else if v.get("inQueue").and_then(|b| b.as_bool()) == Some(true) {
+                            known_outcome = Some("in_progress");
+                        }
+                    }
+                }
+            }
+
+            let outcome: String = if let Some(o) = known_outcome {
+                o.to_string()
+            } else {
+                match client.get(&url).send().await {
                 Ok(resp) => {
                     let status = resp.status();
                     let text = resp.text().await.unwrap_or_default();
@@ -3692,23 +3716,38 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                         // was already present (`success:0` / `already in wingman DB`).
                         // Treat that as terminal imported-equivalent, not failed, so
                         // we don't keep retrying an already-known log.
-                        let lower = text.to_lowercase();
-                        if lower.contains("success:0")
-                            || lower.contains("already in wingman db")
-                            || lower.contains("already in wingmandb")
-                        {
-                            "imported"
+                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+                            let success = v.get("success").and_then(|s| s.as_i64());
+                            let note = v.get("note").and_then(|s| s.as_str()).unwrap_or("").to_lowercase();
+                            if success == Some(1)
+                                || success == Some(0)
+                                || note.contains("already")
+                                || note.contains("in wingman")
+                            {
+                                "imported".to_string()
+                            } else {
+                                "failed".to_string()
+                            }
                         } else {
-                            "imported"
+                            let lower = text.to_lowercase();
+                            if lower.contains("success:0")
+                                || lower.contains("already in wingman db")
+                                || lower.contains("already in wingmandb")
+                            {
+                                "imported".to_string()
+                            } else {
+                                "imported".to_string()
+                            }
                         }
                     } else {
-                        "failed"
+                        "failed".to_string()
                     }
                 }
                 Err(e) => {
                     eprintln!("[uploader] Wingman import error for {}: {}", permalink, e);
-                    "failed"
+                    "failed".to_string()
                 }
+            }
             };
             rec.wingman_status = Some(outcome.to_string());
             let _ = crate::config::add_to_history(&app_clone, rec);
