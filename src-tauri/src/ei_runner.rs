@@ -1624,7 +1624,9 @@ pub async fn open_ei_html_report(app: AppHandle, file_path: String) -> Result<St
                 if let Ok(entries) = std::fs::read_dir(parent) {
                     for e in entries.flatten() {
                         let p = e.path();
-                        if p.extension().and_then(|x| x.to_str()) == Some("html")
+                        let ext = p.extension().and_then(|x| x.to_str()).unwrap_or("");
+                        let is_ei_output = ext == "html" || ext == "log" || ext == "json";
+                        if is_ei_output
                             && p
                                 .file_name()
                                 .map(|n| n.to_string_lossy().starts_with(&stem))
