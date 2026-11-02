@@ -5825,6 +5825,7 @@ async function testWebhook(wh: any) {
       </div>
     </div>
   {/if}
+  {#if !(log.status === "Queued" || log.status === "Reading" || log.status === "Parsing" || log.status === "Uploading" || isReadingLog(log))}
   <div class="log-actions-row">
     <!-- Primary Action 1: Stats Modal -->
     <div class="custom-tooltip-container">
@@ -5987,6 +5988,7 @@ async function testWebhook(wh: any) {
       {/if}
     </div>
   </div>
+  {/if}
   <div class="file-name-bar">
     <span class="file-name">{basename(log.file_path)}</span>
   </div>
