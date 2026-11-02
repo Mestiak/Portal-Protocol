@@ -263,6 +263,7 @@ fn http_check_client() -> &'static reqwest::Client {
 
 #[tauri::command]
 async fn check_dps_report_status() -> Result<String, String> {
+    static FAILS: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
     let client = http_check_client();
 
     let res = client.get("https://dps.report/uploadContent").send().await;
@@ -272,7 +273,7 @@ async fn check_dps_report_status() -> Result<String, String> {
             let code = response.status().as_u16();
             if code == 400 || code == 405 || response.status().is_success() {
                 Ok("online".to_string())
-            } else if code == 503 || code == 502 {
+            } else if code >= 500 {
                 Ok("offline".to_string())
             } else {
                 Ok(format!("degraded_{}", code))
@@ -280,18 +281,22 @@ async fn check_dps_report_status() -> Result<String, String> {
         }
         Err(_) => Ok("offline".to_string()),
     };
-    // Feed the global outage flag (Approach B): a confirmed 502/503/err parks queued
-    // uploads as On Hold before they ever hit the network, so a known outage can't
-    // trigger a stampede of doomed requests. Approach A's per-response 5xx path still
-    // covers anything that slips past the flag. "degraded_*" does NOT trip the flag —
-    // only a clear outage does — so transient oddities don't needlessly pause uploads.
     let down = matches!(status, Ok(ref s) if s == "offline");
-    crate::uploader::set_dps_report_down(down);
+    if down {
+        let n = FAILS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        if n >= 2 {
+            crate::uploader::set_dps_report_down(true);
+        }
+    } else {
+        FAILS.store(0, std::sync::atomic::Ordering::Relaxed);
+        crate::uploader::set_dps_report_down(false);
+    }
     status
 }
 
 #[tauri::command]
 async fn check_backup_dps_status() -> Result<String, String> {
+    static FAILS: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
     let client = http_check_client();
 
     let res = client
@@ -304,7 +309,7 @@ async fn check_backup_dps_status() -> Result<String, String> {
             let code = response.status().as_u16();
             if code == 400 || code == 405 || response.status().is_success() {
                 Ok("online".to_string())
-            } else if code == 503 || code == 502 {
+            } else if code >= 500 {
                 Ok("offline".to_string())
             } else {
                 Ok(format!("degraded_{}", code))
@@ -313,7 +318,15 @@ async fn check_backup_dps_status() -> Result<String, String> {
         Err(_) => Ok("offline".to_string()),
     };
     let down = matches!(status, Ok(ref s) if s == "offline");
-    crate::uploader::set_backup_dps_down(down);
+    if down {
+        let n = FAILS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        if n >= 2 {
+            crate::uploader::set_backup_dps_down(true);
+        }
+    } else {
+        FAILS.store(0, std::sync::atomic::Ordering::Relaxed);
+        crate::uploader::set_backup_dps_down(false);
+    }
     status
 }
 
@@ -336,12 +349,12 @@ async fn check_wingman_status() -> Result<String, String> {
             let code = response.status().as_u16();
             if response.status().is_success() {
                 let body = response.text().await.unwrap_or_default();
-                if body.trim() == "True" {
+                if body.trim().eq_ignore_ascii_case("True") {
                     Ok("online".to_string())
                 } else {
                     Ok("degraded_bad_response".to_string())
                 }
-            } else if code == 503 || code == 502 {
+            } else if code >= 500 {
                 Ok("offline".to_string())
             } else {
                 Ok(format!("degraded_{}", code))
