@@ -1361,6 +1361,17 @@ pub async fn repair_history_cm_flags(app: AppHandle) {
         let is_conv = rec.is_convergence == Some(true);
         let lcm_eligible = is_conv || boss_lcm_eligible(&boss);
 
+        // Targeted repair for Vloxx LCM logs that were stored as plain CM before
+        // LCM support landed. Local EVTC parse (85M HP threshold) is authoritative.
+        if lcm_eligible && rec.is_lcm != Some(true) && !rec.file_path.is_empty() && (boss == "vloxx" || boss == "nexusofeternity") {
+            if let Ok(bytes) = std::fs::read(&rec.file_path) {
+                if crate::evtc_parser::parse_is_lcm(&bytes) == Some(true) {
+                    rec.is_lcm = Some(true);
+                    updates.insert(rec.file_path.clone(), rec.clone());
+                }
+            }
+        }
+
         // ── Convergences: dps.report does NOT run Elite Insights on them, so its
         //    `isCM` / `success` fields are blank. The local EVTC parse is the only
         //    trustworthy source. Old logs stored before the convergence fix landed
