@@ -549,6 +549,19 @@
           items: [
             { title: "Vloxx LCM Support", desc: "Vloxx (Nexus of Eternity) now supports Legendary Challenge Mode detection. LCM threshold set to 85M HP (matching EI v3.31's GetLogMode). The encounter is registered in vl_ranks.rs with the LCM-only 'legendaryconquerorofvloxx' rank, and uploader.rs now marks Vloxx as lcm: true (previously lcm: false, treated as CM-only). EVTC parser updated with the 85M HP LCM threshold for boss ID 28106." }
           ]
+        },
+        {
+          category: "🛠️ Additional Fixes",
+          items: [
+            { title: "Stepper Cards Cleaned Up", desc: "Extra action buttons hidden while a log is uploading/parsing; only cancel remains." },
+            { title: "Card Menus Match Action Buttons", desc: "Three-dots and right-click menus now include all action buttons, including right-click on log cards." },
+            { title: "Badge Order & Wingman Icon", desc: "Badges now show Mode → VL Rank → Success/Fail → Imported; Wingman badges use the Wingman icon." },
+            { title: "Wingman Imports More Reliable", desc: "Requests time out instead of hanging; Wingman status check prevents duplicate imports; new Queued/Uploading badges; import status read from Wingman response." },
+            { title: "Service Health Checks More Reliable", desc: "dps.report and backup treated offline on any server error; needs two bad checks in a row; Wingman connection accepts True/true." },
+            { title: "Wingman Alt Accounts", desc: "Settings let you add/reorder multiple GW2 accounts (primary on top); logs tagged with detected account; cards show Alt badge." },
+            { title: "Harvest Temple (Dragon Council) Improvements", desc: "Dragon HP/clear status from EI per-dragon phases; Kaineng shows phase timeline on wipe logs; removed false-positive Quick Play buff." },
+            { title: "Vloxx LCM Repair", desc: "Old Vloxx logs tagged as CM are re-checked once at startup and flipped to LCM when appropriate; persistent banner notifies when fixed." }
+          ]
         }
       ]
     },
