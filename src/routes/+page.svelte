@@ -2731,6 +2731,7 @@
   // Runtime the bundled Elite Insights needs. Without it, local parsing falls
   // back to dps.report (uploads still work, but cards aren't from EI).
   let eiRuntimeNotice = $state<{ url: string } | null>(null);
+  let vloxxLcmNotice = $state(false);
   let pagedHistory = $derived.by(() => {
     const start = historyPage * historyLimit;
     return filteredHistory.slice(start, start + historyLimit);
@@ -3814,6 +3815,7 @@
     let unlistenDrag: (() => void) | null = null;
     // unlistenRepair removed - repair badge feature deprecated
     let unlistenQueue: (() => void) | null = null;
+    let unlistenVloxx: (() => void) | null = null;
 
     // Live progress for the launch-time CM/LCM Mode-flag self-heal. Shows a banner
     // above the History feed while dps.report is re-checked, then auto-hides.
@@ -4015,6 +4017,10 @@
         uploadPaused = q.paused ?? false;
       } catch (e) { /* command may not exist on older builds */ }
 
+      unlistenVloxx = await listen<number>("vloxx_lcm_repaired", () => {
+        vloxxLcmNotice = true;
+      });
+
       })();
 
       return () => {
@@ -4026,6 +4032,7 @@
         unlistenUpload?.();
         unlistenDrag?.();
         unlistenQueue?.();
+        unlistenVloxx?.();
 
         if (updatePollInterval !== null) clearInterval(updatePollInterval);
         if (statusInterval) clearInterval(statusInterval);
@@ -6349,6 +6356,12 @@ async function testWebhook(wh: any) {
 {/snippet}
 
 <main class="app-container" class:sidebar-collapsed={!sidebarOpen}>
+  {#if vloxxLcmNotice}
+    <div style="position: sticky; top: 0; z-index: 50; background: var(--card); border-bottom: 1px solid var(--border); padding: 8px 12px; display: flex; align-items: center; gap: 8px;">
+      <span style="flex: 1; font-size: 12px; color: var(--foreground);">Vloxx LCM logs now display the correct badge instead of CM.</span>
+      <button onclick={() => (vloxxLcmNotice = false)} style="padding: 4px 8px; font-size: 11px; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--foreground); cursor: pointer;">Dismiss</button>
+    </div>
+  {/if}
   <!-- ─── In-body titlebar strip (Option A: native OS decorations kept) ─── -->
   <div class="app-titlebar" data-tauri-drag-region>
     <!-- Toggle responds on pointerdown for instant visual feedback -->

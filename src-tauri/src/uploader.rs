@@ -1306,6 +1306,8 @@ pub async fn repair_history_cm_flags(app: AppHandle) {
     let mut updates: std::collections::HashMap<String, crate::uploader::UploadRecord> =
         std::collections::HashMap::new();
     let mut working = snapshot.clone();
+    let vloxx_repair_pending = !crate::config::load_config(&app).vloxx_lcm_repair_done;
+    let mut vloxx_fixed: usize = 0;
     // Count how many records will actually be re-queried so the UI can show a total.
     // A record needs work when it is either CM/LCM/success-bad AND has a permalink to
     // re-check. The previous filter counted the *opposite* (records to skip), which
@@ -1363,11 +1365,14 @@ pub async fn repair_history_cm_flags(app: AppHandle) {
 
         // Targeted repair for Vloxx LCM logs that were stored as plain CM before
         // LCM support landed. Local EVTC parse (85M HP threshold) is authoritative.
-        if lcm_eligible && rec.is_lcm != Some(true) && !rec.file_path.is_empty() && (boss == "vloxx" || boss == "nexusofeternity") {
+        if vloxx_repair_pending && lcm_eligible && rec.is_lcm != Some(true) && !rec.file_path.is_empty() && (boss == "vloxx" || boss == "nexusofeternity") {
             if let Ok(bytes) = std::fs::read(&rec.file_path) {
                 if crate::evtc_parser::parse_is_lcm(&bytes) == Some(true) {
                     rec.is_lcm = Some(true);
                     updates.insert(rec.file_path.clone(), rec.clone());
+                    vloxx_fixed += 1;
+                    let _ = crate::config::merge_history_updates(&app, &updates);
+                    updates.clear();
                 }
             }
         }
@@ -1593,6 +1598,14 @@ pub async fn repair_history_cm_flags(app: AppHandle) {
                 done: true,
             },
         );
+    }
+    if vloxx_repair_pending {
+        let mut cfg = crate::config::load_config(&app);
+        cfg.vloxx_lcm_repair_done = true;
+        let _ = crate::config::save_config(&app, &cfg);
+        if vloxx_fixed > 0 {
+            let _ = app.emit("vloxx_lcm_repaired", vloxx_fixed);
+        }
     }
 }
 

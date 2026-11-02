@@ -179,6 +179,8 @@ pub struct AppConfig {
     pub wingman_account: String,
     #[serde(default)]
     pub wingman_accounts: Vec<String>,
+    #[serde(default)]
+    pub vloxx_lcm_repair_done: bool,
     /// When false (default), WvW logs (arcdps boss_id == 1) are never read or
     /// detected — the app stays PvE-focused. When true, WvW logs appear as their
     /// own "World vs World" group, excluded from Wingman uploads.
@@ -421,6 +423,7 @@ impl Default for AppConfig {
             wingman_enabled: false,
             wingman_account: String::new(),
             wingman_accounts: Vec::new(),
+            vloxx_lcm_repair_done: false,
             wvw_enabled: false,
             max_concurrent_uploads: 2,
             watch_stability_delay_ms: default_stability_delay(),
