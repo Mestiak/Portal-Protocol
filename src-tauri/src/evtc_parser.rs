@@ -2266,11 +2266,14 @@ pub fn parse_is_cm(bytes: &[u8]) -> Option<bool> {
         return Some(is_cm);
     }
 
-    // Soulless Horror (W5): CM is determined by fast necrosis (split necrosis
-    // intervals < 11s), which the local parser cannot reliably detect. The generic
-    // statechange-35 scan produces false positives here, so defer to EI's isCM.
-    if boss_id == 19767 {
-        return None;
+    // Bosses whose CM mode is determined by EI via buffs/skills/species presence
+    // rather than a simple max-HP threshold or statechange 35. The local generic
+    // scan is unreliable for these, so defer to EI's isCM (return None).
+    match boss_id {
+        43974 | 16253 | 16235 | 24033 | 25413 | 25415 | 25419 | 23957 | 25705 | 24266 | 21105 | 21089 | 19767 => {
+            return None;
+        }
+        _ => {}
     }
 
     // ── Health-based CM detection ─────────────────────────────────────────────
