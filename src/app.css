@@ -7066,6 +7066,18 @@ html {
   transition: width .5s cubic-bezier(.22, .61, .36, 1), background .3s ease;
 }
 
+.dragon-hp-text {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: .2px;
+  text-align: center;
+  line-height: 1.15;
+  margin-bottom: 2px;
+  display: flex;
+  justify-content: center;
+}
+
 .dragon-name {
   font-size: 10px;
   font-weight: 600;
@@ -7120,6 +7132,14 @@ html {
 
 .dragon-chip.dstate-unreached .dragon-icon {
   filter: grayscale(1) brightness(.7);
+}
+
+.dragon-chip.dstate-dead .dragon-hp-text {
+  color: #34d399;
+}
+
+.dragon-chip.dstate-alive .dragon-hp-text {
+  color: #fbbf24;
 }
 
 /* Kaineng Overlook phase timeline */
