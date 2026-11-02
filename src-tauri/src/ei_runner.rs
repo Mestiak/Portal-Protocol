@@ -622,14 +622,31 @@ pub fn enrich_record_from_ei(record: &mut crate::uploader::UploadRecord, ei: &Va
         .unwrap_or(0);
     eprintln!("[ENRICH] EI phases count: {}", phase_count);
     // Boss name: prefer the EI target's canonical name, then the fight name.
-    let name = ei
-        .get("targets")
-        .and_then(|t| t.as_array())
-        .and_then(|arr| arr.first())
-        .and_then(|t| t.get("name"))
-        .and_then(|v| v.as_str())
-        .or_else(|| ei.get("fightName").and_then(|v| v.as_str()))
-        .or_else(|| ei.get("name").and_then(|v| v.as_str()));
+    // Dragonvoid (triggerID 43488) is special: EI's targets[0] is a per-dragon
+    // NPC ("The JormagVoid"), not the encounter name. Prefer fightName so the
+    // boss name stays "Harvest Temple" instead of "The JormagVoid".
+    let is_dv_trigger = ei
+        .get("triggerID")
+        .and_then(|v| v.as_i64())
+        .map(|id| id == 43488)
+        .unwrap_or(false);
+    let name = if is_dv_trigger {
+        ei.get("fightName")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            // Strip trailing " CM" — EI reports "Harvest Temple CM" for this
+            // CM-only strike, but the frontend and local parser use "Harvest Temple".
+            .and_then(|s| s.strip_suffix(" CM").or(Some(s)))
+            .or_else(|| ei.get("name").and_then(|v| v.as_str()))
+    } else {
+        ei.get("targets")
+            .and_then(|t| t.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|t| t.get("name"))
+            .and_then(|v| v.as_str())
+            .or_else(|| ei.get("fightName").and_then(|v| v.as_str()))
+            .or_else(|| ei.get("name").and_then(|v| v.as_str()))
+    };
     if let Some(n) = name {
         if !n.is_empty() {
             let existing = record.boss_name.as_deref().unwrap_or("");
@@ -641,10 +658,10 @@ pub fn enrich_record_from_ei(record: &mut crate::uploader::UploadRecord, ei: &Va
                 .replace(|c: char| !c.is_ascii_alphanumeric(), "");
             // Only overwrite if EI's name is more specific than what we already have,
             // or if the names are unrelated (EI may have corrected a wrong local name).
-            // This prevents EI from shortening e.g. "Qadim the Peerless" → "Qadim".
+            // This prevents EI from shortening e.g. "Qadim the Peerless" -> "Qadim".
             if existing_clean.is_empty()
                 || new_clean.contains(&existing_clean)
-                || (!existing_clean.contains(&new_clean) && !new_clean.contains(&existing_clean))
+                || (!existing_clean.contains(&new_clean) && existing_clean != new_clean)
             {
                 record.boss_name = Some(n.to_string());
             }
@@ -654,6 +671,9 @@ pub fn enrich_record_from_ei(record: &mut crate::uploader::UploadRecord, ei: &Va
     // bosses — it takes priority over dps.report's isCM, which can be stale for
     // newer encounters (e.g. Vloxx CM). Only fill from EI when local parse was
     // inconclusive (None) or for non-CM-eligible bosses.
+    // Harvest Temple (Dragonvoid) has BOTH Normal and CM modes; the local parser
+    // detects which via dragon MaxHealthUpdate thresholds. EI also reports isCM
+    // correctly, so fall through to the EI branch below when local is None.
     if let Some(cm) = ei.get("isCM").and_then(|v| v.as_bool()) {
         if record.is_cm.is_none() {
             record.is_cm = Some(cm);
@@ -673,15 +693,14 @@ pub fn enrich_record_from_ei(record: &mut crate::uploader::UploadRecord, ei: &Va
     if ei_says_lcm || name_says_lcm || local_says_lcm {
         record.is_lcm = Some(true);
     }
-    // Quick Play: EI does not expose a dedicated boolean. Mirror `PhaseDto.cs`:
-    // when instance buffs contain QuickplayBoost / QuickplayMorale, EI renders
-    // the mode string as `Quickplay Normal Mode`. Use that exact string so the
-    // app's badge matches EI's own HTML output.
-    // IMPORTANT: QP is only valid for specific strikes and fractals. Raids like
-    // Kaineng Overlook, Convergences, etc. can NEVER be Quick Play, even if EI
-    // detects QP buffs incorrectly. Check the boss name against the allowlist.
-    // The allowlist mirrors `QUICK_PLAY_BOSS_NAMES` in uploader.rs so the local
-    // EVTC buff-scan and the EI phase-mode scan agree on which bosses are eligible.
+    // Quick Play: EI does not expose a dedicated boolean. QP is detected via the
+    // Quickplay Boost / Quickplay Morale instance buffs (IDs 77676, 79492), which
+    // EI lists in `presentInstanceBuffs` — an array of [buffId, stacks, phaseIdx, …].
+    // (The old `phases[0].mode` string check is dead code: `JsonPhase.Mode` is never
+    // serialized in the EI JSON output — only in the HTML template.)
+    // IMPORTANT: QP is only valid for specific strikes and fractals. Check the boss
+    // name against the allowlist so we never tag a non-QP boss as Quick Play.
+    let qp_buff_ids: &[u32] = &[77676, 79492];
     let qp_allowed_bosses = [
         "aetherbladelet",
         "cliffside",
@@ -703,7 +722,9 @@ pub fn enrich_record_from_ei(record: &mut crate::uploader::UploadRecord, ei: &Va
         "boneskinner",
         "cosmicobservatory",
         "templeoffebe",
+        "cerus",          // Local EVTC parser / EI bossName returns "Cerus" for boss ID 25989
         "xunlaijadejunkyard",
+        "ankka",          // Local EVTC parser / EI bossName returns "Ankka" for boss ID 23957
         "oldlionscourt",
         "kainengoverlook",
         "ministerli",
@@ -722,18 +743,22 @@ pub fn enrich_record_from_ei(record: &mut crate::uploader::UploadRecord, ei: &Va
         // Only let EI fill in `is_quick_play` when the local EVTC buff-scan was
         // inconclusive (None). The local scan is authoritative for these bosses
         // — it reads the raw QP buffs directly — so we must not overwrite a
-        // correct local result with EI's phase-mode field, which can be absent
-        // on edge-case logs (e.g. logs with no phases array) and would clobber
-        // a valid Some(true) with nothing, dropping the QP badge.
+        // valid Some(true) with nothing, dropping the QP badge.
         if record.is_quick_play.is_none() {
-            if let Some(phase) = ei
-                .get("phases")
-                .and_then(|v| v.as_array())
-                .and_then(|arr| arr.first())
-                .and_then(|p| p.get("mode"))
-                .and_then(|v| v.as_str())
-            {
-                record.is_quick_play = Some(phase == "Quickplay Normal Mode");
+            // Check `presentInstanceBuffs` — EI's JSON model serializes this as an
+            // array of [buffId, stacks, phaseIndex, …] arrays. Look for the QP buff
+            // IDs (77676 = Quickplay Boost, 79492 = Quickplay Morale).
+            if let Some(buffs) = ei.get("presentInstanceBuffs").and_then(|v| v.as_array()) {
+                for entry in buffs {
+                    if let Some(arr) = entry.as_array() {
+                        if let Some(id) = arr.first().and_then(|v| v.as_u64()) {
+                            if qp_buff_ids.contains(&(id as u32)) {
+                                record.is_quick_play = Some(true);
+                                break;
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -1165,10 +1190,15 @@ pub fn enrich_record_from_ei(record: &mut crate::uploader::UploadRecord, ei: &Va
             record.duration = Some(d);
         }
     }
-    // Thumbnail (boss portrait) from EI's fightIcon.
-    if let Some(icon) = ei.get("fightIcon").and_then(|v| v.as_str()) {
-        if !icon.is_empty() {
-            record.boss_icon = Some(icon.to_string());
+    // Thumbnail (boss portrait) from EI's fightIcon. Only accept the external
+    // icon as a fallback — the local parser ships its own icon set and the
+    // frontend prefers local assets. Overwrite only when no local icon was
+    // already set (e.g. a brand-new boss we don't have a PNG for yet).
+    if record.boss_icon.is_none() {
+        if let Some(icon) = ei.get("fightIcon").and_then(|v| v.as_str()) {
+            if !icon.is_empty() {
+                record.boss_icon = Some(icon.to_string());
+            }
         }
     }
     // Players: map EI players[] -> PlayerInfo (account/group/profession). Roles
@@ -1738,13 +1768,11 @@ mod tests {
     #[test]
     fn test_qp_not_overwritten_by_ei_when_local_set() {
         // Local EVTC buff-scan already detected QP (Some(true)). EI enrich
-        // must NOT overwrite it — even if EI's phases[0].mode says "Normal Mode"
-        // (edge case: phase mode field missing or stale).
+        // must NOT overwrite it — even if EI's presentInstanceBuffs also
+        // contains the QP buffs, the local result is authoritative.
         let ei = json!({
             "bossName": "Whisper of Jormag",
-            "phases": [
-                {"name": "Phase 1", "mode": "Normal Mode", "success": true, "targets": [0]}
-            ]
+            "presentInstanceBuffs": [[77676, 1, 0]]
         });
         let mut record = crate::uploader::UploadRecord::default();
         record.boss_name = Some("Whisper of Jormag".to_string());
@@ -1760,12 +1788,10 @@ mod tests {
     #[test]
     fn test_qp_filled_by_ei_when_local_none() {
         // Local parse was inconclusive (None) for a QP-eligible boss.
-        // EI's phases[0].mode = "Quickplay Normal Mode" should fill it in.
+        // EI's presentInstanceBuffs should contain the QP buff IDs and fill it in.
         let ei = json!({
             "bossName": "Captain Mai Trin",
-            "phases": [
-                {"name": "Phase 1", "mode": "Quickplay Normal Mode", "success": true, "targets": [0]}
-            ]
+            "presentInstanceBuffs": [[77676, 1, 0]]
         });
         let mut record = crate::uploader::UploadRecord::default();
         record.boss_name = Some("Captain Mai Trin".to_string());
@@ -1781,12 +1807,10 @@ mod tests {
     #[test]
     fn test_qp_not_set_for_non_qp_boss() {
         // A non-QP boss (e.g. Harvest Temple) should never get is_quick_play
-        // set from the EI phase mode, even if the mode string were present.
+        // set from EI's presentInstanceBuffs, even if the buffs are present.
         let ei = json!({
             "bossName": "The Dragonvoid",
-            "phases": [
-                {"name": "Phase 1", "mode": "Normal Mode", "success": true, "targets": [0]}
-            ]
+            "presentInstanceBuffs": [[77676, 1, 0]]
         });
         let mut record = crate::uploader::UploadRecord::default();
         record.boss_name = Some("The Dragonvoid".to_string());

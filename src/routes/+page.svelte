@@ -5973,9 +5973,9 @@ async function testWebhook(wh: any) {
         </div>
       {/if}
     </div>
+  </div>
   <div class="file-name-bar">
     <span class="file-name">{basename(log.file_path)}</span>
-  </div>
   </div>
   {#if notesOpen[cardId(log)]}
     <div class="notes-section">
@@ -8913,6 +8913,22 @@ async function testWebhook(wh: any) {
   :global(.reduce-motion) .upload-queue-pill.queue-pulsing {
     animation: none !important;
   }
+  /* ── Log card file path bar ── */
+  .file-name-bar {
+    margin-top: 6px;
+    padding: 2px 0 0;
+  }
+  .file-name {
+    display: block;
+    font-size: 10px;
+    font-style: italic;
+    color: var(--text-muted, #94a3b8);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.3;
+  }
+
   :global(.reduce-motion) .sb-chevron { transition: none; }
 </style>
 
