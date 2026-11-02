@@ -5622,9 +5622,20 @@ async function testWebhook(wh: any) {
             {#each uploadStageList(log) as st, i}
               {#if i > 0}<span class="stage-connector" class:filled={uploadStageList(log)[i-1].state === "done"}></span>{/if}
               <span class="stage-step stage-{st.state}">
-                {#if st.state === "done"}<i class="fa-solid fa-check"></i> {:else if st.state === "active"}<span class="stage-dot"></span> {/if}{st.label}
+                {#if st.state === "done"}<i class="fa-solid fa-check"></i>
+                {:else if st.state === "active"}<span class="stage-dot"></span>
+                {:else if st.label === "Queued"}<i class="fa-solid fa-hourglass-start"></i>
+                {:else if st.label === "Reading"}<i class="fa-solid fa-file"></i>
+                {:else if st.label === "Parsing"}<i class="fa-solid fa-gear"></i>
+                {:else if st.label === "Uploading"}<i class="fa-solid fa-cloud-arrow-up"></i>
+                {/if}
+                {st.label}
               </span>
             {/each}
+            <span class="stepper-duration">
+              <i class="fa-solid fa-clock" class:fa-spin={log.duration == null}></i>
+              {#if log.duration != null}{formatDuration(log.duration)}{/if}
+            </span>
           </div>
         {/if}
         <div class="meta-line">

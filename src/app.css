@@ -6890,15 +6890,16 @@ html {
 .stage-stepper {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0;
+  overflow: hidden;
 }
 
 .stage-step {
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: .4px;
-  padding: 2px 8px;
+  padding: 2px 10px;
   border-radius: 999px;
   border: 1px solid transparent;
   text-transform: uppercase;
@@ -6925,6 +6926,25 @@ html {
 
 .stage-connector.filled {
   background: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.stage-active {
+  animation: stage-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes stage-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent); }
+  50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+}
+
+.stepper-duration {
+  margin-left: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .stage-pending {

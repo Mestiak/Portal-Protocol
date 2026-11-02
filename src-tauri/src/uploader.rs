@@ -2622,7 +2622,7 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
         record.duration = total_duration.or(local_duration);
         record.boss_duration = boss_duration;
     } else {
-        record.duration = local_duration;
+        record.duration = None;
     }
     // EI-first: for non-convergence logs, EI will overwrite mode/HP/success
     // shortly after. Keep local values only as provisional placeholders or for
