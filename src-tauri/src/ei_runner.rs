@@ -386,6 +386,21 @@ pub fn run_ei(app: &AppHandle, input: &Path) -> Result<Value, String> {
         serde_json::from_str(&s).map_err(|e| format!("invalid EI JSON output: {}", e))?;
     // Clean up the raw EI output + the temp input copy; caller caches the slim result.
     let _ = std::fs::remove_file(&out);
+    // EI also writes a diagnostic .log next to the source log; sweep it too.
+    if let Some(stem) = input.file_stem().map(|s| s.to_string_lossy().to_string()) {
+        if let Some(parent) = input.parent() {
+            if let Ok(entries) = std::fs::read_dir(parent) {
+                for e in entries.flatten() {
+                    let p = e.path();
+                    if p.extension().and_then(|x| x.to_str()) == Some("log")
+                        && p.file_name().map(|n| n.to_string_lossy().starts_with(&stem)).unwrap_or(false)
+                    {
+                        let _ = std::fs::remove_file(&p);
+                    }
+                }
+            }
+        }
+    }
     Ok(val)
 }
 
