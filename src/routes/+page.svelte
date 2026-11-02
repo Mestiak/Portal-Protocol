@@ -199,6 +199,7 @@
   let wingman_account = $state("");
   let wingman_accounts = $state<string[]>([]);
   let wingmanAccountsText = $state("");
+  let newWingmanAccount = $state("");
   let wvw_enabled = $state(false);
   let use_backup_dps = $state(true);
   let max_concurrent_uploads = $state(2);
@@ -7401,9 +7402,20 @@ async function testWebhook(wh: any) {
                   <input id="wingman-acc" type="text" placeholder="e.g. Username.1234" bind:value={wingman_account} style="width: 100%; max-width: 320px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); padding: 6px; border-radius: 4px; color: white; font-size: 11px; outline: none;"/>
                   <span class="help" style="display: block; margin-top: 4px;">Required by Wingman to link combat uploads directly to your account dashboard.</span>
                   <div style="margin-top: 8px;">
-                    <label for="wingman-alts" style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Alt accounts (one per line)</label>
-                    <textarea id="wingman-alts" bind:value={wingmanAccountsText} onblur={() => { wingman_accounts = wingmanAccountsText.split(/\n/).map(s => s.trim()).filter(Boolean); }} style="width: 100%; max-width: 320px; min-height: 60px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); padding: 6px; border-radius: 4px; color: white; font-size: 11px; outline: none;"></textarea>
-                    <span class="help" style="display: block; margin-top: 4px;">Enter each alt account name on its own line. First account is primary.</span>
+                    <span style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Alt accounts (primary on top)</span>
+                    <div style="display: flex; gap: 6px; margin-bottom: 6px;">
+                      <input type="text" placeholder="e.g. Username.1234" bind:value={newWingmanAccount} style="flex: 1; max-width: 320px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); padding: 6px; border-radius: 4px; color: white; font-size: 11px; outline: none;"/>
+                      <button onclick={() => { if (newWingmanAccount.trim()) { wingman_accounts = [...wingman_accounts, newWingmanAccount.trim()]; newWingmanAccount = ""; } }} style="padding: 6px 10px; font-size: 11px;">Add</button>
+                    </div>
+                    {#each wingman_accounts as acc, i}
+                      <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+                        <span style="flex: 1; max-width: 260px; font-size: 11px; color: white; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{i === 0 ? "★ " : ""}{acc}</span>
+                        <button onclick={() => { if (i > 0) { const a = [...wingman_accounts]; [a[i-1], a[i]] = [a[i], a[i-1]]; wingman_accounts = a; } }} disabled={i === 0} style="font-size: 10px; padding: 2px 6px;">↑</button>
+                        <button onclick={() => { if (i < wingman_accounts.length - 1) { const a = [...wingman_accounts]; [a[i], a[i+1]] = [a[i+1], a[i]]; wingman_accounts = a; } }} disabled={i === wingman_accounts.length - 1} style="font-size: 10px; padding: 2px 6px;">↓</button>
+                        <button onclick={() => { wingman_accounts = wingman_accounts.filter((_, idx) => idx !== i); }} style="font-size: 10px; padding: 2px 6px;">✕</button>
+                      </div>
+                    {/each}
+                    <span class="help" style="display: block; margin-top: 4px;">First account is primary. Use arrows to reorder.</span>
                   </div>
                 </div>
               {/if}
