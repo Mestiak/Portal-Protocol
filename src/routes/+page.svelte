@@ -5430,7 +5430,7 @@ async function testWebhook(wh: any) {
     </div>
     <div class="boss-details" style="min-width: 0;">
       <div class="boss-title-row">
-        <span class="boss-name" role={log.boss_name ? "button" : undefined} style="cursor: {log.boss_name ? 'pointer' : 'default'};" title={log.boss_name ? "Filter to this boss" : ""} onclick={(e) => { e.stopPropagation(); if (log.boss_name) setBossFilter(log); }} onkeydown={(e) => { if ((e.key === "Enter" || e.key === " ") && log.boss_name) { e.preventDefault(); setBossFilter(log); } }}>{log.boss_name ? getModeBossDisplayName(log.boss_name, log) : (log.file_name ?? "")}</span>
+        <span class="boss-name" role={log.boss_name ? "button" : undefined} style="cursor: {log.boss_name ? 'pointer' : 'default'};" title={log.boss_name ? "Filter to this boss" : ""} onclick={(e) => { e.stopPropagation(); if (log.boss_name) setBossFilter(log); }} onkeydown={(e) => { if ((e.key === "Enter" || e.key === " ") && log.boss_name) { e.preventDefault(); e.stopPropagation(); setBossFilter(log); } }}>{log.boss_name ? getModeBossDisplayName(log.boss_name, log) : (log.file_name ?? "")}</span>
         {#if log.status === "Processing"}
           <span class="status-pill sp-processing">⏳ Processing…</span>
         {:else if clean(log.boss_name).includes("golem")}
@@ -5447,37 +5447,6 @@ async function testWebhook(wh: any) {
           <span class="cm-badge nm-badge">Normal Mode</span>
         {:else if log.status === "Skipped"}
           <span class="status-pill sp-skipped">Skipped</span>
-        {/if}
-        {#if wingman_enabled && (log.wingman_status === "failed" || log.wingman_status === "imported" || wingmanUi[log.file_path] === "sending" || log.wingman_status === "done")}
-          {@const wmState = wingmanUi[log.file_path] === "sending" ? "sending" : (log.wingman_status ?? "failed")}
-          {#if wmState === "imported"}
-            <span class="wm-chip wm-imported" title="This log was already imported into Wingman.">
-              <i class="fa-solid fa-shield-halved"></i> Imported
-            </span>
-          {/if}
-          {#if wmState === "failed"}
-            {#if wingmanStatus === "offline"}
-              <span class="wm-chip wm-offline" title="GW2 Wingman is currently offline — this log will be retried once the service is reachable again.">
-                <i class="fa-solid fa-shield-halved"></i> Wingman offline
-              </span>
-            {:else}
-              <button class="wm-chip wm-failed" title="Wingman was unreachable when this log uploaded — click to retry importing it into Wingman." onclick={(e) => { e.stopPropagation(); sendToWingman(log.file_path); }}>
-                <i class="fa-solid fa-shield-halved"></i> Send to Wingman
-              </button>
-              {#if likelyCause(log)}
-                <span class="wm-cause">{likelyCause(log)}</span>
-              {/if}
-            {/if}
-          {:else if wmState === "sending"}
-            <span class="wm-chip wm-sending"><i class="fa-solid fa-shield-halved wm-spin"></i> Uploading…</span>
-          {:else if wmState === "done"}
-            <span class="wm-chip wm-done"><i class="fa-solid fa-shield-halved"></i> Completed</span>
-          {/if}
-        {/if}
-        {#if discord_webhooks.length > 0 && log.discord_pending === true}
-          <span class="wm-chip wm-offline" title="A Discord webhook post failed when this log uploaded. It will be retried automatically the next time this log uploads successfully (e.g. on a dps.report recovery sweep).">
-            <i class="fa-brands fa-discord"></i> Discord pending
-          </span>
         {/if}
         {#each vlCurrentRanks(log) as rk}
           <span class="vl-badge" role="button" tabindex="0" style="color: {rk.text_color}; background: {rk.bg_color}; border: 1px solid color-mix(in srgb, {rk.text_color} 45%, transparent); cursor: pointer;" title="Filter to {rk.label} logs" onclick={(e) => { e.stopPropagation(); setVlRankFilter(rk.id); }} onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setVlRankFilter(rk.id); } }}><img src={rk.icon} alt="" class="vl-badge-icon" />{rk.label}</span>
@@ -5499,7 +5468,39 @@ async function testWebhook(wh: any) {
         {:else if log.status === "Processing"}
           <span class="status-pill sp-processing">⧗ Elite Insights processing</span>
         {/if}
+        {#if wingman_enabled && (log.wingman_status === "failed" || log.wingman_status === "imported" || wingmanUi[log.file_path] === "sending" || log.wingman_status === "done")}
+          {@const wmState = wingmanUi[log.file_path] === "sending" ? "sending" : (log.wingman_status ?? "failed")}
+          {#if wmState === "imported"}
+            <span class="wm-chip wm-imported" title="This log was already imported into Wingman.">
+              <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Imported
+            </span>
+          {/if}
+          {#if wmState === "failed"}
+            {#if wingmanStatus === "offline"}
+              <span class="wm-chip wm-offline" title="GW2 Wingman is currently offline — this log will be retried once the service is reachable again.">
+                <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Wingman offline
+              </span>
+            {:else}
+              <button class="wm-chip wm-failed" title="Wingman was unreachable when this log uploaded — click to retry importing it into Wingman." onclick={(e) => { e.stopPropagation(); sendToWingman(log.file_path); }}>
+                <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Send to Wingman
+              </button>
+              {#if likelyCause(log)}
+                <span class="wm-cause">{likelyCause(log)}</span>
+              {/if}
+            {/if}
+          {:else if wmState === "sending"}
+            <span class="wm-chip wm-sending"><img src="/wingman_icon.png" alt="" class="wm-spin" style="width:14px;height:14px;vertical-align:middle;" /> Uploading…</span>
+          {:else if wmState === "done"}
+            <span class="wm-chip wm-done"><img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Completed</span>
+          {/if}
+        {/if}
+        {#if discord_webhooks.length > 0 && log.discord_pending === true}
+          <span class="wm-chip wm-offline" title="A Discord webhook post failed when this log uploaded. It will be retried automatically the next time this log uploads successfully (e.g. on a dps.report recovery sweep).">
+            <i class="fa-brands fa-discord"></i> Discord pending
+          </span>
+        {/if}
       </div>
+
       {#if (log.old_lions_court && log.success !== true) || isDragonvoid(log.boss_name)}
         <div class="log-meta">
           {#if log.duration != null}
