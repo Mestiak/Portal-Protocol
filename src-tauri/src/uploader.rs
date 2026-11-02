@@ -3667,11 +3667,13 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
             let history = crate::config::load_history(&app_clone);
             if history.iter().any(|r| {
                 r.url.as_deref() == Some(permalink.as_str())
-                    && r.wingman_status.as_deref() == Some("imported")
+                    && (r.wingman_status.as_deref() == Some("imported")
+                        || r.wingman_status.as_deref() == Some("in_progress"))
             }) {
                 return;
             }
             let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(15))
                 .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new());
