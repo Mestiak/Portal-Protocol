@@ -45,7 +45,7 @@ function unzip(zipPath, destDir) {
     // Extract DEB using dpkg-deb (Linux only)
     execSync(`dpkg-deb -x '${zipPath}' '${destDir}'`, { stdio: 'inherit' });
   } else if (process.platform === 'win32') {
-    execSync(`powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${destDir}' -Force"`, { stdio: 'inherit' });
+    execSync(`powershell -Command \"Expand-Archive -Path '${zipPath}' -DestinationPath '${destDir}' -Force\"`, { stdio: 'inherit' });
   } else if (process.platform === 'darwin') {
     execSync(`unzip -o '${zipPath}' -d '${destDir}'`, { stdio: 'inherit' });
   } else {
@@ -63,8 +63,11 @@ function getPlatformZip(assets) {
   // Prefer .zip files, fall back to platform-specific packages
   let pattern;
   if (platform === 'win32') {
-    // Windows: only match the plain GW2EI.zip
-    pattern = /^GW2EI[_-]win.*\.zip$/i;
+    // Windows: the standalone CLI zip ships the real console binary
+    // (GuildWars2EliteInsights-CLI.exe). The combined GW2EI-win-x64.zip
+    // only contains the GUI executable (GuildWars2EliteInsights.exe), which
+    // opens a WinForms window when spawned — that's why we must use the CLI zip.
+    pattern = /^GW2EICLI\.zip$/i;
   } else if (platform === 'darwin') {
     // macOS: match mac-specific zips, prefer arm64 on Apple Silicon
     pattern = arch === 'arm64' ? /^GW2EI[_-]osx[_-]arm.*\.zip$/i : /^GW2EI[_-]osx[_-]x64.*\.zip$/i;
@@ -78,7 +81,11 @@ function getPlatformZip(assets) {
   // Fallback: if specific arch zip not found, try broader match for the platform
   if (!match) {
     if (platform === 'win32') {
-      match = assets.find(a => /^GW2EI[_-]win.*\.zip$/i.test(a.name));
+      // Prefer the CLI zip first, then fall back to the combined GUI zip
+      match = assets.find(a => /^GW2EICLI\.zip$/i.test(a.name));
+      if (!match) {
+        match = assets.find(a => /^GW2EI[_-]win.*\.zip$/i.test(a.name));
+      }
     } else if (platform === 'darwin') {
       match = assets.find(a => /^GW2EI[_-]osx.*\.zip$/i.test(a.name));
     } else {
@@ -165,6 +172,18 @@ async function main() {
   // Create EI directory
   if (!fs.existsSync(EI_DIR)) {
     fs.mkdirSync(EI_DIR, { recursive: true });
+  }
+
+  // Remove any stale GUI executable before extracting (prevents the GUI
+  // binary from sitting alongside the CLI binary, which previously caused
+  // ei_runner.rs to spawn the GUI and pop a WinForms window on every upload).
+  const guiExe = process.platform === 'win32'
+    ? 'GuildWars2EliteInsights.exe'
+    : 'GuildWars2EliteInsights';
+  const guiPath = path.join(EI_DIR, guiExe);
+  if (fs.existsSync(guiPath)) {
+    fs.rmSync(guiPath, { force: true });
+    console.log(`Removed stale ${guiExe}`);
   }
 
   // Extract

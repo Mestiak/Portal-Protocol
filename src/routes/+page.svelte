@@ -75,6 +75,7 @@
     is_wvw?: boolean; // World vs World log
     notes?: LogNote[];
     wingman_status?: string | null;
+    wingman_account?: string | null;
     /// Discord webhook delivery state: undefined/null = n/a, true = pending re-send
     /// (last send failed; retried on next successful upload of this log), false = delivered.
     discord_pending?: boolean | null;
@@ -196,6 +197,9 @@
   let autostart = $state(false);
   let wingman_enabled = $state(false);
   let wingman_account = $state("");
+  let wingman_accounts = $state<string[]>([]);
+  let wingmanAccountsText = $state("");
+  let newWingmanAccount = $state("");
   let wvw_enabled = $state(false);
   let use_backup_dps = $state(true);
   let max_concurrent_uploads = $state(2);
@@ -218,6 +222,11 @@
   let historyCacheSize = $state<number>(0);
   let historyCacheCount = $state<number>(0);
   let showClearHistoryModal = $state(false);
+  let html_cache_max_files = $state<number>(50);
+  let htmlCacheSize = $state<number>(0);
+  let htmlCacheCount = $state<number>(0);
+  let showClearHtmlCacheModal = $state(false);
+  let eiReportParsing = $state<string | null>(null);
   // Set true once loadConfig() has finished hydrating state from disk, so the
   // autosave $effect below doesn't fire (and rewrite disk) with empty defaults
   // during startup. Prevents a race where the first computed read re-saves a
@@ -498,7 +507,7 @@
   getVersion().then((v) => { appVersion = v; }).catch(() => {});
 
   // Elite Insights version (manually updated when EI is bumped)
-  const EI_VERSION = "3.30.0.0";
+  const EI_VERSION = "3.31.0.0";
 
   // Update native window title with version when appVersion changes
   $effect(() => {
@@ -513,6 +522,36 @@
   type PatchNoteCategory = { category: string; items: PatchNoteItem[] };
   type PatchNoteVersion = { version: string; date: string; image?: string; notes: PatchNoteCategory[] };
   const PATCH_NOTES_DATA: PatchNoteVersion[] = [
+    {
+      version: "0.7.3",
+      date: "October 21, 2026",
+      notes: [
+        {
+          category: "✨ New Features",
+          items: [
+            { title: "Open EI HTML Report in Browser", desc: "Logs that have been locally parsed by Elite Insights now have an 'Open in Browser' button that opens the generated HTML report in the user's default browser." }
+          ]
+        },
+        {
+          category: "📦 Dependencies",
+          items: [
+            { title: "Elite Insights CLI Updated to v3.31.0.0", desc: "Bundled EI parser updated from v3.30.2 to v3.31.0.0. Version bumps: GW2EIParserCommons 0.330.2 → 0.331.0.0, GW2EIEvtcParser 0.88.2 → 0.89.0.0 (new file: System.Diagnostics.EventLog.Messages.dll). The download_ei.cjs CI script now renames the GUI exe to the CLI exe name after extraction, so fresh CI builds correctly produce 'GuildWars2EliteInsights-CLI.exe' instead of the GUI 'GuildWars2EliteInsights.exe'." }
+          ]
+        },
+        {
+          category: "🏆 New Void Lounge Ranks",
+          items: [
+            { title: "Legendary Conqueror of Vloxx (LCM)", desc: "New Void Lounge rank for Vloxx (Nexus of Eternity) Legendary Challenge Mode. Auto-awarded on successful LCM clear. Badge: bg #25393f, text #2ff2fc. Icon: /static/rank_icons/Vloxx_LCM/legendaryconquerorofvloxx.png." }
+          ]
+        },
+        {
+          category: "🐉 New Encounters",
+          items: [
+            { title: "Vloxx LCM Support", desc: "Vloxx (Nexus of Eternity) now supports Legendary Challenge Mode detection. LCM threshold set to 85M HP (matching EI v3.31's GetLogMode). The encounter is registered in vl_ranks.rs with the LCM-only 'legendaryconquerorofvloxx' rank, and uploader.rs now marks Vloxx as lcm: true (previously lcm: false, treated as CM-only). EVTC parser updated with the 85M HP LCM threshold for boss ID 28106." }
+          ]
+        }
+      ]
+    },
     {
       version: "0.7.2",
       date: "October 12, 2026",
@@ -1168,6 +1207,17 @@
     prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   });
 
+  // Exit transition for uploading log cards that have resolved (vanish animation).
+  function resolveVanish(_node: HTMLElement, params: { duration: number }) {
+    return {
+      duration: params.duration,
+      css: (t: number) => `opacity: ${t}; transform: scale(${0.95 + 0.05 * t});`,
+      fallback: (node: HTMLElement, _params: { duration: number }) => {
+        node.style.opacity = "0";
+        node.style.transform = "scale(0.95)";
+      },
+    };
+  }
   const CONVERGENCE_BOSSES = new Set([
     "sorrow", "demonknight", "dreadwing", "hellsister", "umbriel",
     "greer", "greerthebightbringer", "greertheblightbringer", "decima", "decimathestormsinger", "ura", "urathesteamshrieker",
@@ -1470,6 +1520,8 @@
   let selectedLogs = $state<Set<string>>(new Set());
   let wingCollapsed = $state<Record<number, boolean>>({});
   let categoryCollapsed = $state<Record<string, boolean>>({});
+  let showAllUploads = $state(false);
+  let wasResolving = $state<Set<string>>(new Set());
   let copyFeedback = $state("");
   let formatterCopyFeedback = $state(false);
   let isOnline = $state(true);
@@ -1496,7 +1548,7 @@
     if (name === "aetherbladehideout") return "aetherbladehideout";
     if (name === "ministerli" || name === "kainengoverlook") return "kainengoverlook";
     if (name === "ankka" || name === "xunlaijadejunkyard") return "xunlaijadejunkyard";
-    if (name === "dragonvoid" || name === "harvesttemple") return "harvesttemple";
+    if (name === "dragonvoid" || name === "harvesttemple" || name === "harvesttemplecm") return "harvesttemple";
     if (name === "thevoiceandtheclaw" || name === "voiceandclaw" || name === "voiceandclawofthefallen" || name === "voiceofthefallen" || name === "clawofthefallen") return "voiceandclaw";
     if (name === "dagda" || name === "cosmicobservatory") return "cosmicobservatory";
     if (name === "cerus" || name === "templeoffebe") return "templeoffebe";
@@ -1847,23 +1899,33 @@
         p.key === "timecaster" && purification2 != null
           ? purification2.cleared
           : p.cleared;
-      // For the 6 elder dragons the timeline `cleared` flag is the authoritative
-      // source of truth for hover HP: cleared → 0% / Defeated; not cleared → 100%
-      // HP left. dps.report can leave `failed=null` on wiped dragons, which makes
-      // `bosses_hp` show 100% even for dragons that were killed before the wipe.
+      // For the 6 elder dragons the timeline `cleared` flag is the
+      // authoritative source of truth for defeated state: cleared → 0% HP.
+      // For non-cleared dragons, use the actual HP remaining from the
+      // getJson `targets[]` array (extracted by the backend in
+      // dragon_phase_state_with_success). This shows the real HP left when
+      // you wiped on a dragon instead of the placeholder 100%. If no hp
+      // data is available (e.g. the dragon was never reached), fall back
+      // to 100%.
       const isDragon = p.kind === "dragon";
       const died = isDragon ? effectiveCleared : hasHp ? hp!.died : false;
       const hpLeft = isDragon
         ? effectiveCleared
           ? 0
-          : 100
+          : hasHp
+            ? hp!.hp_left
+            : 100
         : hasHp
           ? hp!.hp_left
           : null;
       const hpState = isDragon
         ? effectiveCleared
           ? "dead"
-          : "alive"
+          : hasHp
+            ? hp!.died
+              ? "dead"
+              : "alive"
+            : "alive"
         : hasHp
           ? hp!.died
             ? "dead"
@@ -1964,6 +2026,9 @@
     // Vermilion has its own asset; Indigo & Gold fall back to the court icon.
     prototypeindigo: "oldlionscourt",
     prototypegold: "oldlionscourt",
+    // Harvest Temple: "The Dragonvoid" is the in-game NPC name from EVTC;
+    // canonicalize to the "dragonvoid" local icon asset.
+    thedragonvoid: "dragonvoid",
   };
 
   /** Return an external (dps.report / imgur / GW2 render) icon URL as-is.
@@ -2015,13 +2080,13 @@
     "cerus": { cm: true, lcm: true }, "templeoffebe": { cm: true, lcm: true },
     "aetherbladehideout": { cm: true, lcm: false }, "xunlaijadejunkyard": { cm: true, lcm: false },
     "kainengoverlook": { cm: true, lcm: false }, "harvesttemple": { cm: true, lcm: false },
+    "dragonvoid": { cm: true, lcm: false }, "thedragonvoid": { cm: true, lcm: false },
     "oldlionscourt": { cm: true, lcm: false }, "dagda": { cm: true, lcm: false },
     // Janthir Wilds strikes
     "kela": { cm: true, lcm: false }, "kelaseneschalofwaves": { cm: true, lcm: false },
     // Visions of Eternity: Nexus of Eternity (Vloxx) — CM detected via 70M HP
-    // threshold, matching Elite Insights v3.30.2's GetLogMode(). LCM not yet
-    // supported by Elite Insights — set lcm: true when it ships.
-    "vloxx": { cm: true, lcm: false },
+    // threshold, LCM via 85M HP threshold (matching Elite Insights v3.31).
+    "vloxx": { cm: true, lcm: true },
   };
   function bossCmEligible(cleanName: string): boolean {
     if (FRACTAL_BOSSES.has(cleanName)) return true;
@@ -2666,6 +2731,7 @@
   // Runtime the bundled Elite Insights needs. Without it, local parsing falls
   // back to dps.report (uploads still work, but cards aren't from EI).
   let eiRuntimeNotice = $state<{ url: string } | null>(null);
+  let vloxxLcmNotice = $state(false);
   let pagedHistory = $derived.by(() => {
     const start = historyPage * historyLimit;
     return filteredHistory.slice(start, start + historyLimit);
@@ -2839,11 +2905,22 @@
   function handleLogContextMenu(e: MouseEvent, log: any, isSession: boolean, sessionId?: string, onDelete?: () => void) {
     e.preventDefault();
     const items: { label: string; icon: string; danger?: boolean; onSelect: () => void; }[] = [
+      { label: 'Stats', icon: 'fa-chart-bar', onSelect: () => { openStats(log); } },
       { label: 'Open log link', icon: 'fa-arrow-up-right-from-square', onSelect: () => { if (isOnline && log.url) openExternalUrl(log.url); } },
       { label: 'Copy log link', icon: 'fa-copy', onSelect: () => { if (isOnline && log.url) copySingleLink(log.url, log.file_path); } },
+      { label: 'View EI Report', icon: 'fa-file-import', onSelect: () => { openEiHtmlReport(log); } },
       { label: '2D Replay', icon: 'fa-gamepad', onSelect: () => { if (isOnline && log.url) openReplayModal(log.url); } },
+      { label: 'Notes', icon: 'fa-note-sticky', onSelect: () => { toggleNotes(cardId(log)); } },
       { label: 'Save to Session…', icon: 'fa-folder-open', onSelect: () => openSavePicker([log], (sid) => addLogToSession(log.file_path, sid)) }
     ];
+
+    if (vlAvailableFor(log)) {
+      items.push({ label: 'VL Rank', icon: 'fa-medal', onSelect: () => { openVlModal(log); } });
+    }
+
+    if (log.status === "Failed" && log.diagnostics) {
+      items.push({ label: 'Troubleshoot', icon: 'fa-circle-question', onSelect: () => { showTroubleshoot[log.file_path] = !showTroubleshoot[log.file_path]; } });
+    }
 
     if (isSession && sessionId) {
       items.push({ 
@@ -3411,11 +3488,9 @@
 
   let groupedFeed = $derived.by(() => {
     const items: FeedItem[] = [];
-    const uploadingLogs = filteredUploads.filter(l => l.status === "Uploading" || !l.boss_name);
+    // Only resolved logs (with boss_name and non-Uploading status) go into the feed groups.
+    // Uploading logs are rendered separately as floating stepper cards above the feed.
     const resolvedLogs = filteredUploads.filter(l => l.status !== "Uploading" && l.boss_name);
-    if (uploadingLogs.length > 0) {
-      items.push({ kind: "group", bossName: "Active Uploads", bossBuckets: [{ bossKey: "active", bossName: "Active Uploads", logs: uploadingLogs }], logs: uploadingLogs });
-    }
     const wingBuckets = new Map<number, Map<string, { bossName: string; logs: UploadRecord[] }>>();
     for (const log of resolvedLogs) {
       if (getEncounterType(log.boss_name, log.num_players, log.is_convergence) !== "raid") continue;
@@ -3469,6 +3544,11 @@
     }
     return items;
   });
+
+  // Uploading logs rendered as floating stepper cards above the feed.
+  let uploadingLogs = $derived(filteredUploads.filter(l => l.status === "Uploading" || !l.boss_name || wasResolving.has(l.file_path)));
+  let visibleUploads = $derived(showAllUploads ? uploadingLogs : uploadingLogs.slice(0, 2));
+  let hiddenUploadCount = $derived(uploadingLogs.length > 2 ? uploadingLogs.length - 2 : 0);
 
   // ─── Formatter State ─────────────────────────────────────────────────
   let editableFormattedText = $state("");
@@ -3735,6 +3815,7 @@
     let unlistenDrag: (() => void) | null = null;
     // unlistenRepair removed - repair badge feature deprecated
     let unlistenQueue: (() => void) | null = null;
+    let unlistenVloxx: (() => void) | null = null;
 
     // Live progress for the launch-time CM/LCM Mode-flag self-heal. Shows a banner
     // above the History feed while dps.report is re-checked, then auto-hides.
@@ -3883,6 +3964,17 @@
           playSuccessSound();
           showDesktopNotification(r);
         }
+        // Tag the float card for the vanish animation so it stays visible
+        // long enough for @keyframes resolve-vanish to play before removal.
+        if (r.status === "Completed" && !wasCompleted && !wasResolving.has(r.file_path)) {
+          wasResolving.add(r.file_path);
+          wasResolving = new Set(wasResolving);
+          const animMs = prefersReducedMotion ? 0 : 350;
+          setTimeout(() => {
+            wasResolving.delete(r.file_path);
+            wasResolving = new Set(wasResolving);
+          }, animMs);
+        }
       });
 
       const appWindow = getCurrentWindow();
@@ -3925,6 +4017,10 @@
         uploadPaused = q.paused ?? false;
       } catch (e) { /* command may not exist on older builds */ }
 
+      unlistenVloxx = await listen<number>("vloxx_lcm_repaired", () => {
+        vloxxLcmNotice = true;
+      });
+
       })();
 
       return () => {
@@ -3936,6 +4032,7 @@
         unlistenUpload?.();
         unlistenDrag?.();
         unlistenQueue?.();
+        unlistenVloxx?.();
 
         if (updatePollInterval !== null) clearInterval(updatePollInterval);
         if (statusInterval) clearInterval(statusInterval);
@@ -4595,7 +4692,8 @@
           sound_notifications,
           desktop_notifications,
           wingman_enabled,
-          wingman_account,
+          wingman_account: wingman_accounts.length ? wingman_accounts[0] : wingman_account,
+          wingman_accounts: $state.snapshot(wingman_accounts),
           use_backup_dps,
           max_concurrent_uploads,
           watch_stability_delay_ms,
@@ -4603,6 +4701,7 @@
           max_upload_retries,
           min_log_seconds,
           log_cache_max_files,
+          html_cache_max_files,
           reduce_motion,
           hide_on_startup,
           wvw_enabled,
@@ -4728,6 +4827,13 @@ function deleteRole(wh: any, idx: number) {
     const next = [...discord_webhooks];
     next.splice(idx + 1, 0, clone);
     discord_webhooks = next;
+  }
+
+  /** Extract just the filename from a full file path (Windows + Unix separators). */
+  function basename(filePath: string): string {
+    if (!filePath) return "";
+    const parts = filePath.split(/[\/\\]+/);
+    return parts[parts.length - 1];
   }
 
   // ════════════════════════════════════════════════════════════════════════════════
@@ -4946,6 +5052,11 @@ async function testWebhook(wh: any) {
       desktop_notifications = config.desktop_notifications ?? true;
       wingman_enabled = config.wingman_enabled ?? false;
       wingman_account = config.wingman_account ?? "";
+      wingman_accounts = config.wingman_accounts ?? [];
+      if (wingman_accounts.length === 0 && wingman_account) {
+        wingman_accounts = [wingman_account];
+      }
+      wingmanAccountsText = wingman_accounts.join("\n");
       wvw_enabled = config.wvw_enabled ?? false;
       use_backup_dps = config.use_backup_dps ?? true;
       max_concurrent_uploads = config.max_concurrent_uploads ?? 2;
@@ -4954,6 +5065,7 @@ async function testWebhook(wh: any) {
       max_upload_retries = config.max_upload_retries ?? 3;
       min_log_seconds = config.min_log_seconds ?? 0;
       log_cache_max_files = config.log_cache_max_files ?? 50;
+      html_cache_max_files = config.html_cache_max_files ?? 50;
       reduce_motion = config.reduce_motion ?? false;
       hide_on_startup = config.hide_on_startup ?? false;
       compact_mode = config.compact_mode ?? false;
@@ -5035,7 +5147,8 @@ async function testWebhook(wh: any) {
           desktop_notifications,
           sessions: $state.snapshot(sessions),
           wingman_enabled,
-          wingman_account,
+          wingman_account: wingman_accounts.length ? wingman_accounts[0] : wingman_account,
+          wingman_accounts: $state.snapshot(wingman_accounts),
           wvw_enabled,
           max_concurrent_uploads,
           watch_stability_delay_ms,
@@ -5043,6 +5156,7 @@ async function testWebhook(wh: any) {
           max_upload_retries,
           min_log_seconds,
           log_cache_max_files,
+          html_cache_max_files,
           reduce_motion,
           hide_on_startup,
           accent,
@@ -5113,6 +5227,15 @@ async function testWebhook(wh: any) {
     } catch (e) {
       console.error("Failed to query history cache size:", e);
     }
+    try {
+      const res = await invoke("get_ei_html_cache_info") as [number, number];
+      if (Array.isArray(res)) {
+        htmlCacheSize = res[0] ?? 0;
+        htmlCacheCount = res[1] ?? 0;
+      }
+    } catch (e) {
+      console.error("Failed to query EI HTML cache size:", e);
+    }
   }
 
   function openClearCacheModal() {
@@ -5147,6 +5270,36 @@ async function testWebhook(wh: any) {
       showToast("Analytics & History cache cleared successfully!", "success");
     } catch (e) {
       showToast(`Failed to clear history: ${e}`);
+    }
+  }
+
+  function openClearHtmlCacheModal() {
+    if (htmlCacheCount > 0) {
+      showClearHtmlCacheModal = true;
+    }
+  }
+
+  async function confirmPurgeHtmlCache() {
+    showClearHtmlCacheModal = false;
+    try {
+      const count = await invoke("clear_ei_html_cache") as number;
+      await refreshCacheSize();
+      showToast(`EI HTML report cache cleared (${count} files removed)!`, "success");
+    } catch (e) {
+      showToast(`Failed to clear HTML cache: ${e}`);
+    }
+  }
+
+  async function openEiHtmlReport(log: UploadRecord) {
+    if (!log.file_path) return;
+    eiReportParsing = log.file_path;
+    try {
+      await invoke("open_ei_html_report", { filePath: log.file_path });
+      showToast("EI HTML report opened in browser.", "success");
+    } catch (e) {
+      showToast(`Failed to generate EI report: ${e}`);
+    } finally {
+      eiReportParsing = null;
     }
   }
 
@@ -5295,7 +5448,7 @@ async function testWebhook(wh: any) {
     </div>
     <div class="boss-details" style="min-width: 0;">
       <div class="boss-title-row">
-        <span class="boss-name" role={log.boss_name ? "button" : undefined} style="cursor: {log.boss_name ? 'pointer' : 'default'};" title={log.boss_name ? "Filter to this boss" : ""} onclick={(e) => { e.stopPropagation(); if (log.boss_name) setBossFilter(log); }} onkeydown={(e) => { if ((e.key === "Enter" || e.key === " ") && log.boss_name) { e.preventDefault(); setBossFilter(log); } }}>{log.boss_name ? getModeBossDisplayName(log.boss_name, log) : (log.file_name ?? "")}</span>
+        <span class="boss-name" role={log.boss_name ? "button" : undefined} style="cursor: {log.boss_name ? 'pointer' : 'default'};" title={log.boss_name ? "Filter to this boss" : ""} onclick={(e) => { e.stopPropagation(); if (log.boss_name) setBossFilter(log); }} onkeydown={(e) => { if ((e.key === "Enter" || e.key === " ") && log.boss_name) { e.preventDefault(); e.stopPropagation(); setBossFilter(log); } }}>{log.boss_name ? getModeBossDisplayName(log.boss_name, log) : (log.file_name ?? "")}</span>
         {#if log.status === "Processing"}
           <span class="status-pill sp-processing">⏳ Processing…</span>
         {:else if clean(log.boss_name).includes("golem")}
@@ -5312,37 +5465,6 @@ async function testWebhook(wh: any) {
           <span class="cm-badge nm-badge">Normal Mode</span>
         {:else if log.status === "Skipped"}
           <span class="status-pill sp-skipped">Skipped</span>
-        {/if}
-        {#if wingman_enabled && (log.wingman_status === "failed" || log.wingman_status === "imported" || wingmanUi[log.file_path] === "sending" || log.wingman_status === "done")}
-          {@const wmState = wingmanUi[log.file_path] === "sending" ? "sending" : (log.wingman_status ?? "failed")}
-          {#if wmState === "imported"}
-            <span class="wm-chip wm-imported" title="This log was already imported into Wingman.">
-              <i class="fa-solid fa-shield-halved"></i> Imported
-            </span>
-          {/if}
-          {#if wmState === "failed"}
-            {#if wingmanStatus === "offline"}
-              <span class="wm-chip wm-offline" title="GW2 Wingman is currently offline — this log will be retried once the service is reachable again.">
-                <i class="fa-solid fa-shield-halved"></i> Wingman offline
-              </span>
-            {:else}
-              <button class="wm-chip wm-failed" title="Wingman was unreachable when this log uploaded — click to retry importing it into Wingman." onclick={(e) => { e.stopPropagation(); sendToWingman(log.file_path); }}>
-                <i class="fa-solid fa-shield-halved"></i> Send to Wingman
-              </button>
-              {#if likelyCause(log)}
-                <span class="wm-cause">{likelyCause(log)}</span>
-              {/if}
-            {/if}
-          {:else if wmState === "sending"}
-            <span class="wm-chip wm-sending"><i class="fa-solid fa-shield-halved wm-spin"></i> Uploading…</span>
-          {:else if wmState === "done"}
-            <span class="wm-chip wm-done"><i class="fa-solid fa-shield-halved"></i> Completed</span>
-          {/if}
-        {/if}
-        {#if discord_webhooks.length > 0 && log.discord_pending === true}
-          <span class="wm-chip wm-offline" title="A Discord webhook post failed when this log uploaded. It will be retried automatically the next time this log uploads successfully (e.g. on a dps.report recovery sweep).">
-            <i class="fa-brands fa-discord"></i> Discord pending
-          </span>
         {/if}
         {#each vlCurrentRanks(log) as rk}
           <span class="vl-badge" role="button" tabindex="0" style="color: {rk.text_color}; background: {rk.bg_color}; border: 1px solid color-mix(in srgb, {rk.text_color} 45%, transparent); cursor: pointer;" title="Filter to {rk.label} logs" onclick={(e) => { e.stopPropagation(); setVlRankFilter(rk.id); }} onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setVlRankFilter(rk.id); } }}><img src={rk.icon} alt="" class="vl-badge-icon" />{rk.label}</span>
@@ -5364,11 +5486,55 @@ async function testWebhook(wh: any) {
         {:else if log.status === "Processing"}
           <span class="status-pill sp-processing">⧗ Elite Insights processing</span>
         {/if}
+        {#if log.wingman_account && wingman_accounts.length > 1 && log.wingman_account !== wingman_accounts[0]}
+          <span class="wm-chip wm-imported" title={`Alt account: ${log.wingman_account}`} style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+            Alt
+          </span>
+        {/if}
+        {#if wingman_enabled && wingmanQueue.includes(log.file_path)}
+          <span class="wm-chip wm-sending" title="Queued for Wingman import — will be processed shortly.">
+            <img src="/wingman_icon.png" alt="" class="wm-spin" style="width:14px;height:14px;vertical-align:middle;" /> Queued
+          </span>
+        {/if}
+        {#if wingman_enabled && (log.wingman_status === "failed" || log.wingman_status === "imported" || wingmanUi[log.file_path] === "sending" || log.wingman_status === "done" || log.wingman_status === "in_progress")}
+          {@const wmState = wingmanUi[log.file_path] === "sending" ? "sending" : (log.wingman_status === "in_progress" ? "sending" : (log.wingman_status ?? "failed"))}
+          {#if wmState === "imported"}
+            <span class="wm-chip wm-imported" title="This log was already imported into Wingman.">
+              <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Imported
+            </span>
+          {/if}
+          {#if wmState === "failed"}
+            {#if wingmanStatus === "offline"}
+              <span class="wm-chip wm-offline" title="GW2 Wingman is currently offline — this log will be retried once the service is reachable again.">
+                <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Wingman offline
+              </span>
+            {:else}
+              <button class="wm-chip wm-failed" title="Wingman was unreachable when this log uploaded — click to retry importing it into Wingman." onclick={(e) => { e.stopPropagation(); sendToWingman(log.file_path); }}>
+                <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Send to Wingman
+              </button>
+              {#if likelyCause(log)}
+                <span class="wm-cause">{likelyCause(log)}</span>
+              {/if}
+            {/if}
+          {:else if wmState === "sending"}
+            <span class="wm-chip wm-sending"><img src="/wingman_icon.png" alt="" class="wm-spin" style="width:14px;height:14px;vertical-align:middle;" /> Uploading…</span>
+          {:else if wmState === "done"}
+            <span class="wm-chip wm-done"><img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Completed</span>
+          {/if}
+        {/if}
+        {#if discord_webhooks.length > 0 && log.discord_pending === true}
+          <span class="wm-chip wm-offline" title="A Discord webhook post failed when this log uploaded. It will be retried automatically the next time this log uploads successfully (e.g. on a dps.report recovery sweep).">
+            <i class="fa-brands fa-discord"></i> Discord pending
+          </span>
+        {/if}
       </div>
+
       {#if (log.old_lions_court && log.success !== true) || isDragonvoid(log.boss_name)}
         <div class="log-meta">
           {#if log.duration != null}
             <span class="meta-item"><i class="fa-solid fa-stopwatch" style="margin-right: 4px; font-size: 11px;"></i> {formatDuration(log.duration)}</span>
+          {:else}
+            <span class="meta-item"><i class="fa-solid fa-stopwatch fa-spin" style="margin-right: 4px; font-size: 11px;"></i></span>
           {/if}
           {#if log.num_players != null}
             <span class="meta-item"><i class="fa-solid fa-users" style="margin-right: 4px; font-size: 11px;"></i> {log.num_players} Players</span>
@@ -5395,7 +5561,7 @@ async function testWebhook(wh: any) {
             >
               <img class="dragon-icon" src={p.icon} alt={p.name} onerror={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden'; }} />
               {#if p.hp != null}
-                <div class="dragon-bar"><div class="dragon-fill dstate-{p.hpState}" style="width:{p.hp}%;"></div></div>
+                <span class="dragon-hp-text">{p.died ? 'Defeated' : p.hp!.toFixed(1) + '% left'}</span>
               {/if}
               <span class="dragon-name">{p.name}</span>
               <span class="phase-mark"><i class="fa-solid {p.cleared ? 'fa-check' : 'fa-xmark'}"></i></span>
@@ -5421,7 +5587,9 @@ async function testWebhook(wh: any) {
               title="{d.name}: {d.state === 'dead' ? 'Defeated' : d.state === 'alive' ? d.hp_left.toFixed(1) + '% HP left' : 'Not reached'}"
             >
               <img class="dragon-icon" src="/bosses/the{d.key}void.png" alt={d.name} onerror={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden'; }} />
-              <div class="dragon-bar"><div class="dragon-fill" style="width:{d.pct}%;"></div></div>
+              {#if d.state !== 'unreached'}
+                <span class="dragon-hp-text">{d.state === 'dead' ? 'Defeated' : d.hp_left.toFixed(1) + '% left'}</span>
+              {/if}
               <span class="dragon-name">{d.name}</span>
             </div>
           {/each}
@@ -5496,7 +5664,14 @@ async function testWebhook(wh: any) {
             {#each uploadStageList(log) as st, i}
               {#if i > 0}<span class="stage-connector" class:filled={uploadStageList(log)[i-1].state === "done"}></span>{/if}
               <span class="stage-step stage-{st.state}">
-                {#if st.state === "done"}<i class="fa-solid fa-check"></i> {:else if st.state === "active"}<span class="stage-dot"></span> {/if}{st.label}
+                {#if st.state === "done"}<i class="fa-solid fa-check"></i>
+                {:else if st.state === "active"}<span class="stage-dot"></span>
+                {:else if st.label === "Queued"}<i class="fa-solid fa-hourglass-start"></i>
+                {:else if st.label === "Reading"}<i class="fa-solid fa-file"></i>
+                {:else if st.label === "Parsing"}<i class="fa-solid fa-gear"></i>
+                {:else if st.label === "Uploading"}<i class="fa-solid fa-cloud-arrow-up"></i>
+                {/if}
+                {st.label}
               </span>
             {/each}
           </div>
@@ -5644,7 +5819,11 @@ async function testWebhook(wh: any) {
               {/if}
               <span class="meta-item custom-tooltip-container">
                 <span class="custom-tooltip">{log.is_convergence && log.is_cm ? 'Total Convergence Time' : 'Duration'}</span>
-                <i class="fa-solid fa-stopwatch" style="margin-right: 4px; font-size: 11px;"></i> {formatDuration(log.duration)}
+                {#if log.duration != null}
+                  <i class="fa-solid fa-stopwatch" style="margin-right: 4px; font-size: 11px;"></i> {formatDuration(log.duration)}
+                {:else}
+                  <i class="fa-solid fa-stopwatch fa-spin" style="margin-right: 4px; font-size: 11px;"></i>
+                {/if}
               </span>
               {#if log.is_convergence && log.is_cm && log.boss_duration != null && Math.abs((log.boss_duration ?? 0) - (log.duration ?? 0)) > 1}
                 {#if isGolemLog(log) && log.group_dps != null}
@@ -5676,6 +5855,17 @@ async function testWebhook(wh: any) {
 
 {#snippet logFooter(log: any, onDelete: () => void)}
 <div class="log-footer">
+  {#if log.status === "Uploading" || isReadingLog(log)}
+    <div class="cancel-btn-row">
+      <div class="custom-tooltip-container">
+        <button class="action-btn secondary-action-btn" title="Cancel upload" onclick={(e) => { e.stopPropagation(); deleteLogRecord(log.file_path); }}>
+          <i class="fa-solid fa-square-xmark"></i> Cancel
+        </button>
+        <div class="custom-tooltip">Cancel this upload</div>
+      </div>
+    </div>
+  {/if}
+  {#if !(log.status === "Queued" || log.status === "Reading" || log.status === "Parsing" || log.status === "Uploading" || isReadingLog(log))}
   <div class="log-actions-row">
     <!-- Primary Action 1: Stats Modal -->
     <div class="custom-tooltip-container">
@@ -5704,6 +5894,20 @@ async function testWebhook(wh: any) {
         {:else}
           No report link yet.
         {/if}
+      </div>
+    </div>
+
+    <!-- View EI HTML Report (re-parse local log with HTML config) -->
+    <div class="custom-tooltip-container">
+      <button class="action-btn secondary-action-btn quick-action-desktop-only" disabled={!log.file_path} onclick={(e) => { e.stopPropagation(); openEiHtmlReport(log); }}>
+        {#if eiReportParsing === log.file_path}
+          <i class="fa-solid fa-spinner fa-spin"></i> <span class="btn-text">Parsing...</span>
+        {:else}
+          <i class="fa-solid fa-file-import"></i> <span class="btn-text">View Report</span>
+        {/if}
+      </button>
+      <div class="custom-tooltip">
+        View EI HTML report in browser (cached or re-parse on click)
       </div>
     </div>
 
@@ -5769,6 +5973,15 @@ async function testWebhook(wh: any) {
       {#if activeMenuCard === cardId(log)}
         <div class="card-dropdown-menu" data-menu-dropdown={cardId(log)} onclick={(e) => e.stopPropagation()} onkeydown={(e) => { if (e.key === "Escape" || e.key === "Enter" || e.key === " ") { e.stopPropagation(); } }} role="menu" aria-label="More actions" tabindex="-1">
           <!-- Items shown in overflow menu (always available or revealed on narrow screens) -->
+          <button class="card-dropdown-item" disabled={!log.url && !log.local_fallback} onclick={() => { activeMenuCard = null; openStats(log); }}>
+            <i class="fa-solid fa-chart-bar"></i> Stats
+          </button>
+          <button class="card-dropdown-item" disabled={!log.url || !isOnline} onclick={() => { activeMenuCard = null; if (isOnline && log.url) openExternalUrl(log.url); }}>
+            <i class="fa-solid fa-globe"></i> Open Log
+          </button>
+          <button class="card-dropdown-item" disabled={!log.file_path} onclick={() => { activeMenuCard = null; openEiHtmlReport(log); }}>
+            <i class="fa-solid fa-file-import"></i> View Report
+          </button>
           <button class="card-dropdown-item overflow-item-mobile" disabled={!log.url || !isOnline} onclick={() => { activeMenuCard = null; if (isOnline && log.url) copySingleLink(log.url, log.file_path); }}>
             <i class="fa-solid fa-copy"></i> Copy Link
           </button>
@@ -5823,6 +6036,10 @@ async function testWebhook(wh: any) {
         </div>
       {/if}
     </div>
+  </div>
+  {/if}
+  <div class="file-name-bar">
+    <span class="file-name">{basename(log.file_path)}</span>
   </div>
   {#if notesOpen[cardId(log)]}
     <div class="notes-section">
@@ -6139,6 +6356,12 @@ async function testWebhook(wh: any) {
 {/snippet}
 
 <main class="app-container" class:sidebar-collapsed={!sidebarOpen}>
+  {#if vloxxLcmNotice}
+    <div style="position: sticky; top: 0; z-index: 50; background: var(--card); border-bottom: 1px solid var(--border); padding: 8px 12px; display: flex; align-items: center; gap: 8px;">
+      <span style="flex: 1; font-size: 12px; color: var(--foreground);">Vloxx LCM logs now display the correct badge instead of CM.</span>
+      <button onclick={() => (vloxxLcmNotice = false)} style="padding: 4px 8px; font-size: 11px; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--foreground); cursor: pointer;">Dismiss</button>
+    </div>
+  {/if}
   <!-- ─── In-body titlebar strip (Option A: native OS decorations kept) ─── -->
   <div class="app-titlebar" data-tauri-drag-region>
     <!-- Toggle responds on pointerdown for instant visual feedback -->
@@ -6417,6 +6640,47 @@ async function testWebhook(wh: any) {
 
       <div style="display: flex; gap: 20px; align-items: flex-start; width: 100%;">
         <div style="flex: {showFormatterPanel ? '0 0 65%' : '1 1 100%'}; min-width: 0;">
+          {#if uploadingLogs.length > 0}
+            <div class="active-uploads-float">
+              {#each visibleUploads as log (log.file_path)}
+                {@const id = cardId(log)}
+                {@const isExpanded = !!expanded[id]}
+                <div class="float-card card uploading" class:float-card-resolving={wasResolving.has(log.file_path)} style="position: relative;" in:fade={{ duration: prefersReducedMotion ? 0 : 200 }} out:resolveVanish={{ duration: prefersReducedMotion ? 0 : 350 }}>
+                  <div class="upload-progress-top"></div>
+                  <button class="log-header" onclick={() => toggleExpand(id)}>
+                    <div
+                      class="favorite-btn"
+                      class:favorited={log.is_favorite === true}
+                      role="button"
+                      tabindex="0"
+                      onclick={(e) => { e.stopPropagation(); toggleFavorite(log.file_path); }}
+                      onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); toggleFavorite(log.file_path); } }}
+                      title={log.is_favorite === true ? "Remove from favorites" : "Add to favorites"}
+                      aria-label={log.is_favorite === true ? "Remove from favorites" : "Add to favorites"}
+                    >
+                      <i class={log.is_favorite === true ? "fa-solid fa-star" : "fa-regular fa-star"}></i>
+                    </div>
+                    {@render logHeaderLeft(log)}
+                    <div class="log-right">
+                      <span class="chevron" class:open={isExpanded}>›</span>
+                    </div>
+                  </button>
+                  {@render logFooter(log, () => deleteLogRecord(log.file_path))}
+                </div>
+              {/each}
+              {#if hiddenUploadCount > 0 && !showAllUploads}
+                <button class="expand-uploads" onclick={() => showAllUploads = true}>
+                  <span>Show {hiddenUploadCount} more</span>
+                  <i>↕</i>
+                </button>
+              {:else if uploadingLogs.length > 2 && showAllUploads}
+                <button class="expand-uploads expanded" onclick={() => showAllUploads = false}>
+                  <span>Collapse</span>
+                  <i>↑</i>
+                </button>
+              {/if}
+            </div>
+          {/if}
           {#if filteredUploads.length === 0}
             <div class="empty-state">
               <span class="empty-icon"><i class="fa-solid fa-folder-open"></i></span>
@@ -7150,6 +7414,22 @@ async function testWebhook(wh: any) {
                   <label for="wingman-acc" style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">GW2 Account Name</label>
                   <input id="wingman-acc" type="text" placeholder="e.g. Username.1234" bind:value={wingman_account} style="width: 100%; max-width: 320px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); padding: 6px; border-radius: 4px; color: white; font-size: 11px; outline: none;"/>
                   <span class="help" style="display: block; margin-top: 4px;">Required by Wingman to link combat uploads directly to your account dashboard.</span>
+                  <div style="margin-top: 8px;">
+                    <span style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Alt accounts (primary on top)</span>
+                    <div style="display: flex; gap: 6px; margin-bottom: 6px;">
+                      <input type="text" placeholder="e.g. Username.1234" bind:value={newWingmanAccount} style="flex: 1; max-width: 320px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); padding: 6px; border-radius: 4px; color: white; font-size: 11px; outline: none;"/>
+                      <button onclick={() => { if (newWingmanAccount.trim()) { wingman_accounts = [...wingman_accounts, newWingmanAccount.trim()]; newWingmanAccount = ""; } }} style="padding: 6px 12px; font-size: 11px; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--foreground); cursor: pointer;">Add</button>
+                    </div>
+                    {#each wingman_accounts as acc, i}
+                      <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+                        <span style="flex: 1; max-width: 260px; font-size: 11px; color: white; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{i === 0 ? "★ " : ""}{acc}</span>
+                        <button onclick={() => { if (i > 0) { const a = [...wingman_accounts]; [a[i-1], a[i]] = [a[i], a[i-1]]; wingman_accounts = a; } }} disabled={i === 0} style="font-size: 10px; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--foreground); cursor: pointer; opacity: {i === 0 ? 0.4 : 1};">↑</button>
+                        <button onclick={() => { if (i < wingman_accounts.length - 1) { const a = [...wingman_accounts]; [a[i], a[i+1]] = [a[i+1], a[i]]; wingman_accounts = a; } }} disabled={i === wingman_accounts.length - 1} style="font-size: 10px; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--foreground); cursor: pointer; opacity: {i === wingman_accounts.length - 1 ? 0.4 : 1};">↓</button>
+                        <button onclick={() => { wingman_accounts = wingman_accounts.filter((_, idx) => idx !== i); }} style="font-size: 10px; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--accent); cursor: pointer;">✕</button>
+                      </div>
+                    {/each}
+                    <span class="help" style="display: block; margin-top: 4px;">First account is primary. Use arrows to reorder.</span>
+                  </div>
                 </div>
               {/if}
             </div>
@@ -7307,6 +7587,61 @@ async function testWebhook(wh: any) {
               </div>
               <span style="font-size: 10px; color: var(--text-muted); display: block; margin-left: 4px;">
                 Changing this prunes older cached logs immediately. The Stats button still works for any log — it just re-fetches from dps.report when not cached.
+              </span>
+            </div>
+
+            <!-- EI HTML Report Cache -->
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px;">
+                <div>
+                  <div style="font-size: 13px; font-weight: 600; color: var(--text);">EI HTML Report Cache</div>
+                  <div class="tabular-nums" style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                    {htmlCacheCount} report files cached ({formatSize(htmlCacheSize)})
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  class="cache-clear-btn"
+                  onclick={openClearHtmlCacheModal}
+                  disabled={htmlCacheCount === 0}
+                  title="Clear all cached EI HTML reports"
+                >
+                  <i class="fa-solid fa-trash-can"></i> Clear Cache
+                </button>
+              </div>
+              <span style="font-size: 10px; color: var(--text-muted); display: block; margin-left: 4px;">
+                HTML reports are cached locally so the View Report button opens instantly. Clearing cache will re-parse logs on demand.
+              </span>
+            </div>
+
+            <!-- Slider: how many cached HTML reports to keep -->
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <div style="font-size: 13px; font-weight: 600; color: var(--text);">Max Cached HTML Reports to Keep</div>
+                  <span class="custom-tooltip-container" aria-label="How many EI HTML report files the app keeps on disk for instant View Report re-opening. Older reports are auto-deleted to free space. Higher = keep more history ready; lower = save disk. 0 = keep everything (unbounded).">
+                    <i class="fa-solid fa-circle-info" style="font-size: 11px; color: var(--text-muted); cursor: help;"></i>
+                    <span class="custom-tooltip custom-tooltip-box">How many EI HTML report files the app keeps on disk for instant View Report re-opening. Older reports are auto-deleted to free space. Higher = keep more history ready; lower = save disk. <b>0 = keep everything</b> (unbounded).</span>
+                  </span>
+                </div>
+                <span class="tabular-nums" style="font-size: 12px; color: var(--accent); font-weight: 600;">{html_cache_max_files === 0 ? 'Unlimited' : html_cache_max_files + ' reports'}</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 12px; padding: 0 4px;">
+                <span style="font-size: 10px; color: var(--text-muted);">Off</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="200"
+                  step="5"
+                  bind:value={html_cache_max_files}
+                  onchange={async () => { await persistConfig(); try { await invoke('prune_ei_html_cache'); await refreshCacheSize(); } catch (e) { console.error('prune_ei_html_cache failed', e); } }}
+                  style="flex: 1; accent-color: var(--accent); cursor: pointer;"
+                  title="Number of cached HTML reports to retain (0 = unlimited)"
+                />
+                <span style="font-size: 10px; color: var(--text-muted);">200</span>
+              </div>
+              <span style="font-size: 10px; color: var(--text-muted); display: block; margin-left: 4px;">
+                Changing this prunes older cached reports immediately. The View Report button still works for any log — it just re-parses when not cached.
               </span>
             </div>
 
@@ -8374,6 +8709,38 @@ async function testWebhook(wh: any) {
   </div>
 {/if}
 
+{#if showClearHtmlCacheModal}
+  <div
+    class="confirm-modal-overlay"
+    role="button"
+    tabindex="0"
+    aria-label="Close HTML cache confirm modal"
+    onclick={(e) => { if (e.target === e.currentTarget) showClearHtmlCacheModal = false; }}
+    onkeydown={(e) => { if (e.key === 'Escape') showClearHtmlCacheModal = false; }}
+  >
+    <div class="confirm-modal-card" role="dialog" aria-modal="true" aria-label="Clear HTML cache confirmation" tabindex="-1">
+      <div class="confirm-modal-head">
+        <span class="confirm-modal-icon danger"><i class="fa-solid fa-triangle-exclamation"></i></span>
+        <div>
+          <h3 class="confirm-modal-title">Purge EI HTML Report Cache?</h3>
+          <p class="confirm-modal-sub">This action will delete {htmlCacheCount} cached report files ({formatSize(htmlCacheSize)}).</p>
+        </div>
+      </div>
+      <div class="confirm-modal-body">
+        <p>This action will completely empty your local EI HTML report cache. Cached reports will be re-generated from the source <code>.evtc</code> files when you click the View Report button again. This action cannot be undone.</p>
+      </div>
+      <div class="confirm-modal-actions">
+        <button type="button" class="confirm-btn cancel" onclick={() => (showClearHtmlCacheModal = false)}>
+          Cancel
+        </button>
+        <button type="button" class="confirm-btn danger" onclick={confirmPurgeHtmlCache}>
+          <i class="fa-solid fa-trash-can" style="margin-right: 4px;"></i> Purge Cache
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 {#if showPatchNotesModal}
   {@const currentNotes = PATCH_NOTES_DATA.find(p => p.version === currentAppVersion)}
   <div
@@ -8632,6 +8999,22 @@ async function testWebhook(wh: any) {
   :global(.reduce-motion) .upload-queue-pill.queue-pulsing {
     animation: none !important;
   }
+  /* ── Log card file path bar ── */
+  .file-name-bar {
+    margin-top: 6px;
+    padding: 2px 0 0;
+  }
+  .file-name {
+    display: block;
+    font-size: 10px;
+    font-style: italic;
+    color: var(--text-muted, #94a3b8);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.3;
+  }
+
   :global(.reduce-motion) .sb-chevron { transition: none; }
 </style>
 

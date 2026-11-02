@@ -45,6 +45,29 @@ fn ei_cache_path_local(app: &AppHandle, local_path: &str) -> PathBuf {
     ei_cache_dir(app).join(format!("{}_ei_{:x}.json.gz", clean, hash))
 }
 
+/// Directory for cached EI HTML report files. Separate from `ei_cache/`
+/// (which stores gzipped JSON) so each can be cleared independently in Settings.
+fn ei_html_cache_dir(app: &AppHandle) -> PathBuf {
+    let mut dir = app
+        .path()
+        .app_cache_dir()
+        .unwrap_or_else(|_| PathBuf::from("."));
+    dir.push("ei_cache_html");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
+/// Cache key for a local EVTC path. Same hash strategy as the JSON cache
+/// so HTML reports are looked up from `ei_cache_html/` without collisions.
+fn ei_html_cache_path(app: &AppHandle, local_path: &str) -> PathBuf {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    local_path.hash(&mut hasher);
+    let hash = hasher.finish();
+    let clean = local_path.replace(|c: char| !c.is_ascii_alphanumeric(), "_");
+    ei_html_cache_dir(app).join(format!("{}_ei_html_{:x}.html", clean, hash))
+}
+
 /// Read a cached EI result from DISK only (gzipped JSON). The in-RAM copy is
 /// intentionally NOT retained — holding a full EI Value (2-34 MB) in memory per
 /// log was the bulk of the 1.6 GB bloat. Callers get a fresh parse on each open;
@@ -116,6 +139,36 @@ pub fn ei_cache_prune_disk(app: &AppHandle) {
     }
 }
 
+/// Keep the on-disk HTML cache bounded: delete the oldest `.html` files
+/// beyond the configured cap (`html_cache_max_files`). 0 = unbounded.
+pub fn ei_html_cache_prune_disk(app: &AppHandle) {
+    let cap = crate::config::load_config(app).html_cache_max_files;
+    if cap == 0 {
+        return;
+    }
+    let dir = ei_html_cache_dir(app);
+    let mut files: Vec<(std::time::SystemTime, PathBuf)> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.extension().and_then(|x| x.to_str()) == Some("html") {
+                if let Ok(meta) = std::fs::metadata(&p) {
+                    if let Ok(m) = meta.modified() {
+                        files.push((m, p));
+                    }
+                }
+            }
+        }
+    }
+    if files.len() <= cap {
+        return;
+    }
+    files.sort_by(|a, b| b.0.cmp(&a.0)); // newest first
+    for (_, p) in files.iter().skip(cap) {
+        let _ = std::fs::remove_file(p);
+    }
+}
+
 /// Candidate locations for a bundled resource (`rel` like
 /// `resources/ei/GuildWars2EliteInsights-CLI.exe`). In a packaged build the
 /// file lives under `resource_dir()`; under `tauri dev`, `resource_dir()` is
@@ -156,6 +209,20 @@ fn ei_config_path(app: &AppHandle) -> Option<PathBuf> {
         .resource_dir()
         .ok()
         .map(|p| p.join("resources/ei/Settings/portal_protocol.conf"))
+}
+
+/// Path to the HTML-generating EI config (separate from the JSON-only
+/// `portal_protocol.conf` so upload-time parsing stays lean).
+fn ei_html_config_path(app: &AppHandle) -> Option<PathBuf> {
+    for c in ei_resource_candidates(app, "resources/ei/Settings/portal_protocol_html.conf") {
+        if c.exists() {
+            return Some(c);
+        }
+    }
+    app.path()
+        .resource_dir()
+        .ok()
+        .map(|p| p.join("resources/ei/Settings/portal_protocol_html.conf"))
 }
 
 /// Local EI parsing is ON by default (it is the primary data source). Set
@@ -322,6 +389,118 @@ pub fn run_ei(app: &AppHandle, input: &Path) -> Result<Value, String> {
     Ok(val)
 }
 
+/// Like `run_ei`, but uses the HTML-generating config to produce the
+/// standalone `.html` report that EI emits. Returns the path to the
+/// generated HTML file. The JSON output (also produced by the HTML config)
+/// is deleted since the caller only needs the HTML.
+fn run_ei_html(app: &AppHandle, input: &Path) -> Result<PathBuf, String> {
+    let bin = ei_binary_path(app).ok_or_else(|| {
+        "Elite Insights binary not found in app resources (resources/ei).".to_string()
+    })?;
+    let cfg = ei_html_config_path(app).ok_or_else(|| {
+        "Elite Insights HTML config not found in app resources (resources/ei/Settings).".to_string()
+    })?;
+    if !input.exists() {
+        return Err(format!(
+            "local log file does not exist: {}",
+            input.display()
+        ));
+    }
+    let input_win = path_to_windows(input);
+    let mut cmd = Command::new(&bin);
+    cmd.arg("-c").arg(path_to_windows(&cfg)).arg(&input_win);
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000);
+    const EI_TIMEOUT: Duration = Duration::from_secs(120);
+    let child: Child = cmd
+        .spawn()
+        .map_err(|e| format!("failed to spawn Elite Insights: {}", e))?;
+    let child = std::sync::Arc::new(std::sync::Mutex::new(Some(child)));
+    let child_wait = child.clone();
+    let (tx, rx) = std::sync::mpsc::channel::<Option<std::process::ExitStatus>>();
+    let watch = std::thread::spawn(move || {
+        let st = child_wait
+            .lock()
+            .ok()
+            .and_then(|mut g| g.take())
+            .and_then(|mut c| c.wait().ok());
+        let _ = tx.send(st);
+    });
+    let status = match rx.recv_timeout(EI_TIMEOUT) {
+        Ok(Some(s)) => s,
+        Ok(None) => {
+            if let Ok(mut g) = child.lock() {
+                if let Some(mut c) = g.take() {
+                    let _ = c.kill();
+                }
+            }
+            return Err("Elite Insights wait failed.".to_string());
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+            if let Ok(mut g) = child.lock() {
+                if let Some(mut c) = g.take() {
+                    let _ = c.kill();
+                }
+            }
+            return Err("Elite Insights timed out after 120s (killed).".to_string());
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            if let Ok(mut g) = child.lock() {
+                if let Some(mut c) = g.take() {
+                    let _ = c.kill();
+                }
+            }
+            return Err("Elite Insights wait thread died.".to_string());
+        }
+    };
+    let _ = watch.join();
+    if !status.success() {
+        return Err(format!("Elite Insights exited with status {}", status));
+    }
+    // EI names the output `<stem>_<encounter>_<result>.html`. Find it.
+    let stem = input.file_stem().map(|s| s.to_string_lossy().to_string());
+    let parent = input.parent().unwrap_or_else(|| Path::new("."));
+    let mut found: Option<PathBuf> = None;
+    if let Ok(entries) = std::fs::read_dir(parent) {
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.extension().and_then(|x| x.to_str()) == Some("html")
+                && stem
+                    .as_ref()
+                    .map(|s| {
+                        p.file_name()
+                            .map(|n| n.to_string_lossy().contains(s.as_str()))
+                            .unwrap_or(false)
+                    })
+                    .unwrap_or(false)
+            {
+                found = Some(p);
+                break;
+            }
+        }
+    }
+    let out = found.ok_or_else(|| {
+        format!(
+            "Elite Insights produced no HTML for {} (is the .NET 8 Desktop Runtime installed?)",
+            input.display()
+        )
+    })?;
+    // Clean up the JSON output (EI produces both with the HTML config).
+    let _ = std::fs::remove_file(out.with_extension("json"));
+    Ok(out)
+}
+
+/// Check if an HTML report is cached for `local_path`. Returns the cached
+/// HTML file path if it exists. `None` means the report needs to be generated.
+pub fn cached_ei_html_report(app: &AppHandle, local_path: &str) -> Option<PathBuf> {
+    let path = ei_html_cache_path(app, local_path);
+    if path.exists() {
+        Some(path)
+    } else {
+        None
+    }
+}
+
 /// Returns the locally-parsed EI result for `permalink` if it has been cached
 /// (produced at upload time). `None` means "fall back to dps.report".
 pub fn cached_ei_report(app: &AppHandle, permalink: &str) -> Option<Value> {
@@ -443,14 +622,31 @@ pub fn enrich_record_from_ei(record: &mut crate::uploader::UploadRecord, ei: &Va
         .unwrap_or(0);
     eprintln!("[ENRICH] EI phases count: {}", phase_count);
     // Boss name: prefer the EI target's canonical name, then the fight name.
-    let name = ei
-        .get("targets")
-        .and_then(|t| t.as_array())
-        .and_then(|arr| arr.first())
-        .and_then(|t| t.get("name"))
-        .and_then(|v| v.as_str())
-        .or_else(|| ei.get("fightName").and_then(|v| v.as_str()))
-        .or_else(|| ei.get("name").and_then(|v| v.as_str()));
+    // Dragonvoid (triggerID 43488) is special: EI's targets[0] is a per-dragon
+    // NPC ("The JormagVoid"), not the encounter name. Prefer fightName so the
+    // boss name stays "Harvest Temple" instead of "The JormagVoid".
+    let is_dv_trigger = ei
+        .get("triggerID")
+        .and_then(|v| v.as_i64())
+        .map(|id| id == 43488)
+        .unwrap_or(false);
+    let name = if is_dv_trigger {
+        ei.get("fightName")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            // Strip trailing " CM" — EI reports "Harvest Temple CM" for this
+            // CM-only strike, but the frontend and local parser use "Harvest Temple".
+            .and_then(|s| s.strip_suffix(" CM").or(Some(s)))
+            .or_else(|| ei.get("name").and_then(|v| v.as_str()))
+    } else {
+        ei.get("targets")
+            .and_then(|t| t.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|t| t.get("name"))
+            .and_then(|v| v.as_str())
+            .or_else(|| ei.get("fightName").and_then(|v| v.as_str()))
+            .or_else(|| ei.get("name").and_then(|v| v.as_str()))
+    };
     if let Some(n) = name {
         if !n.is_empty() {
             let existing = record.boss_name.as_deref().unwrap_or("");
@@ -462,10 +658,10 @@ pub fn enrich_record_from_ei(record: &mut crate::uploader::UploadRecord, ei: &Va
                 .replace(|c: char| !c.is_ascii_alphanumeric(), "");
             // Only overwrite if EI's name is more specific than what we already have,
             // or if the names are unrelated (EI may have corrected a wrong local name).
-            // This prevents EI from shortening e.g. "Qadim the Peerless" → "Qadim".
+            // This prevents EI from shortening e.g. "Qadim the Peerless" -> "Qadim".
             if existing_clean.is_empty()
                 || new_clean.contains(&existing_clean)
-                || (!existing_clean.contains(&new_clean) && !new_clean.contains(&existing_clean))
+                || (!existing_clean.contains(&new_clean) && existing_clean != new_clean)
             {
                 record.boss_name = Some(n.to_string());
             }
@@ -475,6 +671,9 @@ pub fn enrich_record_from_ei(record: &mut crate::uploader::UploadRecord, ei: &Va
     // bosses — it takes priority over dps.report's isCM, which can be stale for
     // newer encounters (e.g. Vloxx CM). Only fill from EI when local parse was
     // inconclusive (None) or for non-CM-eligible bosses.
+    // Harvest Temple (Dragonvoid) has BOTH Normal and CM modes; the local parser
+    // detects which via dragon MaxHealthUpdate thresholds. EI also reports isCM
+    // correctly, so fall through to the EI branch below when local is None.
     if let Some(cm) = ei.get("isCM").and_then(|v| v.as_bool()) {
         if record.is_cm.is_none() {
             record.is_cm = Some(cm);
@@ -494,15 +693,14 @@ pub fn enrich_record_from_ei(record: &mut crate::uploader::UploadRecord, ei: &Va
     if ei_says_lcm || name_says_lcm || local_says_lcm {
         record.is_lcm = Some(true);
     }
-    // Quick Play: EI does not expose a dedicated boolean. Mirror `PhaseDto.cs`:
-    // when instance buffs contain QuickplayBoost / QuickplayMorale, EI renders
-    // the mode string as `Quickplay Normal Mode`. Use that exact string so the
-    // app's badge matches EI's own HTML output.
-    // IMPORTANT: QP is only valid for specific strikes and fractals. Raids like
-    // Kaineng Overlook, Convergences, etc. can NEVER be Quick Play, even if EI
-    // detects QP buffs incorrectly. Check the boss name against the allowlist.
-    // The allowlist mirrors `QUICK_PLAY_BOSS_NAMES` in uploader.rs so the local
-    // EVTC buff-scan and the EI phase-mode scan agree on which bosses are eligible.
+    // Quick Play: EI does not expose a dedicated boolean. QP is detected via the
+    // Quickplay Boost / Quickplay Morale instance buffs (IDs 77676, 79492), which
+    // EI lists in `presentInstanceBuffs` — an array of [buffId, stacks, phaseIdx, …].
+    // (The old `phases[0].mode` string check is dead code: `JsonPhase.Mode` is never
+    // serialized in the EI JSON output — only in the HTML template.)
+    // IMPORTANT: QP is only valid for specific strikes and fractals. Check the boss
+    // name against the allowlist so we never tag a non-QP boss as Quick Play.
+    let qp_buff_ids: &[u32] = &[77676, 79492];
     let qp_allowed_bosses = [
         "aetherbladelet",
         "cliffside",
@@ -524,7 +722,9 @@ pub fn enrich_record_from_ei(record: &mut crate::uploader::UploadRecord, ei: &Va
         "boneskinner",
         "cosmicobservatory",
         "templeoffebe",
+        "cerus",          // Local EVTC parser / EI bossName returns "Cerus" for boss ID 25989
         "xunlaijadejunkyard",
+        "ankka",          // Local EVTC parser / EI bossName returns "Ankka" for boss ID 23957
         "oldlionscourt",
         "kainengoverlook",
         "ministerli",
@@ -543,18 +743,22 @@ pub fn enrich_record_from_ei(record: &mut crate::uploader::UploadRecord, ei: &Va
         // Only let EI fill in `is_quick_play` when the local EVTC buff-scan was
         // inconclusive (None). The local scan is authoritative for these bosses
         // — it reads the raw QP buffs directly — so we must not overwrite a
-        // correct local result with EI's phase-mode field, which can be absent
-        // on edge-case logs (e.g. logs with no phases array) and would clobber
-        // a valid Some(true) with nothing, dropping the QP badge.
+        // valid Some(true) with nothing, dropping the QP badge.
         if record.is_quick_play.is_none() {
-            if let Some(phase) = ei
-                .get("phases")
-                .and_then(|v| v.as_array())
-                .and_then(|arr| arr.first())
-                .and_then(|p| p.get("mode"))
-                .and_then(|v| v.as_str())
-            {
-                record.is_quick_play = Some(phase == "Quickplay Normal Mode");
+            // Check `presentInstanceBuffs` — EI's JSON model serializes this as an
+            // array of [buffId, stacks, phaseIndex, …] arrays. Look for the QP buff
+            // IDs (77676 = Quickplay Boost, 79492 = Quickplay Morale).
+            if let Some(buffs) = ei.get("presentInstanceBuffs").and_then(|v| v.as_array()) {
+                for entry in buffs {
+                    if let Some(arr) = entry.as_array() {
+                        if let Some(id) = arr.first().and_then(|v| v.as_u64()) {
+                            if qp_buff_ids.contains(&(id as u32)) {
+                                record.is_quick_play = Some(true);
+                                break;
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -986,10 +1190,15 @@ pub fn enrich_record_from_ei(record: &mut crate::uploader::UploadRecord, ei: &Va
             record.duration = Some(d);
         }
     }
-    // Thumbnail (boss portrait) from EI's fightIcon.
-    if let Some(icon) = ei.get("fightIcon").and_then(|v| v.as_str()) {
-        if !icon.is_empty() {
-            record.boss_icon = Some(icon.to_string());
+    // Thumbnail (boss portrait) from EI's fightIcon. Only accept the external
+    // icon as a fallback — the local parser ships its own icon set and the
+    // frontend prefers local assets. Overwrite only when no local icon was
+    // already set (e.g. a brand-new boss we don't have a PNG for yet).
+    if record.boss_icon.is_none() {
+        if let Some(icon) = ei.get("fightIcon").and_then(|v| v.as_str()) {
+            if !icon.is_empty() {
+                record.boss_icon = Some(icon.to_string());
+            }
         }
     }
     // Players: map EI players[] -> PlayerInfo (account/group/profession). Roles
@@ -1220,6 +1429,250 @@ pub fn check_ei_runtime() -> EiRuntimeStatus {
     }
 }
 
+#[cfg(windows)]
+mod ffi {
+    use std::ffi::c_void;
+
+    #[allow(non_snake_case)]
+    #[repr(C)]
+    pub struct StartupInfoW {
+        pub cb: u32,
+        pub lpReserved: *const u16,
+        pub lpDesktop: *const u16,
+        pub lpTitle: *const u16,
+        pub dwX: u32,
+        pub dwY: u32,
+        pub dwXSize: u32,
+        pub dwYSize: u32,
+        pub dwXCountChars: u32,
+        pub dwYCountChars: u32,
+        pub dwFillAttribute: u32,
+        pub dwFlags: u32,
+        pub wShowWindow: u16,
+        pub cbReserved2: u16,
+        pub lpReserved2: *const u8,
+        pub hStdInput: *mut c_void,
+        pub hStdOutput: *mut c_void,
+        pub hStdError: *mut c_void,
+    }
+
+    #[allow(non_snake_case)]
+    #[repr(C)]
+    pub struct ProcessInformation {
+        pub hProcess: *mut c_void,
+        pub hThread: *mut c_void,
+        pub dwProcessId: u32,
+        pub dwThreadId: u32,
+    }
+
+    extern "system" {
+        pub fn CreateProcessW(
+            lpApplicationName: *const u16,
+            lpCommandLine: *mut u16,
+            lpProcessAttributes: *const c_void,
+            lpThreadAttributes: *const c_void,
+            bInheritHandles: i32,
+            dwCreationFlags: u32,
+            lpEnvironment: *const c_void,
+            lpCurrentDirectory: *const u16,
+            lpStartupInfo: *const StartupInfoW,
+            lpProcessInformation: *mut ProcessInformation,
+        ) -> i32;
+
+        pub fn CloseHandle(handle: *mut c_void) -> i32;
+    }
+}
+
+#[cfg(windows)]
+fn open_html_in_browser(html_path: &str) {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+
+    let file_url = format!("file:///{}", html_path.replace('\\', "/"));
+
+    // Read the default browser command line from the registry via PowerShell.
+    // Uses .NET Registry API because HKCR: PSDrive is not always available.
+    let ps_script = r#"$p = [Microsoft.Win32.Registry]::GetValue('HKEY_CURRENT_USER\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice', 'Progid', $null); if ($p) { [Microsoft.Win32.Registry]::GetValue("HKEY_CLASSES_ROOT\$p\shell\Open\Command", "", $null) }"#;
+
+    if let Ok(output) = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-Command", ps_script])
+        .creation_flags(0x08000000)
+        .output()
+    {
+        let cmd_line = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+        if !cmd_line.is_empty() {
+            // Replace %1 placeholder with the file:// URL.
+            let launch_cmd = if cmd_line.contains("\"%1\"") {
+                cmd_line.replace("\"%1\"", &file_url)
+            } else {
+                cmd_line.replace("%1", &file_url)
+            };
+
+            // CreateProcessW requires a mutable wide-string buffer.
+            let mut wide: Vec<u16> = OsStr::new(&launch_cmd)
+                .encode_wide()
+                .chain(std::iter::once(0))
+                .collect();
+
+            let si = ffi::StartupInfoW {
+                cb: std::mem::size_of::<ffi::StartupInfoW>() as u32,
+                lpReserved: std::ptr::null(),
+                lpDesktop: std::ptr::null(),
+                lpTitle: std::ptr::null(),
+                dwX: 0,
+                dwY: 0,
+                dwXSize: 0,
+                dwYSize: 0,
+                dwXCountChars: 0,
+                dwYCountChars: 0,
+                dwFillAttribute: 0,
+                dwFlags: 0,
+                wShowWindow: 1,
+                cbReserved2: 0,
+                lpReserved2: std::ptr::null(),
+                hStdInput: std::ptr::null_mut(),
+                hStdOutput: std::ptr::null_mut(),
+                hStdError: std::ptr::null_mut(),
+            };
+
+            let mut pi = ffi::ProcessInformation {
+                hProcess: std::ptr::null_mut(),
+                hThread: std::ptr::null_mut(),
+                dwProcessId: 0,
+                dwThreadId: 0,
+            };
+
+            let ok = unsafe {
+                ffi::CreateProcessW(
+                    std::ptr::null(),
+                    wide.as_mut_ptr(),
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    0,
+                    0,
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    &si,
+                    &mut pi,
+                )
+            };
+
+            if ok != 0 {
+                unsafe {
+                    let _ = ffi::CloseHandle(pi.hProcess);
+                    let _ = ffi::CloseHandle(pi.hThread);
+                }
+                return;
+            }
+        }
+    }
+
+    // Fallback: try tauri's open_url with file:// URL (works if protocol is registered).
+    let _ = tauri_plugin_opener::open_url(file_url, None::<&str>);
+}
+
+#[cfg(not(windows))]
+fn open_html_in_browser(html_path: &str) {
+    let file_url = format!("file:///{}", html_path.replace('\\', "/"));
+    let _ = tauri_plugin_opener::open_url(file_url, None::<&str>);
+}
+
+/// Generate (or fetch from cache) the EI HTML report for `file_path`, then
+/// open it in the user's default browser. Returns the path used.
+#[tauri::command]
+pub async fn open_ei_html_report(app: AppHandle, file_path: String) -> Result<String, String> {
+    if !crate::ei_runner::ei_enabled() {
+        return Err("EI parsing is disabled (PORTAL_USE_EI=0).".to_string());
+    }
+    if crate::ei_runner::check_dotnet_runtime().is_err() {
+        return Err(
+            "Elite Insights needs the .NET 8 Desktop Runtime to generate reports. \
+             Install it (free) from https://dotnet.microsoft.com/en-us/download/dotnet/8.0/runtime"
+                .to_string(),
+        );
+    }
+    let input = Path::new(&file_path);
+    if !input.exists() {
+        return Err(format!("Local log file does not exist: {}", file_path));
+    }
+    // Cache hit: skip re-parsing, open the cached HTML in the browser.
+    if let Some(cached) = cached_ei_html_report(&app, &file_path) {
+        let s = cached.to_string_lossy().to_string();
+        open_html_in_browser(&s);
+        return Ok(s);
+    }
+    // Re-parse with the HTML config (CPU-bound .NET process — run off the async runtime).
+    let app_clone = app.clone();
+    let input_clone = input.to_path_buf();
+    let html_path =
+        tauri::async_runtime::spawn_blocking(move || run_ei_html(&app_clone, &input_clone))
+            .await
+            .map_err(|e| format!("spawn_blocking task failed: {}", e))?;
+    let html_path = html_path?;
+    // Cache for future fast re-opening.
+    let cache_path = ei_html_cache_path(&app, &file_path);
+    let copy_ok = std::fs::copy(&html_path, &cache_path).is_ok();
+    let path_to_open = if copy_ok {
+        // Remove the original EI output (now safely cached).
+        let _ = std::fs::remove_file(&html_path);
+        cache_path
+    } else {
+        // Cache write failed — open the original output directly.
+        html_path
+    };
+    ei_html_cache_prune_disk(&app);
+    let s = path_to_open.to_string_lossy().to_string();
+    open_html_in_browser(&s);
+    Ok(s)
+}
+
+/// Delete all cached EI HTML report files from disk. Returns the count removed.
+#[tauri::command]
+pub async fn clear_ei_html_cache(app: AppHandle) -> Result<usize, String> {
+    let dir = ei_html_cache_dir(&app);
+    let mut count = 0;
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.extension().and_then(|x| x.to_str()) == Some("html") {
+                if std::fs::remove_file(&p).is_ok() {
+                    count += 1;
+                }
+            }
+        }
+    }
+    Ok(count)
+}
+
+/// Returns (total_bytes, file_count) of the EI HTML report cache.
+#[tauri::command]
+pub async fn get_ei_html_cache_info(app: AppHandle) -> Result<(u64, usize), String> {
+    let dir = ei_html_cache_dir(&app);
+    let mut count = 0usize;
+    let mut size = 0u64;
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.extension().and_then(|x| x.to_str()) == Some("html") {
+                if let Ok(meta) = std::fs::metadata(&p) {
+                    count += 1;
+                    size += meta.len();
+                }
+            }
+        }
+    }
+    Ok((size, count))
+}
+
+/// Prune the HTML cache to the configured `html_cache_max_files` cap.
+/// Called when the user changes the slider in Settings.
+#[tauri::command]
+pub async fn prune_ei_html_cache(app: AppHandle) -> Result<(), String> {
+    ei_html_cache_prune_disk(&app);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1315,52 +1768,57 @@ mod tests {
     #[test]
     fn test_qp_not_overwritten_by_ei_when_local_set() {
         // Local EVTC buff-scan already detected QP (Some(true)). EI enrich
-        // must NOT overwrite it — even if EI's phases[0].mode says "Normal Mode"
-        // (edge case: phase mode field missing or stale).
+        // must NOT overwrite it — even if EI's presentInstanceBuffs also
+        // contains the QP buffs, the local result is authoritative.
         let ei = json!({
             "bossName": "Whisper of Jormag",
-            "phases": [
-                {"name": "Phase 1", "mode": "Normal Mode", "success": true, "targets": [0]}
-            ]
+            "presentInstanceBuffs": [[77676, 1, 0]]
         });
         let mut record = crate::uploader::UploadRecord::default();
         record.boss_name = Some("Whisper of Jormag".to_string());
         record.is_quick_play = Some(true); // local parse detected QP buffs
         enrich_record_from_ei(&mut record, &ei);
-        assert_eq!(record.is_quick_play, Some(true), "EI must not overwrite a correct local QP detection");
+        assert_eq!(
+            record.is_quick_play,
+            Some(true),
+            "EI must not overwrite a correct local QP detection"
+        );
     }
 
     #[test]
     fn test_qp_filled_by_ei_when_local_none() {
         // Local parse was inconclusive (None) for a QP-eligible boss.
-        // EI's phases[0].mode = "Quickplay Normal Mode" should fill it in.
+        // EI's presentInstanceBuffs should contain the QP buff IDs and fill it in.
         let ei = json!({
             "bossName": "Captain Mai Trin",
-            "phases": [
-                {"name": "Phase 1", "mode": "Quickplay Normal Mode", "success": true, "targets": [0]}
-            ]
+            "presentInstanceBuffs": [[77676, 1, 0]]
         });
         let mut record = crate::uploader::UploadRecord::default();
         record.boss_name = Some("Captain Mai Trin".to_string());
         record.is_quick_play = None;
         enrich_record_from_ei(&mut record, &ei);
-        assert_eq!(record.is_quick_play, Some(true), "EI should fill in QP when local parse was inconclusive");
+        assert_eq!(
+            record.is_quick_play,
+            Some(true),
+            "EI should fill in QP when local parse was inconclusive"
+        );
     }
 
     #[test]
     fn test_qp_not_set_for_non_qp_boss() {
         // A non-QP boss (e.g. Harvest Temple) should never get is_quick_play
-        // set from the EI phase mode, even if the mode string were present.
+        // set from EI's presentInstanceBuffs, even if the buffs are present.
         let ei = json!({
             "bossName": "The Dragonvoid",
-            "phases": [
-                {"name": "Phase 1", "mode": "Normal Mode", "success": true, "targets": [0]}
-            ]
+            "presentInstanceBuffs": [[77676, 1, 0]]
         });
         let mut record = crate::uploader::UploadRecord::default();
         record.boss_name = Some("The Dragonvoid".to_string());
         record.is_quick_play = None;
         enrich_record_from_ei(&mut record, &ei);
-        assert_eq!(record.is_quick_play, None, "Non-QP bosses must not get QP flag from EI");
+        assert_eq!(
+            record.is_quick_play, None,
+            "Non-QP bosses must not get QP flag from EI"
+        );
     }
 }

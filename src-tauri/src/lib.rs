@@ -263,6 +263,7 @@ fn http_check_client() -> &'static reqwest::Client {
 
 #[tauri::command]
 async fn check_dps_report_status() -> Result<String, String> {
+    static FAILS: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
     let client = http_check_client();
 
     let res = client.get("https://dps.report/uploadContent").send().await;
@@ -272,7 +273,7 @@ async fn check_dps_report_status() -> Result<String, String> {
             let code = response.status().as_u16();
             if code == 400 || code == 405 || response.status().is_success() {
                 Ok("online".to_string())
-            } else if code == 503 || code == 502 {
+            } else if code >= 500 {
                 Ok("offline".to_string())
             } else {
                 Ok(format!("degraded_{}", code))
@@ -280,18 +281,22 @@ async fn check_dps_report_status() -> Result<String, String> {
         }
         Err(_) => Ok("offline".to_string()),
     };
-    // Feed the global outage flag (Approach B): a confirmed 502/503/err parks queued
-    // uploads as On Hold before they ever hit the network, so a known outage can't
-    // trigger a stampede of doomed requests. Approach A's per-response 5xx path still
-    // covers anything that slips past the flag. "degraded_*" does NOT trip the flag —
-    // only a clear outage does — so transient oddities don't needlessly pause uploads.
     let down = matches!(status, Ok(ref s) if s == "offline");
-    crate::uploader::set_dps_report_down(down);
+    if down {
+        let n = FAILS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        if n >= 2 {
+            crate::uploader::set_dps_report_down(true);
+        }
+    } else {
+        FAILS.store(0, std::sync::atomic::Ordering::Relaxed);
+        crate::uploader::set_dps_report_down(false);
+    }
     status
 }
 
 #[tauri::command]
 async fn check_backup_dps_status() -> Result<String, String> {
+    static FAILS: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
     let client = http_check_client();
 
     let res = client
@@ -304,7 +309,7 @@ async fn check_backup_dps_status() -> Result<String, String> {
             let code = response.status().as_u16();
             if code == 400 || code == 405 || response.status().is_success() {
                 Ok("online".to_string())
-            } else if code == 503 || code == 502 {
+            } else if code >= 500 {
                 Ok("offline".to_string())
             } else {
                 Ok(format!("degraded_{}", code))
@@ -313,7 +318,15 @@ async fn check_backup_dps_status() -> Result<String, String> {
         Err(_) => Ok("offline".to_string()),
     };
     let down = matches!(status, Ok(ref s) if s == "offline");
-    crate::uploader::set_backup_dps_down(down);
+    if down {
+        let n = FAILS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        if n >= 2 {
+            crate::uploader::set_backup_dps_down(true);
+        }
+    } else {
+        FAILS.store(0, std::sync::atomic::Ordering::Relaxed);
+        crate::uploader::set_backup_dps_down(false);
+    }
     status
 }
 
@@ -336,12 +349,12 @@ async fn check_wingman_status() -> Result<String, String> {
             let code = response.status().as_u16();
             if response.status().is_success() {
                 let body = response.text().await.unwrap_or_default();
-                if body.trim() == "True" {
+                if body.trim().eq_ignore_ascii_case("True") {
                     Ok("online".to_string())
                 } else {
                     Ok("degraded_bad_response".to_string())
                 }
-            } else if code == 503 || code == 502 {
+            } else if code >= 500 {
                 Ok("offline".to_string())
             } else {
                 Ok(format!("degraded_{}", code))
@@ -581,23 +594,55 @@ async fn retry_wingman_import(app: AppHandle, file_path: String) -> Result<(), S
         permalink
     );
 
-    let outcome = match client.get(&url).send().await {
-        Ok(resp) => {
-            let status = resp.status();
-            let text = resp.text().await.unwrap_or_default();
-            eprintln!(
-                "[uploader] Wingman retry status for {}: {}, body: {}",
-                permalink, status, text
-            );
-            if status.is_success() {
-                "done".to_string()
-            } else {
-                "failed".to_string()
+    // Pre-check against Wingman's own queue/DB state.
+    let mut known_outcome: Option<String> = None;
+    let precheck_url = format!(
+        "https://gw2wingman.nevermindcreations.de/api/checkLogQueuedOrDB?link={}",
+        permalink
+    );
+    if let Ok(resp) = client.get(&precheck_url).send().await {
+        if let Ok(text) = resp.text().await {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+                if v.get("inDB").and_then(|b| b.as_bool()) == Some(true) {
+                    known_outcome = Some("imported".to_string());
+                } else if v.get("inQueue").and_then(|b| b.as_bool()) == Some(true) {
+                    known_outcome = Some("in_progress".to_string());
+                }
             }
         }
-        Err(e) => {
-            eprintln!("[uploader] Wingman retry error for {}: {}", permalink, e);
-            "failed".to_string()
+    }
+
+    let outcome = if let Some(o) = known_outcome {
+        o
+    } else {
+        match client.get(&url).send().await {
+            Ok(resp) => {
+                let status = resp.status();
+                let text = resp.text().await.unwrap_or_default();
+                eprintln!(
+                    "[uploader] Wingman retry status for {}: {}, body: {}",
+                    permalink, status, text
+                );
+                if status.is_success() {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+                        let success = v.get("success").and_then(|s| s.as_i64());
+                        let note = v.get("note").and_then(|s| s.as_str()).unwrap_or("").to_lowercase();
+                        if success == Some(0) || note.contains("already") || note.contains("in wingman") {
+                            "imported".to_string()
+                        } else {
+                            "done".to_string()
+                        }
+                    } else {
+                        "done".to_string()
+                    }
+                } else {
+                    "failed".to_string()
+                }
+            }
+            Err(e) => {
+                eprintln!("[uploader] Wingman retry error for {}: {}", permalink, e);
+                "failed".to_string()
+            }
         }
     };
 
@@ -1018,6 +1063,10 @@ pub fn run() {
             crate::uploader::read_webhook_log,
             crate::uploader::resend_failed_webhooks,
             crate::ei_runner::check_ei_runtime,
+            crate::ei_runner::open_ei_html_report,
+            crate::ei_runner::clear_ei_html_cache,
+            crate::ei_runner::get_ei_html_cache_info,
+            crate::ei_runner::prune_ei_html_cache,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

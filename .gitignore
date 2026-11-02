@@ -55,6 +55,7 @@ PERFORMANCE_ENHANCEMENT_PLAN.md
 # EI binaries and data (downloaded via script)
 src-tauri/resources/ei/
 src-tauri/resources/ei_backup/
+src-tauri/resources/ei_backup_*/
 src-tauri/resources/ei/Content/
 src-tauri/resources/ei/Settings/
 src-tauri/resources/ei/*.deps.json

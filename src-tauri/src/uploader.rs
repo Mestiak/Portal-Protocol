@@ -469,8 +469,14 @@ pub async fn drain_webhook_recovery_on_recovery(app: AppHandle) {
             );
             continue;
         }
-        let delivered =
-            send_discord_with_retry(&client, &wh.url, &item.record, build_mention_str(&wh.mention_roles, &wh.mention).as_deref(), wh.thread_id.as_deref()).await;
+        let delivered = send_discord_with_retry(
+            &client,
+            &wh.url,
+            &item.record,
+            build_mention_str(&wh.mention_roles, &wh.mention).as_deref(),
+            wh.thread_id.as_deref(),
+        )
+        .await;
         log_webhook_attempt(
             &app,
             wh,
@@ -541,8 +547,14 @@ pub async fn resend_failed_webhooks(app: AppHandle) -> Result<String, String> {
             if !webhook_matches(&wh.filters, &record) {
                 continue;
             }
-            let delivered =
-                send_discord_with_retry(&client, &wh.url, &record, build_mention_str(&wh.mention_roles, &wh.mention).as_deref(), wh.thread_id.as_deref()).await;
+            let delivered = send_discord_with_retry(
+                &client,
+                &wh.url,
+                &record,
+                build_mention_str(&wh.mention_roles, &wh.mention).as_deref(),
+                wh.thread_id.as_deref(),
+            )
+            .await;
             log_webhook_attempt(
                 &app,
                 wh,
@@ -1132,6 +1144,9 @@ pub struct UploadRecord {
     /// "in_progress" = manual retry running, "done" = manual retry succeeded.
     #[serde(default)]
     pub wingman_status: Option<String>,
+    /// Detected Wingman account for this log (primary or an alt), if any.
+    #[serde(default)]
+    pub wingman_account: Option<String>,
     /// Discord webhook delivery state: None = not applicable (no webhook / not sent),
     /// Some(true) = pending re-send (last attempt failed; retried on next successful
     /// upload of this log, mirroring the Wingman failed→recovery pattern),
@@ -1291,6 +1306,8 @@ pub async fn repair_history_cm_flags(app: AppHandle) {
     let mut updates: std::collections::HashMap<String, crate::uploader::UploadRecord> =
         std::collections::HashMap::new();
     let mut working = snapshot.clone();
+    let vloxx_repair_pending = !crate::config::load_config(&app).vloxx_lcm_repair_done;
+    let mut vloxx_fixed: usize = 0;
     // Count how many records will actually be re-queried so the UI can show a total.
     // A record needs work when it is either CM/LCM/success-bad AND has a permalink to
     // re-check. The previous filter counted the *opposite* (records to skip), which
@@ -1345,6 +1362,20 @@ pub async fn repair_history_cm_flags(app: AppHandle) {
             .replace(|c: char| !c.is_ascii_alphanumeric(), "");
         let is_conv = rec.is_convergence == Some(true);
         let lcm_eligible = is_conv || boss_lcm_eligible(&boss);
+
+        // Targeted repair for Vloxx LCM logs that were stored as plain CM before
+        // LCM support landed. Local EVTC parse (85M HP threshold) is authoritative.
+        if vloxx_repair_pending && lcm_eligible && rec.is_lcm != Some(true) && !rec.file_path.is_empty() && (boss == "vloxx" || boss == "nexusofeternity") {
+            if let Ok(bytes) = std::fs::read(&rec.file_path) {
+                if crate::evtc_parser::parse_is_lcm(&bytes) == Some(true) {
+                    rec.is_lcm = Some(true);
+                    updates.insert(rec.file_path.clone(), rec.clone());
+                    vloxx_fixed += 1;
+                    let _ = crate::config::merge_history_updates(&app, &updates);
+                    updates.clear();
+                }
+            }
+        }
 
         // ── Convergences: dps.report does NOT run Elite Insights on them, so its
         //    `isCM` / `success` fields are blank. The local EVTC parse is the only
@@ -1437,9 +1468,8 @@ pub async fn repair_history_cm_flags(app: AppHandle) {
         // newer bosses (e.g. Vloxx CM) that don't emit statechange 35 on dps.report's
         // end. When the boss is CM-eligible and dps.report said Some(false), try the
         // local parse (HP threshold) — if it says CM, override the stale value.
-        let cm_local_override = rec.cm_verified == Some(true)
-            && rec.is_cm == Some(false)
-            && boss_cm_eligible(&boss);
+        let cm_local_override =
+            rec.cm_verified == Some(true) && rec.is_cm == Some(false) && boss_cm_eligible(&boss);
         // Also re-check records stored as Some(false) — local EVTC parse
         // can't detect Ura LCM (arcdps doesn't emit statechange 36 for it),
         // so early uploads landed at is_lcm=Some(false) and stayed wrong.
@@ -1454,7 +1484,9 @@ pub async fn repair_history_cm_flags(app: AppHandle) {
                 .map(|hp| hp <= SUCCESS_HP_THRESHOLD)
                 .unwrap_or(false);
         let quickplay_bad = rec.is_quick_play.is_none() && rec.url.is_some();
-        if (!cm_bad && !cm_local_override && !lcm_bad && !success_bad && !quickplay_bad) || rec.url.is_none() {
+        if (!cm_bad && !cm_local_override && !lcm_bad && !success_bad && !quickplay_bad)
+            || rec.url.is_none()
+        {
             continue;
         }
         let permalink = dps_permalink(&rec.url.clone().unwrap());
@@ -1522,8 +1554,17 @@ pub async fn repair_history_cm_flags(app: AppHandle) {
                 }
             }
             if quickplay_bad {
-                if let Some(phase) = json.get("fightMode").and_then(|v| v.as_str()) {
-                    rec.is_quick_play = Some(phase == "Quickplay Normal Mode");
+                if let Some(buffs) = json.get("presentInstanceBuffs").and_then(|v| v.as_array()) {
+                    for entry in buffs {
+                        if let Some(arr) = entry.as_array() {
+                            if let Some(id) = arr.first().and_then(|v| v.as_u64()) {
+                                if [77676u32, 79492].contains(&(id as u32)) {
+                                    rec.is_quick_play = Some(true);
+                                    break;
+                                }
+                            }
+                        }
+                    }
                 }
             }
             updates.insert(rec.file_path.clone(), rec.clone());
@@ -1557,6 +1598,14 @@ pub async fn repair_history_cm_flags(app: AppHandle) {
                 done: true,
             },
         );
+    }
+    if vloxx_repair_pending {
+        let mut cfg = crate::config::load_config(&app);
+        cfg.vloxx_lcm_repair_done = true;
+        let _ = crate::config::save_config(&app, &cfg);
+        if vloxx_fixed > 0 {
+            let _ = app.emit("vloxx_lcm_repaired", vloxx_fixed);
+        }
     }
 }
 
@@ -1607,8 +1656,13 @@ pub async fn repair_history_cerus_empowered_stacks(app: AppHandle) {
             .unwrap_or("")
             .to_lowercase()
             .replace(|c: char| !c.is_ascii_alphanumeric(), "");
-        let should_have =
-            crate::vl_ranks::auto_petrified_for(&boss_key, rec.is_cm, rec.is_lcm, rec.is_convergence == Some(true), stacks);
+        let should_have = crate::vl_ranks::auto_petrified_for(
+            &boss_key,
+            rec.is_cm,
+            rec.is_lcm,
+            rec.is_convergence == Some(true),
+            stacks,
+        );
         let had_petrified = rec
             .vl_rank
             .as_ref()
@@ -1739,8 +1793,13 @@ pub async fn repair_history_vl_ranks(app: AppHandle) {
             .to_lowercase()
             .replace(|c: char| !c.is_ascii_alphanumeric(), "");
         // Re-derive the auto rank for this encounter (None if no longer eligible).
-        let correct_auto =
-            crate::vl_ranks::auto_rank_for(&boss, rec.is_cm, rec.is_lcm, rec.is_convergence == Some(true), rec.success);
+        let correct_auto = crate::vl_ranks::auto_rank_for(
+            &boss,
+            rec.is_cm,
+            rec.is_lcm,
+            rec.is_convergence == Some(true),
+            rec.success,
+        );
         // A manual rank (petrified/insatiable/empowered) was intentionally chosen by
         // the user and is left alone. Only the auto ranks (conqueror/legendary) are
         // repaired — and only when present in the set.
@@ -2145,9 +2204,24 @@ fn schedule_processing_check(
                             rec.is_cm = Some(true);
                         }
                     }
+                    // Quick Play: fall back to dps.report's presentInstanceBuffs only when
+                    // the local EVTC buff-scan and EI enrich both came up short (None).
+                    // The local scan is authoritative for QP-eligible bosses.
                     if rec.is_quick_play.is_none() && quick_play_boss(&boss_l_for_qp) {
-                        if let Some(phase) = json.get("fightMode").and_then(|v| v.as_str()) {
-                            rec.is_quick_play = Some(phase == "Quickplay Normal Mode");
+                        // Check presentInstanceBuffs — dps.report's getJson response includes
+                        // this array of [buffId, stacks, phaseIdx]. The QP buffs are
+                        // 77676 (Quickplay Boost) and 79492 (Quickplay Morale).
+                        if let Some(buffs) = json.get("presentInstanceBuffs").and_then(|v| v.as_array()) {
+                            for entry in buffs {
+                                if let Some(arr) = entry.as_array() {
+                                    if let Some(id) = arr.first().and_then(|v| v.as_u64()) {
+                                        if [77676u32, 79492].contains(&(id as u32)) {
+                                            rec.is_quick_play = Some(true);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     // Always apply dps.report's authoritative LCM verdict for
@@ -2243,12 +2317,17 @@ fn schedule_processing_check(
                         }
                     }
                     if is_dv && rec.bosses_phases.is_none() {
-                        if let Some(success) = rec.success {
-                            if let Some(phases) = crate::evtc_parser::dragon_phase_full_with_adds(
-                                &json, success, None,
-                            ) {
-                                rec.bosses_phases = Some(phases);
-                            }
+                        // Use rec.success if known, otherwise fall back to the
+                        // getJson response's own `success` field. This mirrors
+                        // how dragon_phase_state_with_success already resolves
+                        // the success flag (evtc_parser.rs:756).
+                        let success = rec.success
+                            .or_else(|| json.get("success").and_then(|v| v.as_bool()))
+                            .unwrap_or(false);
+                        if let Some(phases) = crate::evtc_parser::dragon_phase_full_with_adds(
+                            &json, success, None,
+                        ) {
+                            rec.bosses_phases = Some(phases);
                         }
                     }
                     // Story steps are linear (no win/lose). dps.report may report
@@ -2387,6 +2466,7 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
         map_id: None,
         notes: Vec::new(),
         wingman_status: None,
+        wingman_account: None,
         discord_pending: None,
         vl_rank: None,
         boss_icon: None,
@@ -2543,6 +2623,15 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
         // vs Boneskinner). Fall back to the id->name map if the agent name
         // is missing for some reason.
         record.boss_name = boss_name.or_else(|| Some(evtc_parser::get_boss_name_from_id(boss_id)));
+        // Harvest Temple (boss_id 43488) is The Dragonvoid — a CM-only strike
+        // whose agent-table name is a per-dragon NPC (e.g. "Jormag"), not a
+        // recognizable encounter key. Override to the canonical strike name so
+        // that bossCmEligible(), icon resolution, and the CM badge all work
+        // before EI enrichment arrives.
+        if boss_id == 43488 {
+            record.boss_name = Some("The Dragonvoid".to_string());
+            record.boss_icon = Some("dragonvoid".to_string());
+        }
     }
     let mut is_conv = false;
     if diag_bytes.len() >= 15 && diag_bytes.starts_with(b"EVTC") {
@@ -2561,7 +2650,7 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
         record.duration = total_duration.or(local_duration);
         record.boss_duration = boss_duration;
     } else {
-        record.duration = local_duration;
+        record.duration = None;
     }
     // EI-first: for non-convergence logs, EI will overwrite mode/HP/success
     // shortly after. Keep local values only as provisional placeholders or for
@@ -2644,6 +2733,21 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
 
     let config = crate::config::load_config(&app);
     let use_backup = config.use_backup_dps;
+    // Detect Wingman account (primary or alt) for this log.
+    if config.wingman_enabled {
+        let matched: Vec<String> = config
+            .wingman_accounts
+            .iter()
+            .filter(|a| local_players.iter().any(|p| p.account.eq_ignore_ascii_case(a)))
+            .cloned()
+            .collect();
+        let detected = if matched.len() == 1 {
+            Some(matched[0].clone())
+        } else {
+            config.wingman_accounts.first().cloned()
+        };
+        record.wingman_account = detected;
+    }
     let both_down = dps_report_down() && (backup_dps_down() || !use_backup);
     if both_down {
         record.status = "On Hold".to_string();
@@ -2758,6 +2862,21 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
     // park as On Hold. If the backup is reachable we route there instead (no park).
     let config = crate::config::load_config(&app);
     let use_backup = config.use_backup_dps;
+    // Detect Wingman account (primary or alt) for this log.
+    if config.wingman_enabled {
+        let matched: Vec<String> = config
+            .wingman_accounts
+            .iter()
+            .filter(|a| local_players.iter().any(|p| p.account.eq_ignore_ascii_case(a)))
+            .cloned()
+            .collect();
+        let detected = if matched.len() == 1 {
+            Some(matched[0].clone())
+        } else {
+            config.wingman_accounts.first().cloned()
+        };
+        record.wingman_account = detected;
+    }
     let both_down = dps_report_down() && (backup_dps_down() || !use_backup);
     if both_down {
         record.status = "On Hold".to_string();
@@ -2957,9 +3076,8 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                                 .unwrap_or("")
                                 .to_lowercase()
                                 .replace(|c: char| !c.is_ascii_alphanumeric(), "");
-                            let pre_api_cm_eligible =
-                                record.is_convergence == Some(true)
-                                    || boss_cm_eligible(&pre_api_clean);
+                            let pre_api_cm_eligible = record.is_convergence == Some(true)
+                                || boss_cm_eligible(&pre_api_clean);
                             // dps.report returns "DPS.Report" for story instances (no real
                             // name); we already set the proper instance name from the map id
                             // above, so keep ours instead of clobbering it with the generic tag.
@@ -3032,7 +3150,8 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                                         Some(pre_api_cm_eligible && local_is_cm.unwrap_or(false));
                                 }
                             } else {
-                                record.is_cm = Some(pre_api_cm_eligible && local_is_cm.unwrap_or(false));
+                                record.is_cm =
+                                    Some(pre_api_cm_eligible && local_is_cm.unwrap_or(false));
                             }
 
                             // LCM — only Ura (raid) and Temple of Febe (strike) are LCM-eligible.
@@ -3066,16 +3185,26 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                                 Some(false)
                             };
 
-                            // Quick Play: fall back to dps.report's `fightMode` only when the
-                            // local EVTC buff-scan and EI enrich both came up short (None). The
-                            // local scan is authoritative for QP-eligible bosses; dps.report's
-                            // `fightMode` field is the authoritative fallback when the local
-                            // parse couldn't reach the buffs (e.g. encrypted .zevtc / .evtc
-                            // without raw buff events). Only set for QP-eligible bosses so we
-                            // never accidentally tag a non-QP raid as Quick Play.
+                            // Quick Play: fall back to dps.report's instance-buff list
+                            // only when the local EVTC buff-scan and EI enrich both came
+                            // up short (None). The local scan is authoritative for
+                            // QP-eligible bosses; the dps.report getJson response includes
+                            // `presentInstanceBuffs` (an array of [buffId, stacks, phaseIdx])
+                            // which lists the QP buffs (77676, 79492) when they were present.
+                            // Only set for QP-eligible bosses so we never accidentally tag a
+                            // non-QP raid as Quick Play.
                             if record.is_quick_play.is_none() && quick_play_boss(&pre_api_clean) {
-                                if let Some(fm) = enc.get("fightMode").and_then(|v| v.as_str()) {
-                                    record.is_quick_play = Some(fm == "Quickplay Normal Mode");
+                                if let Some(buffs) = enc.get("presentInstanceBuffs").and_then(|v| v.as_array()) {
+                                    for entry in buffs {
+                                        if let Some(arr) = entry.as_array() {
+                                            if let Some(id) = arr.first().and_then(|v| v.as_u64()) {
+                                                if [77676u32, 79492].contains(&(id as u32)) {
+                                                    record.is_quick_play = Some(true);
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
 
@@ -3300,15 +3429,24 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                             }
                         }
                         if is_dv && record.bosses_phases.is_none() {
-                            if let Some(ref permalink) = record.url {
-                                if let Some(phases) = fetch_dragon_timeline(
-                                    &client,
-                                    permalink,
-                                    record.success.unwrap_or(false),
-                                )
-                                .await
-                                {
-                                    record.bosses_phases = Some(phases);
+                            // Only fetch the dragon timeline when we know the success
+                            // state. `record.success` can be None at upload-response
+                            // time for HT (the local parser deliberately withholds
+                            // clear/fail verdict, see evtc_parser.rs:363-371). Using
+                            // `unwrap_or(false)` would build a wipe timeline that the
+                            // getJson poll can never correct (because bosses_phases
+                            // is already set). Let the getJson poll handle it instead.
+                            if let Some(success) = record.success {
+                                if let Some(ref permalink) = record.url {
+                                    if let Some(phases) = fetch_dragon_timeline(
+                                        &client,
+                                        permalink,
+                                        success,
+                                    )
+                                    .await
+                                    {
+                                        record.bosses_phases = Some(phases);
+                                    }
                                 }
                             }
                         }
@@ -3587,11 +3725,13 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
             let history = crate::config::load_history(&app_clone);
             if history.iter().any(|r| {
                 r.url.as_deref() == Some(permalink.as_str())
-                    && r.wingman_status.as_deref() == Some("imported")
+                    && (r.wingman_status.as_deref() == Some("imported")
+                        || r.wingman_status.as_deref() == Some("in_progress"))
             }) {
                 return;
             }
             let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(15))
                 .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new());
@@ -3599,7 +3739,29 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                 "https://gw2wingman.nevermindcreations.de/api/importLogQueued?link={}",
                 permalink
             );
-            let outcome = match client.get(&url).send().await {
+            // Pre-check against Wingman's own queue/DB state so we don't
+            // re-import (or mis-label) a log that is already known there.
+            let mut known_outcome: Option<&str> = None;
+            let precheck_url = format!(
+                "https://gw2wingman.nevermindcreations.de/api/checkLogQueuedOrDB?link={}",
+                permalink
+            );
+            if let Ok(resp) = client.get(&precheck_url).send().await {
+                if let Ok(text) = resp.text().await {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+                        if v.get("inDB").and_then(|b| b.as_bool()) == Some(true) {
+                            known_outcome = Some("imported");
+                        } else if v.get("inQueue").and_then(|b| b.as_bool()) == Some(true) {
+                            known_outcome = Some("in_progress");
+                        }
+                    }
+                }
+            }
+
+            let outcome: String = if let Some(o) = known_outcome {
+                o.to_string()
+            } else {
+                match client.get(&url).send().await {
                 Ok(resp) => {
                     let status = resp.status();
                     let text = resp.text().await.unwrap_or_default();
@@ -3612,23 +3774,38 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                         // was already present (`success:0` / `already in wingman DB`).
                         // Treat that as terminal imported-equivalent, not failed, so
                         // we don't keep retrying an already-known log.
-                        let lower = text.to_lowercase();
-                        if lower.contains("success:0")
-                            || lower.contains("already in wingman db")
-                            || lower.contains("already in wingmandb")
-                        {
-                            "imported"
+                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+                            let success = v.get("success").and_then(|s| s.as_i64());
+                            let note = v.get("note").and_then(|s| s.as_str()).unwrap_or("").to_lowercase();
+                            if success == Some(1)
+                                || success == Some(0)
+                                || note.contains("already")
+                                || note.contains("in wingman")
+                            {
+                                "imported".to_string()
+                            } else {
+                                "failed".to_string()
+                            }
                         } else {
-                            "imported"
+                            let lower = text.to_lowercase();
+                            if lower.contains("success:0")
+                                || lower.contains("already in wingman db")
+                                || lower.contains("already in wingmandb")
+                            {
+                                "imported".to_string()
+                            } else {
+                                "imported".to_string()
+                            }
                         }
                     } else {
-                        "failed"
+                        "failed".to_string()
                     }
                 }
                 Err(e) => {
                     eprintln!("[uploader] Wingman import error for {}: {}", permalink, e);
-                    "failed"
+                    "failed".to_string()
                 }
+            }
             };
             rec.wingman_status = Some(outcome.to_string());
             let _ = crate::config::add_to_history(&app_clone, rec);
@@ -4399,13 +4576,8 @@ const RAID_CM_INFO: &[(&str, RaidCmInfo)] = &[
             lcm: false,
         },
     ),
-    (
-        "harvesttemple",
-        RaidCmInfo {
-            cm: true,
-            lcm: false,
-        },
-    ),
+    ("harvesttemple", RaidCmInfo { cm: true, lcm: false }),
+    ("harvesttemplecm", RaidCmInfo { cm: true, lcm: false }),
     (
         "oldlionscourt",
         RaidCmInfo {
@@ -4438,13 +4610,13 @@ const RAID_CM_INFO: &[(&str, RaidCmInfo)] = &[
         },
     ),
     // Visions of Eternity: Nexus of Eternity (Vloxx) — CM detected via 70M HP
-    // threshold, matching Elite Insights v3.30.2's GetLogMode(). LCM not yet
-    // supported by Elite Insights — set lcm: true when it ships.
+    // threshold, matching Elite Insights v3.31's GetLogMode(). LCM supported via
+    // 85M HP threshold (same EI detection).
     (
         "vloxx",
         RaidCmInfo {
             cm: true,
-            lcm: false,
+            lcm: true,
         },
     ),
 ];
@@ -4529,7 +4701,9 @@ const QUICK_PLAY_BOSS_NAMES: &[&str] = &[
     "boneskinner",
     "cosmicobservatory",
     "templeoffebe",
+    "cerus",       // Local EVTC parser / EI bossName returns "Cerus" for boss ID 25989
     "xunlaijadejunkyard",
+    "ankka",       // Local EVTC parser / EI bossName returns "Ankka" for boss ID 23957
     "oldlionscourt",
     // Old Lions Court watchknight variant names (EI reads the NPC name from
     // the agent table, which is "Prototype Vermilion" / "Prototype Arsenite" /
@@ -4588,7 +4762,7 @@ fn boss_lcm_eligible(boss_clean: &str) -> bool {
 /// fragment ("jormag" appears in both Whisper of Jormag and Fraenir of Jormag),
 /// so the parser must never build a council for non-Dragonvoid bosses. Gate on
 /// the canonical cleaned boss keys.
-fn is_dragonvoid_boss(boss_clean: &str) -> bool {
+pub fn is_dragonvoid_boss(boss_clean: &str) -> bool {
     matches!(boss_clean, "dragonvoid" | "harvesttemple" | "thedragonvoid")
 }
 
@@ -4672,13 +4846,21 @@ pub(crate) fn webhook_matches(f: &crate::config::WebhookFilters, r: &UploadRecor
 /// Build the Discord `content` string from webhook's mention_roles tokens.
 /// All non-empty tokens are space-separated so Discord renders every ping.
 /// Falls back to legacy `mention` field if mention_roles is empty.
-fn build_mention_str(mention_roles: &[crate::config::WebhookRole], mention: &Option<String>) -> Option<String> {
+fn build_mention_str(
+    mention_roles: &[crate::config::WebhookRole],
+    mention: &Option<String>,
+) -> Option<String> {
     if !mention_roles.is_empty() {
-        let tokens: Vec<&str> = mention_roles.iter()
+        let tokens: Vec<&str> = mention_roles
+            .iter()
             .map(|r| r.token.trim())
             .filter(|t| !t.is_empty())
             .collect();
-        if tokens.is_empty() { None } else { Some(tokens.join(" ")) }
+        if tokens.is_empty() {
+            None
+        } else {
+            Some(tokens.join(" "))
+        }
     } else {
         mention.clone()
     }
@@ -4694,9 +4876,18 @@ async fn send_discord_with_retry(
     const MAX_TRIES: u32 = 3;
     let payload = build_webhook_payload(record, mention);
     let url = if let Some(tid) = thread_id {
-        if tid.trim().is_empty() { webhook_url.to_string() }
-        else { format!("{}?thread_id={}", webhook_url.trim_end_matches('?'), tid.trim()) }
-    } else { webhook_url.to_string() };
+        if tid.trim().is_empty() {
+            webhook_url.to_string()
+        } else {
+            format!(
+                "{}?thread_id={}",
+                webhook_url.trim_end_matches('?'),
+                tid.trim()
+            )
+        }
+    } else {
+        webhook_url.to_string()
+    };
     for attempt in 1..=MAX_TRIES {
         match client.post(&url).json(&payload).send().await {
             Ok(r) => {
@@ -4955,6 +5146,7 @@ pub async fn test_webhook(webhook: DiscordWebhook) -> Result<String, String> {
         is_favorite: None,
         notes: Vec::new(),
         wingman_status: None,
+        wingman_account: None,
         discord_pending: None,
         vl_rank: None,
         boss_icon: None,
@@ -4969,11 +5161,17 @@ pub async fn test_webhook(webhook: DiscordWebhook) -> Result<String, String> {
         upload_done: None,
     };
     let mention_str = if !webhook.mention_roles.is_empty() {
-        let tokens: Vec<&str> = webhook.mention_roles.iter()
+        let tokens: Vec<&str> = webhook
+            .mention_roles
+            .iter()
             .map(|r| r.token.trim())
             .filter(|t| !t.is_empty())
             .collect();
-        if tokens.is_empty() { None } else { Some(tokens.join(" ")) }
+        if tokens.is_empty() {
+            None
+        } else {
+            Some(tokens.join(" "))
+        }
     } else {
         webhook.mention.clone()
     };
@@ -4981,7 +5179,11 @@ pub async fn test_webhook(webhook: DiscordWebhook) -> Result<String, String> {
     let mut test_url = webhook.url.clone();
     if let Some(ref tid) = webhook.thread_id {
         if !tid.trim().is_empty() {
-            test_url = format!("{}?thread_id={}", webhook.url.trim_end_matches('?'), tid.trim());
+            test_url = format!(
+                "{}?thread_id={}",
+                webhook.url.trim_end_matches('?'),
+                tid.trim()
+            );
         }
     }
     match client.post(&test_url).json(&payload).send().await {
@@ -5700,6 +5902,7 @@ mod discord_embed_tests {
             map_id: None,
             notes: Vec::new(),
             wingman_status: None,
+            wingman_account: None,
             discord_pending: None,
             vl_rank: None,
             boss_icon: None,
