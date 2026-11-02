@@ -5493,6 +5493,8 @@ async function testWebhook(wh: any) {
         <div class="log-meta">
           {#if log.duration != null}
             <span class="meta-item"><i class="fa-solid fa-stopwatch" style="margin-right: 4px; font-size: 11px;"></i> {formatDuration(log.duration)}</span>
+          {:else}
+            <span class="meta-item"><i class="fa-solid fa-stopwatch fa-spin" style="margin-right: 4px; font-size: 11px;"></i></span>
           {/if}
           {#if log.num_players != null}
             <span class="meta-item"><i class="fa-solid fa-users" style="margin-right: 4px; font-size: 11px;"></i> {log.num_players} Players</span>
@@ -5632,10 +5634,6 @@ async function testWebhook(wh: any) {
                 {st.label}
               </span>
             {/each}
-            <span class="stepper-duration">
-              <i class="fa-solid fa-clock" class:fa-spin={log.duration == null}></i>
-              {#if log.duration != null}{formatDuration(log.duration)}{/if}
-            </span>
           </div>
         {/if}
         <div class="meta-line">
@@ -5781,7 +5779,11 @@ async function testWebhook(wh: any) {
               {/if}
               <span class="meta-item custom-tooltip-container">
                 <span class="custom-tooltip">{log.is_convergence && log.is_cm ? 'Total Convergence Time' : 'Duration'}</span>
-                <i class="fa-solid fa-stopwatch" style="margin-right: 4px; font-size: 11px;"></i> {formatDuration(log.duration)}
+                {#if log.duration != null}
+                  <i class="fa-solid fa-stopwatch" style="margin-right: 4px; font-size: 11px;"></i> {formatDuration(log.duration)}
+                {:else}
+                  <i class="fa-solid fa-stopwatch fa-spin" style="margin-right: 4px; font-size: 11px;"></i>
+                {/if}
               </span>
               {#if log.is_convergence && log.is_cm && log.boss_duration != null && Math.abs((log.boss_duration ?? 0) - (log.duration ?? 0)) > 1}
                 {#if isGolemLog(log) && log.group_dps != null}
