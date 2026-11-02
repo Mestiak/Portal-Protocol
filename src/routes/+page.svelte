@@ -5493,6 +5493,8 @@ async function testWebhook(wh: any) {
         <div class="log-meta">
           {#if log.duration != null}
             <span class="meta-item"><i class="fa-solid fa-stopwatch" style="margin-right: 4px; font-size: 11px;"></i> {formatDuration(log.duration)}</span>
+          {:else}
+            <span class="meta-item"><i class="fa-solid fa-stopwatch fa-spin" style="margin-right: 4px; font-size: 11px;"></i></span>
           {/if}
           {#if log.num_players != null}
             <span class="meta-item"><i class="fa-solid fa-users" style="margin-right: 4px; font-size: 11px;"></i> {log.num_players} Players</span>
@@ -5622,7 +5624,14 @@ async function testWebhook(wh: any) {
             {#each uploadStageList(log) as st, i}
               {#if i > 0}<span class="stage-connector" class:filled={uploadStageList(log)[i-1].state === "done"}></span>{/if}
               <span class="stage-step stage-{st.state}">
-                {#if st.state === "done"}<i class="fa-solid fa-check"></i> {:else if st.state === "active"}<span class="stage-dot"></span> {/if}{st.label}
+                {#if st.state === "done"}<i class="fa-solid fa-check"></i>
+                {:else if st.state === "active"}<span class="stage-dot"></span>
+                {:else if st.label === "Queued"}<i class="fa-solid fa-hourglass-start"></i>
+                {:else if st.label === "Reading"}<i class="fa-solid fa-file"></i>
+                {:else if st.label === "Parsing"}<i class="fa-solid fa-gear"></i>
+                {:else if st.label === "Uploading"}<i class="fa-solid fa-cloud-arrow-up"></i>
+                {/if}
+                {st.label}
               </span>
             {/each}
           </div>
@@ -5770,7 +5779,11 @@ async function testWebhook(wh: any) {
               {/if}
               <span class="meta-item custom-tooltip-container">
                 <span class="custom-tooltip">{log.is_convergence && log.is_cm ? 'Total Convergence Time' : 'Duration'}</span>
-                <i class="fa-solid fa-stopwatch" style="margin-right: 4px; font-size: 11px;"></i> {formatDuration(log.duration)}
+                {#if log.duration != null}
+                  <i class="fa-solid fa-stopwatch" style="margin-right: 4px; font-size: 11px;"></i> {formatDuration(log.duration)}
+                {:else}
+                  <i class="fa-solid fa-stopwatch fa-spin" style="margin-right: 4px; font-size: 11px;"></i>
+                {/if}
               </span>
               {#if log.is_convergence && log.is_cm && log.boss_duration != null && Math.abs((log.boss_duration ?? 0) - (log.duration ?? 0)) > 1}
                 {#if isGolemLog(log) && log.group_dps != null}
@@ -5812,6 +5825,7 @@ async function testWebhook(wh: any) {
       </div>
     </div>
   {/if}
+  {#if !(log.status === "Queued" || log.status === "Reading" || log.status === "Parsing" || log.status === "Uploading" || isReadingLog(log))}
   <div class="log-actions-row">
     <!-- Primary Action 1: Stats Modal -->
     <div class="custom-tooltip-container">
@@ -5974,6 +5988,7 @@ async function testWebhook(wh: any) {
       {/if}
     </div>
   </div>
+  {/if}
   <div class="file-name-bar">
     <span class="file-name">{basename(log.file_path)}</span>
   </div>
