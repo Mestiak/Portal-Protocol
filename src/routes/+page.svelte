@@ -75,6 +75,7 @@
     is_wvw?: boolean; // World vs World log
     notes?: LogNote[];
     wingman_status?: string | null;
+    wingman_account?: string | null;
     /// Discord webhook delivery state: undefined/null = n/a, true = pending re-send
     /// (last send failed; retried on next successful upload of this log), false = delivered.
     discord_pending?: boolean | null;
@@ -196,6 +197,9 @@
   let autostart = $state(false);
   let wingman_enabled = $state(false);
   let wingman_account = $state("");
+  let wingman_accounts = $state<string[]>([]);
+  let wingmanAccountsText = $state("");
+  let newWingmanAccount = $state("");
   let wvw_enabled = $state(false);
   let use_backup_dps = $state(true);
   let max_concurrent_uploads = $state(2);
@@ -4681,7 +4685,8 @@
           sound_notifications,
           desktop_notifications,
           wingman_enabled,
-          wingman_account,
+          wingman_account: wingman_accounts.length ? wingman_accounts[0] : wingman_account,
+          wingman_accounts: $state.snapshot(wingman_accounts),
           use_backup_dps,
           max_concurrent_uploads,
           watch_stability_delay_ms,
@@ -5040,6 +5045,11 @@ async function testWebhook(wh: any) {
       desktop_notifications = config.desktop_notifications ?? true;
       wingman_enabled = config.wingman_enabled ?? false;
       wingman_account = config.wingman_account ?? "";
+      wingman_accounts = config.wingman_accounts ?? [];
+      if (wingman_accounts.length === 0 && wingman_account) {
+        wingman_accounts = [wingman_account];
+      }
+      wingmanAccountsText = wingman_accounts.join("\n");
       wvw_enabled = config.wvw_enabled ?? false;
       use_backup_dps = config.use_backup_dps ?? true;
       max_concurrent_uploads = config.max_concurrent_uploads ?? 2;
@@ -5130,7 +5140,8 @@ async function testWebhook(wh: any) {
           desktop_notifications,
           sessions: $state.snapshot(sessions),
           wingman_enabled,
-          wingman_account,
+          wingman_account: wingman_accounts.length ? wingman_accounts[0] : wingman_account,
+          wingman_accounts: $state.snapshot(wingman_accounts),
           wvw_enabled,
           max_concurrent_uploads,
           watch_stability_delay_ms,
@@ -5467,6 +5478,11 @@ async function testWebhook(wh: any) {
           {/if}
         {:else if log.status === "Processing"}
           <span class="status-pill sp-processing">⧗ Elite Insights processing</span>
+        {/if}
+        {#if log.wingman_account && wingman_accounts.length > 1 && log.wingman_account !== wingman_accounts[0]}
+          <span class="wm-chip wm-imported" title={`Alt account: ${log.wingman_account}`} style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+            Alt
+          </span>
         {/if}
         {#if wingman_enabled && wingmanQueue.includes(log.file_path)}
           <span class="wm-chip wm-sending" title="Queued for Wingman import — will be processed shortly.">
@@ -7385,6 +7401,22 @@ async function testWebhook(wh: any) {
                   <label for="wingman-acc" style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">GW2 Account Name</label>
                   <input id="wingman-acc" type="text" placeholder="e.g. Username.1234" bind:value={wingman_account} style="width: 100%; max-width: 320px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); padding: 6px; border-radius: 4px; color: white; font-size: 11px; outline: none;"/>
                   <span class="help" style="display: block; margin-top: 4px;">Required by Wingman to link combat uploads directly to your account dashboard.</span>
+                  <div style="margin-top: 8px;">
+                    <span style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Alt accounts (primary on top)</span>
+                    <div style="display: flex; gap: 6px; margin-bottom: 6px;">
+                      <input type="text" placeholder="e.g. Username.1234" bind:value={newWingmanAccount} style="flex: 1; max-width: 320px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); padding: 6px; border-radius: 4px; color: white; font-size: 11px; outline: none;"/>
+                      <button onclick={() => { if (newWingmanAccount.trim()) { wingman_accounts = [...wingman_accounts, newWingmanAccount.trim()]; newWingmanAccount = ""; } }} style="padding: 6px 12px; font-size: 11px; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--foreground); cursor: pointer;">Add</button>
+                    </div>
+                    {#each wingman_accounts as acc, i}
+                      <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+                        <span style="flex: 1; max-width: 260px; font-size: 11px; color: white; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{i === 0 ? "★ " : ""}{acc}</span>
+                        <button onclick={() => { if (i > 0) { const a = [...wingman_accounts]; [a[i-1], a[i]] = [a[i], a[i-1]]; wingman_accounts = a; } }} disabled={i === 0} style="font-size: 10px; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--foreground); cursor: pointer; opacity: {i === 0 ? 0.4 : 1};">↑</button>
+                        <button onclick={() => { if (i < wingman_accounts.length - 1) { const a = [...wingman_accounts]; [a[i], a[i+1]] = [a[i+1], a[i]]; wingman_accounts = a; } }} disabled={i === wingman_accounts.length - 1} style="font-size: 10px; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--foreground); cursor: pointer; opacity: {i === wingman_accounts.length - 1 ? 0.4 : 1};">↓</button>
+                        <button onclick={() => { wingman_accounts = wingman_accounts.filter((_, idx) => idx !== i); }} style="font-size: 10px; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--accent); cursor: pointer;">✕</button>
+                      </div>
+                    {/each}
+                    <span class="help" style="display: block; margin-top: 4px;">First account is primary. Use arrows to reorder.</span>
+                  </div>
                 </div>
               {/if}
             </div>
