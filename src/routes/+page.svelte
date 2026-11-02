@@ -2900,11 +2900,22 @@
   function handleLogContextMenu(e: MouseEvent, log: any, isSession: boolean, sessionId?: string, onDelete?: () => void) {
     e.preventDefault();
     const items: { label: string; icon: string; danger?: boolean; onSelect: () => void; }[] = [
+      { label: 'Stats', icon: 'fa-chart-bar', onSelect: () => { openStats(log); } },
       { label: 'Open log link', icon: 'fa-arrow-up-right-from-square', onSelect: () => { if (isOnline && log.url) openExternalUrl(log.url); } },
       { label: 'Copy log link', icon: 'fa-copy', onSelect: () => { if (isOnline && log.url) copySingleLink(log.url, log.file_path); } },
+      { label: 'View EI Report', icon: 'fa-file-import', onSelect: () => { openEiHtmlReport(log); } },
       { label: '2D Replay', icon: 'fa-gamepad', onSelect: () => { if (isOnline && log.url) openReplayModal(log.url); } },
+      { label: 'Notes', icon: 'fa-note-sticky', onSelect: () => { toggleNotes(cardId(log)); } },
       { label: 'Save to Session…', icon: 'fa-folder-open', onSelect: () => openSavePicker([log], (sid) => addLogToSession(log.file_path, sid)) }
     ];
+
+    if (vlAvailableFor(log)) {
+      items.push({ label: 'VL Rank', icon: 'fa-medal', onSelect: () => { openVlModal(log); } });
+    }
+
+    if (log.status === "Failed" && log.diagnostics) {
+      items.push({ label: 'Troubleshoot', icon: 'fa-circle-question', onSelect: () => { showTroubleshoot[log.file_path] = !showTroubleshoot[log.file_path]; } });
+    }
 
     if (isSession && sessionId) {
       items.push({ 
@@ -5933,6 +5944,15 @@ async function testWebhook(wh: any) {
       {#if activeMenuCard === cardId(log)}
         <div class="card-dropdown-menu" data-menu-dropdown={cardId(log)} onclick={(e) => e.stopPropagation()} onkeydown={(e) => { if (e.key === "Escape" || e.key === "Enter" || e.key === " ") { e.stopPropagation(); } }} role="menu" aria-label="More actions" tabindex="-1">
           <!-- Items shown in overflow menu (always available or revealed on narrow screens) -->
+          <button class="card-dropdown-item" disabled={!log.url && !log.local_fallback} onclick={() => { activeMenuCard = null; openStats(log); }}>
+            <i class="fa-solid fa-chart-bar"></i> Stats
+          </button>
+          <button class="card-dropdown-item" disabled={!log.url || !isOnline} onclick={() => { activeMenuCard = null; if (isOnline && log.url) openExternalUrl(log.url); }}>
+            <i class="fa-solid fa-globe"></i> Open Log
+          </button>
+          <button class="card-dropdown-item" disabled={!log.file_path} onclick={() => { activeMenuCard = null; openEiHtmlReport(log); }}>
+            <i class="fa-solid fa-file-import"></i> View Report
+          </button>
           <button class="card-dropdown-item overflow-item-mobile" disabled={!log.url || !isOnline} onclick={() => { activeMenuCard = null; if (isOnline && log.url) copySingleLink(log.url, log.file_path); }}>
             <i class="fa-solid fa-copy"></i> Copy Link
           </button>
