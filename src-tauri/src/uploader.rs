@@ -1144,6 +1144,9 @@ pub struct UploadRecord {
     /// "in_progress" = manual retry running, "done" = manual retry succeeded.
     #[serde(default)]
     pub wingman_status: Option<String>,
+    /// Detected Wingman account for this log (primary or an alt), if any.
+    #[serde(default)]
+    pub wingman_account: Option<String>,
     /// Discord webhook delivery state: None = not applicable (no webhook / not sent),
     /// Some(true) = pending re-send (last attempt failed; retried on next successful
     /// upload of this log, mirroring the Wingman failed→recovery pattern),
@@ -2439,6 +2442,7 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
         map_id: None,
         notes: Vec::new(),
         wingman_status: None,
+        wingman_account: None,
         discord_pending: None,
         vl_rank: None,
         boss_icon: None,
@@ -2705,6 +2709,21 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
 
     let config = crate::config::load_config(&app);
     let use_backup = config.use_backup_dps;
+    // Detect Wingman account (primary or alt) for this log.
+    if config.wingman_enabled {
+        let matched: Vec<String> = config
+            .wingman_accounts
+            .iter()
+            .filter(|a| local_players.iter().any(|p| p.account.eq_ignore_ascii_case(a)))
+            .cloned()
+            .collect();
+        let detected = if matched.len() == 1 {
+            Some(matched[0].clone())
+        } else {
+            config.wingman_accounts.first().cloned()
+        };
+        record.wingman_account = detected;
+    }
     let both_down = dps_report_down() && (backup_dps_down() || !use_backup);
     if both_down {
         record.status = "On Hold".to_string();
@@ -2819,6 +2838,21 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
     // park as On Hold. If the backup is reachable we route there instead (no park).
     let config = crate::config::load_config(&app);
     let use_backup = config.use_backup_dps;
+    // Detect Wingman account (primary or alt) for this log.
+    if config.wingman_enabled {
+        let matched: Vec<String> = config
+            .wingman_accounts
+            .iter()
+            .filter(|a| local_players.iter().any(|p| p.account.eq_ignore_ascii_case(a)))
+            .cloned()
+            .collect();
+        let detected = if matched.len() == 1 {
+            Some(matched[0].clone())
+        } else {
+            config.wingman_accounts.first().cloned()
+        };
+        record.wingman_account = detected;
+    }
     let both_down = dps_report_down() && (backup_dps_down() || !use_backup);
     if both_down {
         record.status = "On Hold".to_string();
@@ -5088,6 +5122,7 @@ pub async fn test_webhook(webhook: DiscordWebhook) -> Result<String, String> {
         is_favorite: None,
         notes: Vec::new(),
         wingman_status: None,
+        wingman_account: None,
         discord_pending: None,
         vl_rank: None,
         boss_icon: None,
@@ -5843,6 +5878,7 @@ mod discord_embed_tests {
             map_id: None,
             notes: Vec::new(),
             wingman_status: None,
+            wingman_account: None,
             discord_pending: None,
             vl_rank: None,
             boss_icon: None,

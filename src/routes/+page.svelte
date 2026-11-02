@@ -75,6 +75,7 @@
     is_wvw?: boolean; // World vs World log
     notes?: LogNote[];
     wingman_status?: string | null;
+    wingman_account?: string | null;
     /// Discord webhook delivery state: undefined/null = n/a, true = pending re-send
     /// (last send failed; retried on next successful upload of this log), false = delivered.
     discord_pending?: boolean | null;
@@ -196,6 +197,8 @@
   let autostart = $state(false);
   let wingman_enabled = $state(false);
   let wingman_account = $state("");
+  let wingman_accounts = $state<string[]>([]);
+  let wingmanAccountsText = $state("");
   let wvw_enabled = $state(false);
   let use_backup_dps = $state(true);
   let max_concurrent_uploads = $state(2);
@@ -4681,7 +4684,8 @@
           sound_notifications,
           desktop_notifications,
           wingman_enabled,
-          wingman_account,
+          wingman_account: wingman_accounts.length ? wingman_accounts[0] : wingman_account,
+          wingman_accounts: $state.snapshot(wingman_accounts),
           use_backup_dps,
           max_concurrent_uploads,
           watch_stability_delay_ms,
@@ -5040,6 +5044,11 @@ async function testWebhook(wh: any) {
       desktop_notifications = config.desktop_notifications ?? true;
       wingman_enabled = config.wingman_enabled ?? false;
       wingman_account = config.wingman_account ?? "";
+      wingman_accounts = config.wingman_accounts ?? [];
+      if (wingman_accounts.length === 0 && wingman_account) {
+        wingman_accounts = [wingman_account];
+      }
+      wingmanAccountsText = wingman_accounts.join("\n");
       wvw_enabled = config.wvw_enabled ?? false;
       use_backup_dps = config.use_backup_dps ?? true;
       max_concurrent_uploads = config.max_concurrent_uploads ?? 2;
@@ -5130,7 +5139,8 @@ async function testWebhook(wh: any) {
           desktop_notifications,
           sessions: $state.snapshot(sessions),
           wingman_enabled,
-          wingman_account,
+          wingman_account: wingman_accounts.length ? wingman_accounts[0] : wingman_account,
+          wingman_accounts: $state.snapshot(wingman_accounts),
           wvw_enabled,
           max_concurrent_uploads,
           watch_stability_delay_ms,
@@ -5467,6 +5477,11 @@ async function testWebhook(wh: any) {
           {/if}
         {:else if log.status === "Processing"}
           <span class="status-pill sp-processing">⧗ Elite Insights processing</span>
+        {/if}
+        {#if log.wingman_account && wingman_accounts.length > 1 && log.wingman_account !== wingman_accounts[0]}
+          <span class="wm-chip wm-imported" title={`Alt account: ${log.wingman_account}`} style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+            Alt
+          </span>
         {/if}
         {#if wingman_enabled && wingmanQueue.includes(log.file_path)}
           <span class="wm-chip wm-sending" title="Queued for Wingman import — will be processed shortly.">
@@ -7385,6 +7400,11 @@ async function testWebhook(wh: any) {
                   <label for="wingman-acc" style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">GW2 Account Name</label>
                   <input id="wingman-acc" type="text" placeholder="e.g. Username.1234" bind:value={wingman_account} style="width: 100%; max-width: 320px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); padding: 6px; border-radius: 4px; color: white; font-size: 11px; outline: none;"/>
                   <span class="help" style="display: block; margin-top: 4px;">Required by Wingman to link combat uploads directly to your account dashboard.</span>
+                  <div style="margin-top: 8px;">
+                    <label for="wingman-alts" style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Alt accounts (one per line)</label>
+                    <textarea id="wingman-alts" bind:value={wingmanAccountsText} onblur={() => { wingman_accounts = wingmanAccountsText.split(/\n/).map(s => s.trim()).filter(Boolean); }} style="width: 100%; max-width: 320px; min-height: 60px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); padding: 6px; border-radius: 4px; color: white; font-size: 11px; outline: none;"></textarea>
+                    <span class="help" style="display: block; margin-top: 4px;">Enter each alt account name on its own line. First account is primary.</span>
+                  </div>
                 </div>
               {/if}
             </div>
