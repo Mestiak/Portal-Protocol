@@ -1616,6 +1616,26 @@ pub async fn open_ei_html_report(app: AppHandle, file_path: String) -> Result<St
     let path_to_open = if copy_ok {
         // Remove the original EI output (now safely cached).
         let _ = std::fs::remove_file(&html_path);
+        // EI may emit more than one HTML variant (e.g. with a different
+        // encounter/result suffix); sweep any siblings that share this stem so
+        // the source log folder stays clean.
+        if let Some(stem) = input.file_stem().map(|s| s.to_string_lossy().to_string()) {
+            if let Some(parent) = input.parent() {
+                if let Ok(entries) = std::fs::read_dir(parent) {
+                    for e in entries.flatten() {
+                        let p = e.path();
+                        if p.extension().and_then(|x| x.to_str()) == Some("html")
+                            && p
+                                .file_name()
+                                .map(|n| n.to_string_lossy().starts_with(&stem))
+                                .unwrap_or(false)
+                        {
+                            let _ = std::fs::remove_file(&p);
+                        }
+                    }
+                }
+            }
+        }
         cache_path
     } else {
         // Cache write failed — open the original output directly.
