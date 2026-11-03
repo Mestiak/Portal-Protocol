@@ -392,10 +392,12 @@ pub fn run_ei(app: &AppHandle, input: &Path) -> Result<Value, String> {
             if let Ok(entries) = std::fs::read_dir(parent) {
                 for e in entries.flatten() {
                     let p = e.path();
-                    if p.extension().and_then(|x| x.to_str()) == Some("log")
-                        && p.file_name().map(|n| n.to_string_lossy().starts_with(&stem)).unwrap_or(false)
-                    {
-                        let _ = std::fs::remove_file(&p);
+                    if let Some(ext) = p.extension().and_then(|x| x.to_str()) {
+                        if (ext == "log" || ext == "html")
+                            && p.file_name().map(|n| n.to_string_lossy().starts_with(&stem)).unwrap_or(false)
+                        {
+                            let _ = std::fs::remove_file(&p);
+                        }
                     }
                 }
             }
