@@ -2638,6 +2638,23 @@ pub fn parse_revealed_sources(bytes: &[u8]) -> Option<Vec<RevealedSourceEvent>> 
         }
     }
 
+    for i in 0..raw.len() {
+        if !(raw[i].buff_id == 890 || raw[i].skill_id == 890) { continue; }
+        let mut best: Option<(usize, u64)> = None;
+        for j in (0..i).rev() {
+            if raw[j].src_character != raw[i].src_character || raw[j].src_account != raw[i].src_account { continue; }
+            if raw[j].src_character.is_empty() && raw[j].src_account.is_empty() { continue; }
+            if raw[j].skill_id == 0 { continue; }
+            if raw[j].buff_id != 0 { continue; }
+            let dt = raw[i].time.saturating_sub(raw[j].time);
+            if dt > 1000 { break; }
+            if best.map_or(true, |(_, d)| dt < d) { best = Some((j, dt)); }
+        }
+        if let Some((j, _)) = best {
+            raw[i].trigger_skill_id = raw[j].skill_id;
+        }
+    }
+
     // Prefer BuffApply events for the Revealed buff (buff_id / skill_id 890):
     // dps.report and EI both attribute reveals to the buff caster, not to
     // whatever transient agent happened to be the StealthChange trigger.
