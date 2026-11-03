@@ -2502,9 +2502,7 @@ pub struct RevealedSourceEvent {
     pub dst_profession: u32,
     pub skill_id: u32,
     pub buff_id: u32,
-    pub trigger_skill_id: u32,
-    pub trigger_skill_id2: u32,
-    pub trigger_skill_id3: u32,
+    pub trigger_skill_ids: Vec<u32>,
     pub src_character: String,
     pub src_account: String,
     pub src_profession: u32,
@@ -2608,9 +2606,7 @@ pub fn parse_revealed_sources(bytes: &[u8]) -> Option<Vec<RevealedSourceEvent>> 
             dst_profession: dst.2,
             skill_id: ru32(&data, base + 36).unwrap_or(0),
             buff_id: ru32(&data, base + 24).unwrap_or(0),
-            trigger_skill_id: 0,
-            trigger_skill_id2: 0,
-            trigger_skill_id3: 0,
+            trigger_skill_ids: Vec::new(),
             src_character: source.0,
             src_account: source.1,
             src_profession: source.2,
@@ -2635,16 +2631,14 @@ pub fn parse_revealed_sources(bytes: &[u8]) -> Option<Vec<RevealedSourceEvent>> 
             if raw[j].skill_id == 0 { continue; }
             if raw[j].buff_id != 0 { continue; }
             let dt = raw[i].time.saturating_sub(raw[j].time);
-            if dt > 1000 { break; }
+            if dt > 5000 { break; }
             if !collected.contains(&raw[j].skill_id) {
                 collected.push(raw[j].skill_id);
-                if collected.len() >= 3 { break; }
+                if collected.len() >= 10 { break; }
             }
         }
         if !collected.is_empty() {
-            raw[i].trigger_skill_id = collected.get(0).copied().unwrap_or(0);
-            raw[i].trigger_skill_id2 = collected.get(1).copied().unwrap_or(0);
-            raw[i].trigger_skill_id3 = collected.get(2).copied().unwrap_or(0);
+            raw[i].trigger_skill_ids = collected;
         }
     }
 
