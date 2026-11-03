@@ -2630,7 +2630,7 @@ pub fn parse_revealed_sources(bytes: &[u8]) -> Option<Vec<RevealedSourceEvent>> 
         if !(raw[i].buff_id == 890 || raw[i].skill_id == 890) { continue; }
         let mut collected: Vec<u32> = Vec::new();
         for j in (0..i).rev() {
-            if raw[j].src_character != raw[i].src_character || raw[j].src_account != raw[i].src_account { continue; }
+            if raw[j].src_character != raw[i].src_character && raw[j].src_account != raw[i].src_account { continue; }
             if raw[j].src_character.is_empty() && raw[j].src_account.is_empty() { continue; }
             if raw[j].skill_id == 0 { continue; }
             if raw[j].buff_id != 0 { continue; }
