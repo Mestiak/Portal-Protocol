@@ -549,6 +549,45 @@ pub fn cached_local_ei_report(app: &AppHandle, file_path: &str) -> Option<Value>
 }
 
 /// Store a locally-parsed EI result keyed by the source file path.
+pub fn stats_cache_path(app: &AppHandle, file_path: &str) -> PathBuf {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    file_path.hash(&mut hasher);
+    let hash = hasher.finish();
+    let clean = file_path.replace(|c: char| !c.is_ascii_alphanumeric(), "_");
+    ei_cache_dir(app).join(format!("{}_stats_{:x}.json.gz", clean, hash))
+}
+
+pub fn load_stats_cache(app: &AppHandle, file_path: &str) -> Option<Value> {
+    let path = stats_cache_path(app, file_path);
+    if path.exists() {
+        if let Ok(gz) = std::fs::read(&path) {
+            use std::io::Read;
+            let mut decoder = flate2::read::GzDecoder::new(&gz[..]);
+            let mut s = String::new();
+            if decoder.read_to_string(&mut s).is_ok() {
+                if let Ok(v) = serde_json::from_str::<Value>(&s) {
+                    return Some(v);
+                }
+            }
+        }
+    }
+    None
+}
+
+pub fn store_stats_cache(app: &AppHandle, file_path: &str, data: Value) {
+    let path = stats_cache_path(app, file_path);
+    if let Ok(json_str) = serde_json::to_string(&data) {
+        use std::io::Write;
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        if encoder.write_all(json_str.as_bytes()).is_ok() {
+            if let Ok(gz) = encoder.finish() {
+                let _ = std::fs::write(path, gz);
+            }
+        }
+    }
+}
+
 pub fn store_local_ei_report(app: &AppHandle, file_path: &str, raw: Value) {
     let path = ei_cache_path_local(app, file_path);
     if let Ok(json_str) = serde_json::to_string(&raw) {

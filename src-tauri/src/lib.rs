@@ -393,6 +393,17 @@ async fn run_local_ei_parse(app: tauri::AppHandle, file_path: String) -> Result<
 }
 
 #[tauri::command]
+fn load_stats_cache(app: tauri::AppHandle, file_path: String) -> Result<Option<serde_json::Value>, String> {
+    Ok(crate::ei_runner::load_stats_cache(&app, &file_path))
+}
+
+#[tauri::command]
+fn store_stats_cache(app: tauri::AppHandle, file_path: String, data: serde_json::Value) -> Result<(), String> {
+    crate::ei_runner::store_stats_cache(&app, &file_path, data);
+    Ok(())
+}
+
+#[tauri::command]
 fn parse_local_revealed_sources(file_path: String) -> Result<Vec<serde_json::Value>, String> {
     let bytes = std::fs::read(&file_path).map_err(|e| e.to_string())?;
     let events = evtc_parser::parse_revealed_sources(&bytes)
@@ -1072,6 +1083,8 @@ pub fn run() {
             export_config,
             import_config,
             parse_local_revealed_sources,
+            load_stats_cache,
+            store_stats_cache,
             run_local_ei_parse,
             crate::uploader::get_log_full,
             crate::uploader::get_local_log_full,

@@ -443,10 +443,10 @@
   $effect(() => {
     if (!permalink && !localPath) return;
     const cacheKey = localPath || permalink;
-    const cached = statsCache.get(cacheKey);
-    if (cached) {
-      stats = cached.stats;
-      mechanics = cached.mechanics;
+    const cachedMem = statsCache.get(cacheKey);
+    if (cachedMem) {
+      stats = cachedMem.stats;
+      mechanics = cachedMem.mechanics;
       loading = false;
       activeTab = "statistics";
       return;
@@ -455,6 +455,20 @@
     loading = true; error = null; stats = null; mechanics = null;
     activeTab = "statistics";
     inflight = (async () => {
+      // Try compact cache first (instant)
+      if (localPath) {
+        try {
+          const cached = await invoke("load_stats_cache", { filePath: localPath }) as { stats: any; mechanics: any } | null;
+          if (cached) {
+            stats = cached.stats;
+            mechanics = cached.mechanics;
+            loading = false;
+            activeTab = "statistics";
+            inflight = null;
+            return;
+          }
+        } catch (e) {}
+      }
       try {
         let res: LogFull;
         if (localPath) {
@@ -544,6 +558,9 @@
         }
         mechanics = mech;
         statsCache.set(cacheKey, { stats: res.stats, mechanics: mech });
+        if (localPath) {
+          try { await invoke("store_stats_cache", { filePath: localPath, data: { stats: res.stats, mechanics: mech } }); } catch (e) {}
+        }
         // Non-Cerus fights only get the Boon Uptime tab — skip Statistics.
         // Harvest Temple defaults to Revealed if break data is present.
         const isHT = mechanics && /harvest temple/i.test(res.stats.boss_name);
