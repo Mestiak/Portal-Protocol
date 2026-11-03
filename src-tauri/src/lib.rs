@@ -1072,6 +1072,7 @@ pub fn run() {
             export_config,
             import_config,
             parse_local_revealed_sources,
+            run_local_ei_parse,
             crate::uploader::get_log_full,
             crate::uploader::get_local_log_full,
             crate::uploader::get_cache_size,
