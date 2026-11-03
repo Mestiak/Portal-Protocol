@@ -1002,6 +1002,10 @@
     border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px;
   }
   .stat-note b { color: var(--text); }
+  .revealed-disclaimer {
+    font-size: 11px; color: var(--text); background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border: 1px solid var(--accent); border-radius: 10px; padding: 10px 14px; margin-bottom: 10px;
+  }
 
   /* ── Timeline chart ── */
   .timeline { background: var(--bg-sidebar); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
