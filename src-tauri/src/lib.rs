@@ -378,6 +378,21 @@ async fn pick_log_files() -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
+async fn run_local_ei_parse(app: tauri::AppHandle, file_path: String) -> Result<serde_json::Value, String> {
+    let path = std::path::PathBuf::from(&file_path);
+    if !path.exists() {
+        return Err(format!("local log file does not exist: {}", file_path));
+    }
+    let app_clone = app.clone();
+    let handle = tauri::async_runtime::spawn_blocking(move || {
+        crate::ei_runner::run_ei(&app_clone, &path)
+    });
+    let raw = handle.await.map_err(|e| format!("EI task failed: {}", e))??;
+    crate::ei_runner::store_local_ei_report(&app, &file_path, raw.clone());
+    Ok(raw)
+}
+
+#[tauri::command]
 fn parse_local_revealed_sources(file_path: String) -> Result<Vec<serde_json::Value>, String> {
     let bytes = std::fs::read(&file_path).map_err(|e| e.to_string())?;
     let events = evtc_parser::parse_revealed_sources(&bytes)
