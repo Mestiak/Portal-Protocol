@@ -102,7 +102,7 @@
   };
 
   let revealedByPhase = $derived.by(() => {
-    const map = new Map<string, { phase: string; time: number; player: string; toonName: string; profession: string; source: string }>();
+    const map = new Map<string, { phase: string; time: number; player: string; toonName: string; profession: string; source: string; sourceIcon: string }>();
     for (const r of mechanics?.revealedBreakers ?? []) {
       const phase = r.phaseName || "Global";
       const existing = map.get(phase);
@@ -114,6 +114,7 @@
           toonName: r.toonName || r.player || "Unknown",
           profession: r.profession || "",
           source: r.source || "Unknown",
+          sourceIcon: r.sourceIcon || "",
         });
       }
     }
@@ -485,8 +486,8 @@
                     Math.abs(cur.t - ev.time) < Math.abs(best.t - ev.time) ? cur : best
                   , cands[0]);
                   const src = closest.row;
-                  const skillMap: Record<string, { name?: string }> =
-                    ((res as any)?.raw?.skillMap as Record<string, { name?: string }>) || {};
+                  const skillMap: Record<string, { name?: string; icon?: string }> =
+                    ((res as any)?.raw?.skillMap as Record<string, { name?: string; icon?: string }>) || {};
                   const skillIds = Array.isArray(src.trigger_skill_ids) ? src.trigger_skill_ids : [];
                   const srcs = Array.isArray(src.trigger_srcs) ? src.trigger_srcs : [];
                   const skillId =
@@ -505,6 +506,7 @@
                     ...ev,
                     source,
                     sourceId: (skillId || src.skill_id) ?? ev.sourceId,
+                    sourceIcon: skillName ? (skillMap["s" + skillId]?.icon || "") : "",
                   };
                 }),
               };
@@ -718,7 +720,12 @@
                                 </div>
                               </td>
                               <td class="col-time-reveal">{fmtClock(r.time)}</td>
-                              <td class="col-source-reveal">{r.source}</td>
+                              <td class="col-source-reveal">
+                                {#if r.sourceIcon}
+                                  <img src={r.sourceIcon} alt="" class="source-icon" />
+                                {/if}
+                                {r.source}
+                              </td>
                             </tr>
                           {/each}
                         </tbody>

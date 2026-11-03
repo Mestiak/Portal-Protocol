@@ -120,6 +120,7 @@ export interface RevealedEvent {
   profession: string;   // elite-spec string → /professions/{profession}.png
   source: string;       // Revealed / player-name / add-name
   sourceId?: number;
+  sourceIcon?: string;
 }
 
 export interface MechanicReport {
