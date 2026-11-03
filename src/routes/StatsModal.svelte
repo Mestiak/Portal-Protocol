@@ -92,6 +92,7 @@
     "Mordremoth": "/bosses/themordremothvoid.png",
     "Soo-Won": "/bosses/thesoowonvoid.png",
     "Void Saltspray Dragon": "/bosses/voidsaltspraydragon.png",
+    "Void Time Caster": "/bosses/timecaster.png",
     "Void Goliath": "/bosses/voidgoliath.png",
     "Void Obliterator": "/bosses/voidobliterator.png",
     "Giants": "/bosses/giants.png",
