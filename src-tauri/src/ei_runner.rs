@@ -1859,3 +1859,29 @@ mod tests {
         );
     }
 }
+
+/// Sweep leftover Elite Insights `.log` and `.html` files created next to logs.
+/// Only deletes a sidecar when a matching `.evtc`/`.zevtc` sibling exists.
+pub fn cleanup_leftover_ei_files(root: &std::path::Path) {
+    fn walk(dir: &std::path::Path) {
+        let Ok(entries) = std::fs::read_dir(dir) else { return; };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                walk(&p);
+                continue;
+            }
+            let ext = p.extension().and_then(|x| x.to_str()).unwrap_or("");
+            if ext != "log" && ext != "html" { continue; }
+            let stem = match p.file_stem().and_then(|s| s.to_str()) { Some(s) => s, None => continue };
+            let parent = match p.parent() { Some(x) => x, None => continue };
+            // Only delete if a matching evtc/zevtc sibling exists.
+            let has_ev = parent.join(format!("{}.evtc", stem)).exists()
+                || parent.join(format!("{}.zevtc", stem)).exists();
+            if has_ev {
+                let _ = std::fs::remove_file(&p);
+            }
+        }
+    }
+    if root.is_dir() { walk(root); }
+}

@@ -937,6 +937,10 @@ pub fn run() {
             crate::config::load_history_into_set(app.handle());
             if config.auto_upload && !config.logs_directory.is_empty() {
                 let _ = watcher.start(&config.logs_directory, tx.clone(), config.watch_stability_delay_ms, config.watch_poll_interval_ms);
+                let cleanup_dir = config.logs_directory.clone();
+                tauri::async_runtime::spawn(async move {
+                    crate::ei_runner::cleanup_leftover_ei_files(std::path::Path::new(&cleanup_dir));
+                });
             }
 
             // Start minimized to the system tray if enabled (window hidden until summoned).
