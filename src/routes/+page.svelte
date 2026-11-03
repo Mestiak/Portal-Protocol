@@ -1824,7 +1824,7 @@
     // Uploading/Parsing.
     const TERMINAL = ["Processing", "Completed", "Duplicate", "Failed", "On Hold", "Off Hold"];
     // Parallel pipeline: Parsing and Uploading can both be active simultaneously
-    if (log.ei_done != null && log.upload_done != null) {
+    if (log.status !== "On Hold" && log.ei_done != null && log.upload_done != null) {
       if (log.ei_done === false && log.upload_done === false) {
         const parsingIdx = order.indexOf("Parsing");
         const uploadIdx = order.indexOf("Uploading");
@@ -1841,6 +1841,11 @@
         if (parsingIdx >= 0) stages[parsingIdx].state = "active";
         if (uploadIdx >= 0) stages[uploadIdx].state = "done";
       }
+    } else if (log.status === "On Hold") {
+      const parsingIdx = order.indexOf("Parsing");
+      const uploadIdx = order.indexOf("Uploading");
+      if (log.ei_done === true && parsingIdx >= 0) stages[parsingIdx].state = "done";
+      if (uploadIdx >= 0) stages[uploadIdx].state = "pending";
     }
     stages.push({ label: "Resolved", state: (log.status === "On Hold" ? "pending" : (TERMINAL.includes(log.status) ? "done" : "pending")) });
     return stages;
