@@ -447,7 +447,15 @@
       try {
         let res: LogFull;
         if (localPath) {
-          res = await invoke("get_local_log_full", { filePath: localPath }) as LogFull;
+          try {
+            res = await invoke("get_local_log_full", { filePath: localPath }) as LogFull;
+          } catch (e) {
+            if (permalink) {
+              res = await invoke("get_log_full", { permalink }) as LogFull;
+            } else {
+              throw e;
+            }
+          }
         } else if (permalink) {
           res = await invoke("get_log_full", { permalink }) as LogFull;
         } else {
