@@ -389,6 +389,10 @@ async fn run_local_ei_parse(app: tauri::AppHandle, file_path: String) -> Result<
     });
     let raw = handle.await.map_err(|e| format!("EI task failed: {}", e))??;
     crate::ei_runner::store_local_ei_report(&app, &file_path, raw.clone());
+    // Clean up arcdps sidecar files (.log/.html) created by EI in the same folder.
+    if let Some(parent) = std::path::Path::new(&file_path).parent() {
+        crate::ei_runner::cleanup_leftover_ei_files(parent);
+    }
     Ok(raw)
 }
 
