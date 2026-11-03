@@ -6021,15 +6021,15 @@ async function testWebhook(wh: any) {
           <button class="card-dropdown-item" disabled={!log.file_path} onclick={() => { activeMenuCard = null; openEiHtmlReport(log); }}>
             <i class="fa-solid fa-file-import"></i> View Report
           </button>
-          <button class="card-dropdown-item overflow-item-mobile" disabled={!log.url || !isOnline} onclick={() => { activeMenuCard = null; if (isOnline && log.url) copySingleLink(log.url, log.file_path); }}>
+          <button class="card-dropdown-item overflow-item-mobile" disabled={!log.url || !isOnline || log.status === "On Hold"} onclick={() => { activeMenuCard = null; if (isOnline && log.url && log.status !== "On Hold") copySingleLink(log.url, log.file_path); }}>
             <i class="fa-solid fa-copy"></i> Copy Link
           </button>
           
-          <button class="card-dropdown-item overflow-item-mobile" disabled={!log.url || !isOnline} onclick={() => { activeMenuCard = null; if (isOnline && log.url) openReplayModal(log.url); }}>
+          <button class="card-dropdown-item overflow-item-mobile" disabled={!log.url || !isOnline || log.status === "On Hold"} onclick={() => { activeMenuCard = null; if (isOnline && log.url && log.status !== "On Hold") openReplayModal(log.url); }}>
             <i class="fa-solid fa-gamepad"></i> 2D Replay
           </button>
 
-          <button class="card-dropdown-item overflow-item-mobile" onclick={() => { activeMenuCard = null; toggleNotes(cardId(log)); }}>
+          <button class="card-dropdown-item overflow-item-mobile" disabled={log.status === "On Hold"} onclick={() => { activeMenuCard = null; if (log.status !== "On Hold") toggleNotes(cardId(log)); }}>
             <i class="fa-solid fa-note-sticky"></i> Notes {#if log.notes && log.notes.length > 0}<span class="notes-count">({log.notes.length})</span>{/if}
           </button>
 
@@ -6039,7 +6039,7 @@ async function testWebhook(wh: any) {
             </button>
           {/if}
 
-          <button class="card-dropdown-item overflow-item-mobile" onclick={() => { activeMenuCard = null; openSavePicker([log], (sid) => addLogToSession(log.file_path, sid)); }}>
+          <button class="card-dropdown-item overflow-item-mobile" disabled={log.status === "On Hold"} onclick={() => { activeMenuCard = null; if (log.status !== "On Hold") openSavePicker([log], (sid) => addLogToSession(log.file_path, sid)); }}>
             <i class="fa-solid fa-folder-open"></i> Save to Session
           </button>
 
