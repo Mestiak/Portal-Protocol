@@ -2502,6 +2502,7 @@ pub struct RevealedSourceEvent {
     pub dst_profession: u32,
     pub skill_id: u32,
     pub buff_id: u32,
+    pub trigger_skill_id: u32,
     pub src_character: String,
     pub src_account: String,
     pub src_profession: u32,
@@ -2605,6 +2606,7 @@ pub fn parse_revealed_sources(bytes: &[u8]) -> Option<Vec<RevealedSourceEvent>> 
             dst_profession: dst.2,
             skill_id: ru32(&data, base + 36).unwrap_or(0),
             buff_id: ru32(&data, base + 24).unwrap_or(0),
+            trigger_skill_id: 0,
             src_character: source.0,
             src_account: source.1,
             src_profession: source.2,
@@ -2612,13 +2614,29 @@ pub fn parse_revealed_sources(bytes: &[u8]) -> Option<Vec<RevealedSourceEvent>> 
     }
 
     let start_time = out.first().map(|e| e.time).unwrap_or(0);
-    let raw: Vec<_> = out
+    let mut raw: Vec<_> = out
         .into_iter()
         .map(|mut e| {
             e.time = e.time.saturating_sub(start_time);
             e
         })
         .collect();
+
+    for i in 0..raw.len() {
+        if !(raw[i].buff_id == 890 || raw[i].skill_id == 890) { continue; }
+        let mut best: Option<(usize, u64)> = None;
+        for j in (0..i).rev() {
+            if raw[j].dst_account != raw[i].dst_account && raw[j].dst_character != raw[i].dst_character { continue; }
+            if raw[j].skill_id == 0 { continue; }
+            if raw[j].buff_id != 0 { continue; }
+            let dt = raw[i].time.saturating_sub(raw[j].time);
+            if dt > 500 { break; }
+            if best.map_or(true, |(_, d)| dt < d) { best = Some((j, dt)); }
+        }
+        if let Some((j, _)) = best {
+            raw[i].trigger_skill_id = raw[j].skill_id;
+        }
+    }
 
     // Prefer BuffApply events for the Revealed buff (buff_id / skill_id 890):
     // dps.report and EI both attribute reveals to the buff caster, not to

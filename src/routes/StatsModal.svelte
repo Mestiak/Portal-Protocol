@@ -487,10 +487,12 @@
                   const src = closest.row;
                   const skillMap: Record<string, { name?: string }> =
                     ((res as any)?.raw?.skillMap as Record<string, { name?: string }>) || {};
+                  const skillId =
+                    typeof src.trigger_skill_id === "number" && src.trigger_skill_id > 0
+                      ? src.trigger_skill_id
+                      : (typeof src.skill_id === "number" ? src.skill_id : 0);
                   const skillName =
-                    typeof src.skill_id === "number" && src.skill_id > 0
-                      ? skillMap["s" + src.skill_id]?.name || ""
-                      : "";
+                    skillId > 0 ? skillMap["s" + skillId]?.name || "" : "";
                   const localSource = [src.src_character, src.src_account, src.src_profession]
                     .filter((v) => typeof v === "string" && v.trim() !== "")
                     .join(" | ");
@@ -498,7 +500,7 @@
                   return {
                     ...ev,
                     source,
-                    sourceId: src.skill_id ?? ev.sourceId,
+                    sourceId: (skillId || src.skill_id) ?? ev.sourceId,
                   };
                 }),
               };
