@@ -3803,7 +3803,9 @@ html.reduce-motion .session-pill {
 }
 
 .disabled-offline,
-.disabled-resolving {
+.disabled-resolving,
+.action-btn:disabled,
+.card-dropdown-item:disabled {
   opacity: .45;
   cursor: not-allowed;
 }

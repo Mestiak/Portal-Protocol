@@ -1824,7 +1824,7 @@
     // Uploading/Parsing.
     const TERMINAL = ["Processing", "Completed", "Duplicate", "Failed", "On Hold", "Off Hold"];
     // Parallel pipeline: Parsing and Uploading can both be active simultaneously
-    if (log.ei_done != null && log.upload_done != null) {
+    if (log.status !== "On Hold" && log.ei_done != null && log.upload_done != null) {
       if (log.ei_done === false && log.upload_done === false) {
         const parsingIdx = order.indexOf("Parsing");
         const uploadIdx = order.indexOf("Uploading");
@@ -1841,8 +1841,13 @@
         if (parsingIdx >= 0) stages[parsingIdx].state = "active";
         if (uploadIdx >= 0) stages[uploadIdx].state = "done";
       }
+    } else if (log.status === "On Hold") {
+      const parsingIdx = order.indexOf("Parsing");
+      const uploadIdx = order.indexOf("Uploading");
+      if (log.ei_done === true && parsingIdx >= 0) stages[parsingIdx].state = "done";
+      if (uploadIdx >= 0) stages[uploadIdx].state = "pending";
     }
-    stages.push({ label: "Resolved", state: TERMINAL.includes(log.status) ? "done" : "pending" });
+    stages.push({ label: "Resolved", state: (log.status === "On Hold" ? "pending" : (TERMINAL.includes(log.status) ? "done" : "pending")) });
     return stages;
   }
 
@@ -5947,7 +5952,7 @@ async function testWebhook(wh: any) {
 
     <!-- Direct Quick Actions (responsive: hide/collapse on small screens) -->
     <div class="custom-tooltip-container quick-action-desktop-only">
-      <button class="action-btn secondary-action-btn" disabled={!log.url || !isOnline} onclick={(e) => { e.stopPropagation(); if (isOnline && log.url) copySingleLink(log.url, log.file_path); }}>
+      <button class="action-btn secondary-action-btn" disabled={!log.url || !isOnline || log.status === "On Hold"} onclick={(e) => { e.stopPropagation(); if (isOnline && log.url && log.status !== "On Hold") copySingleLink(log.url, log.file_path); }}>
         {#if copiedLogPath === log.file_path}
           <i class="fa-solid fa-check" style="color: var(--success); animation: copied-pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);"></i>
         {:else}
@@ -5959,14 +5964,14 @@ async function testWebhook(wh: any) {
     </div>
 
     <div class="custom-tooltip-container quick-action-desktop-only">
-      <button class="action-btn secondary-action-btn" disabled={!log.url || !isOnline} onclick={(e) => { e.stopPropagation(); if (isOnline && log.url) openReplayModal(log.url); }}>
+      <button class="action-btn secondary-action-btn" disabled={!log.url || !isOnline || log.status === "On Hold"} onclick={(e) => { e.stopPropagation(); if (isOnline && log.url && log.status !== "On Hold") openReplayModal(log.url); }}>
         <i class="fa-solid fa-gamepad"></i> <span class="btn-text">Replay</span>
       </button>
       <div class="custom-tooltip">Open 2D Fight Replay</div>
     </div>
 
     <div class="custom-tooltip-container quick-action-desktop-only">
-      <button class="action-btn secondary-action-btn quick-action-desktop-only btn-notes" class:active-toggle={notesOpen[cardId(log)]} class:has-notes={log.notes && log.notes.length > 0} title={log.notes && log.notes.length > 0 ? `Notes (${log.notes.length})` : "Notes"} onclick={(e) => { e.stopPropagation(); toggleNotes(cardId(log)); }}>
+      <button class="action-btn secondary-action-btn quick-action-desktop-only btn-notes" class:active-toggle={notesOpen[cardId(log)]} class:has-notes={log.notes && log.notes.length > 0} title={log.notes && log.notes.length > 0 ? `Notes (${log.notes.length})` : "Notes"} disabled={log.status === "On Hold"} onclick={(e) => { e.stopPropagation(); if (log.status !== "On Hold") toggleNotes(cardId(log)); }}>
         <i class="fa-solid fa-note-sticky"></i> <span class="btn-text">Notes</span> {#if log.notes && log.notes.length > 0}<span class="badge-count">{log.notes.length}</span>{/if}
       </button>
       <div class="custom-tooltip">Notes</div>
@@ -5985,7 +5990,7 @@ async function testWebhook(wh: any) {
       </button>
     {:else}
       <div class="custom-tooltip-container quick-action-desktop-only">
-        <button class="action-btn secondary-action-btn quick-action-desktop-only" onclick={(e) => { e.stopPropagation(); openSavePicker([log], (sid) => addLogToSession(log.file_path, sid)); }}>
+        <button class="action-btn secondary-action-btn quick-action-desktop-only" disabled={log.status === "On Hold"} onclick={(e) => { e.stopPropagation(); if (log.status !== "On Hold") openSavePicker([log], (sid) => addLogToSession(log.file_path, sid)); }}>
           <i class="fa-solid fa-folder-open"></i> <span class="btn-text">Save</span>
         </button>
         <div class="custom-tooltip">Save to Session</div>
@@ -6016,15 +6021,15 @@ async function testWebhook(wh: any) {
           <button class="card-dropdown-item" disabled={!log.file_path} onclick={() => { activeMenuCard = null; openEiHtmlReport(log); }}>
             <i class="fa-solid fa-file-import"></i> View Report
           </button>
-          <button class="card-dropdown-item overflow-item-mobile" disabled={!log.url || !isOnline} onclick={() => { activeMenuCard = null; if (isOnline && log.url) copySingleLink(log.url, log.file_path); }}>
+          <button class="card-dropdown-item overflow-item-mobile" disabled={!log.url || !isOnline || log.status === "On Hold"} onclick={() => { activeMenuCard = null; if (isOnline && log.url && log.status !== "On Hold") copySingleLink(log.url, log.file_path); }}>
             <i class="fa-solid fa-copy"></i> Copy Link
           </button>
           
-          <button class="card-dropdown-item overflow-item-mobile" disabled={!log.url || !isOnline} onclick={() => { activeMenuCard = null; if (isOnline && log.url) openReplayModal(log.url); }}>
+          <button class="card-dropdown-item overflow-item-mobile" disabled={!log.url || !isOnline || log.status === "On Hold"} onclick={() => { activeMenuCard = null; if (isOnline && log.url && log.status !== "On Hold") openReplayModal(log.url); }}>
             <i class="fa-solid fa-gamepad"></i> 2D Replay
           </button>
 
-          <button class="card-dropdown-item overflow-item-mobile" onclick={() => { activeMenuCard = null; toggleNotes(cardId(log)); }}>
+          <button class="card-dropdown-item overflow-item-mobile" disabled={log.status === "On Hold"} onclick={() => { activeMenuCard = null; if (log.status !== "On Hold") toggleNotes(cardId(log)); }}>
             <i class="fa-solid fa-note-sticky"></i> Notes {#if log.notes && log.notes.length > 0}<span class="notes-count">({log.notes.length})</span>{/if}
           </button>
 
@@ -6034,7 +6039,7 @@ async function testWebhook(wh: any) {
             </button>
           {/if}
 
-          <button class="card-dropdown-item overflow-item-mobile" onclick={() => { activeMenuCard = null; openSavePicker([log], (sid) => addLogToSession(log.file_path, sid)); }}>
+          <button class="card-dropdown-item overflow-item-mobile" disabled={log.status === "On Hold"} onclick={() => { activeMenuCard = null; if (log.status !== "On Hold") openSavePicker([log], (sid) => addLogToSession(log.file_path, sid)); }}>
             <i class="fa-solid fa-folder-open"></i> Save to Session
           </button>
 
