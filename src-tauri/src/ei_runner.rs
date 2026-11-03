@@ -1906,6 +1906,8 @@ mod tests {
 pub fn cleanup_leftover_ei_files(root: &std::path::Path) {
     fn walk(dir: &std::path::Path) {
         let Ok(entries) = std::fs::read_dir(dir) else { return; };
+        let mut has_ev = false;
+        let mut sidecars: Vec<std::path::PathBuf> = Vec::new();
         for e in entries.flatten() {
             let p = e.path();
             if p.is_dir() {
@@ -1913,16 +1915,20 @@ pub fn cleanup_leftover_ei_files(root: &std::path::Path) {
                 continue;
             }
             let ext = p.extension().and_then(|x| x.to_str()).unwrap_or("");
-            if ext != "log" && ext != "html" { continue; }
-            let stem = match p.file_stem().and_then(|s| s.to_str()) { Some(s) => s, None => continue };
-            let parent = match p.parent() { Some(x) => x, None => continue };
-            // Only delete if a matching evtc/zevtc sibling exists.
-            let has_ev = parent.join(format!("{}.evtc", stem)).exists()
-                || parent.join(format!("{}.zevtc", stem)).exists();
-            if has_ev {
+            if ext == "evtc" || ext == "zevtc" {
+                has_ev = true;
+            } else if ext == "log" || ext == "html" {
+                sidecars.push(p);
+            }
+        }
+        // Only clean sidecars in folders that contain evtc/zevtc files,
+        // so we never touch unrelated user files.
+        if has_ev {
+            for p in sidecars {
                 let _ = std::fs::remove_file(&p);
             }
         }
     }
     if root.is_dir() { walk(root); }
 }
+
