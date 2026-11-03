@@ -435,12 +435,22 @@
     }
   }
 
-  // Module-level guard so a re-triggered effect (or double-open) can't stack
+  // Module-level cache so reopening a log is instant.
+  const statsCache = new Map<string, { stats: any; mechanics: any }>();
   // concurrent fetches to dps.report — on a flaky WiFi link a burst of large
   // (30MB+) responses can saturate the link and drop the connection.
   let inflight: Promise<unknown> | null = null;
   $effect(() => {
     if (!permalink && !localPath) return;
+    const cacheKey = localPath || permalink;
+    const cached = statsCache.get(cacheKey);
+    if (cached) {
+      stats = cached.stats;
+      mechanics = cached.mechanics;
+      loading = false;
+      activeTab = "statistics";
+      return;
+    }
     if (inflight) return;
     loading = true; error = null; stats = null; mechanics = null;
     activeTab = "statistics";
@@ -533,6 +543,7 @@
           // Local merge skipped — no error to surface.
         }
         mechanics = mech;
+        statsCache.set(cacheKey, { stats: res.stats, mechanics: mech });
         // Non-Cerus fights only get the Boon Uptime tab — skip Statistics.
         // Harvest Temple defaults to Revealed if break data is present.
         const isHT = mechanics && /harvest temple/i.test(res.stats.boss_name);
