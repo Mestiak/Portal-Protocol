@@ -491,16 +491,13 @@
                     typeof src.skill_id === "number" && src.skill_id > 0
                       ? skillMap["s" + src.skill_id]?.name || ""
                       : "";
-                  const source = [skillName]
-                    .filter(Boolean)
+                  const localSource = [src.src_character, src.src_account, src.src_profession]
+                    .filter((v) => typeof v === "string" && v.trim() !== "")
                     .join(" | ");
-                  const fallback =
-                    skillName
-                      ? ev.source
-                      : `${ev.source}${typeof src.skill_id === "number" && src.skill_id > 0 ? ` (skill:${src.skill_id})` : ""}`;
+                  const source = skillName || localSource || ev.source || "Unknown";
                   return {
                     ...ev,
-                    source: source || fallback,
+                    source,
                     sourceId: src.skill_id ?? ev.sourceId,
                   };
                 }),
