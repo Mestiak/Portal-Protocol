@@ -5971,7 +5971,7 @@ async function testWebhook(wh: any) {
     </div>
 
     <div class="custom-tooltip-container quick-action-desktop-only">
-      <button class="action-btn secondary-action-btn quick-action-desktop-only btn-notes" class:active-toggle={notesOpen[cardId(log)]} class:has-notes={log.notes && log.notes.length > 0} title={log.notes && log.notes.length > 0 ? `Notes (${log.notes.length})` : "Notes"} onclick={(e) => { e.stopPropagation(); toggleNotes(cardId(log)); }}>
+      <button class="action-btn secondary-action-btn quick-action-desktop-only btn-notes" class:active-toggle={notesOpen[cardId(log)]} class:has-notes={log.notes && log.notes.length > 0} title={log.notes && log.notes.length > 0 ? `Notes (${log.notes.length})` : "Notes"} disabled={log.status === "On Hold"} onclick={(e) => { e.stopPropagation(); if (log.status !== "On Hold") toggleNotes(cardId(log)); }}>
         <i class="fa-solid fa-note-sticky"></i> <span class="btn-text">Notes</span> {#if log.notes && log.notes.length > 0}<span class="badge-count">{log.notes.length}</span>{/if}
       </button>
       <div class="custom-tooltip">Notes</div>
@@ -5990,7 +5990,7 @@ async function testWebhook(wh: any) {
       </button>
     {:else}
       <div class="custom-tooltip-container quick-action-desktop-only">
-        <button class="action-btn secondary-action-btn quick-action-desktop-only" onclick={(e) => { e.stopPropagation(); openSavePicker([log], (sid) => addLogToSession(log.file_path, sid)); }}>
+        <button class="action-btn secondary-action-btn quick-action-desktop-only" disabled={log.status === "On Hold"} onclick={(e) => { e.stopPropagation(); if (log.status !== "On Hold") openSavePicker([log], (sid) => addLogToSession(log.file_path, sid)); }}>
           <i class="fa-solid fa-folder-open"></i> <span class="btn-text">Save</span>
         </button>
         <div class="custom-tooltip">Save to Session</div>
