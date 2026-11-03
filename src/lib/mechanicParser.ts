@@ -352,7 +352,11 @@ function extractHarvestTemple(logData: Json, localRevealedSources?: { time: numb
 
   const matchPhase = (t: number) => {
     for (const p of mappedPhases) {
+      if (p.phaseName === "Full Fight") continue;
       if (t >= p.start && t <= p.end) return p.phaseName;
+    }
+    for (const p of mappedPhases) {
+      if (p.phaseName === "Full Fight" && t >= p.start && t <= p.end) return p.phaseName;
     }
     return "Global";
   };
