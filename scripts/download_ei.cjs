@@ -106,6 +106,34 @@ function getPlatformZip(assets) {
   return match;
 }
 
+function writeEiSettings() {
+  const settingsDir = path.join(EI_DIR, 'Settings');
+  if (!fs.existsSync(settingsDir)) {
+    fs.mkdirSync(settingsDir, { recursive: true });
+  }
+  const uploadConf = `# Portal Protocol - EI config for upload-time parsing.
+SaveOutHTML=false
+SaveOutCSV=false
+SaveOutJSON=true
+IndentJSON=false
+SaveOutTrace=false
+ParseCombatReplay=true
+`;
+  const htmlConf = `# Portal Protocol - EI config for on-demand HTML report generation.
+SaveOutHTML=true
+SaveOutCSV=false
+SaveOutJSON=true
+IndentJSON=false
+SaveOutTrace=false
+ParseCombatReplay=true
+HtmlExternalScripts=false
+HtmlCompressJson=false
+`;
+  fs.writeFileSync(path.join(settingsDir, 'portal_protocol.conf'), uploadConf);
+  fs.writeFileSync(path.join(settingsDir, 'portal_protocol_html.conf'), htmlConf);
+  console.log('EI settings written.');
+}
+
 async function main() {
   console.log('Checking EI parser...');
 
@@ -114,6 +142,7 @@ async function main() {
 
   if (fs.existsSync(cliPath)) {
     console.log('EI parser already installed.');
+    writeEiSettings();
     return;
   }
 
@@ -198,6 +227,8 @@ async function main() {
 
   // Clean up
   fs.rmSync(tmpDir, { recursive: true, force: true });
+
+  writeEiSettings();
 
   console.log('EI parser installed successfully!');
 }
