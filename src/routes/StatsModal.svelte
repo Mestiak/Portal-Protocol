@@ -95,6 +95,10 @@
     "Void Goliath": "/bosses/voidgoliath.png",
     "Void Obliterator": "/bosses/voidobliterator.png",
     "Giants": "/bosses/giants.png",
+    "Purification 1": "/bosses/purification.png",
+    "Purification 2": "/bosses/purification.png",
+    "Purification 3": "/bosses/purification.png",
+    "Purification 4": "/bosses/purification.png",
   };
 
   let revealedByPhase = $derived.by(() => {
