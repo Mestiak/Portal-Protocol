@@ -488,9 +488,11 @@
                   const skillMap: Record<string, { name?: string }> =
                     ((res as any)?.raw?.skillMap as Record<string, { name?: string }>) || {};
                   const skillId =
-                    typeof src.trigger_skill_id === "number" && src.trigger_skill_id > 0
+                    [src.trigger_skill_id, src.trigger_skill_id2, src.trigger_skill_id3]
+                      .find((id) => typeof id === "number" && id > 0 && skillMap["s" + id]?.name) ??
+                    (typeof src.trigger_skill_id === "number" && src.trigger_skill_id > 0
                       ? src.trigger_skill_id
-                      : (typeof src.skill_id === "number" ? src.skill_id : 0);
+                      : (typeof src.skill_id === "number" ? src.skill_id : 0));
                   const skillName =
                     skillId > 0 ? skillMap["s" + skillId]?.name || "" : "";
                   const localSource = [src.src_character, src.src_account, src.src_profession]

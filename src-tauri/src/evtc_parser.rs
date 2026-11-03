@@ -2503,6 +2503,8 @@ pub struct RevealedSourceEvent {
     pub skill_id: u32,
     pub buff_id: u32,
     pub trigger_skill_id: u32,
+    pub trigger_skill_id2: u32,
+    pub trigger_skill_id3: u32,
     pub src_character: String,
     pub src_account: String,
     pub src_profession: u32,
@@ -2607,6 +2609,8 @@ pub fn parse_revealed_sources(bytes: &[u8]) -> Option<Vec<RevealedSourceEvent>> 
             skill_id: ru32(&data, base + 36).unwrap_or(0),
             buff_id: ru32(&data, base + 24).unwrap_or(0),
             trigger_skill_id: 0,
+            trigger_skill_id2: 0,
+            trigger_skill_id3: 0,
             src_character: source.0,
             src_account: source.1,
             src_profession: source.2,
@@ -2624,23 +2628,7 @@ pub fn parse_revealed_sources(bytes: &[u8]) -> Option<Vec<RevealedSourceEvent>> 
 
     for i in 0..raw.len() {
         if !(raw[i].buff_id == 890 || raw[i].skill_id == 890) { continue; }
-        let mut best: Option<(usize, u64)> = None;
-        for j in (0..i).rev() {
-            if raw[j].dst_account != raw[i].dst_account && raw[j].dst_character != raw[i].dst_character { continue; }
-            if raw[j].skill_id == 0 { continue; }
-            if raw[j].buff_id != 0 { continue; }
-            let dt = raw[i].time.saturating_sub(raw[j].time);
-            if dt > 500 { break; }
-            if best.map_or(true, |(_, d)| dt < d) { best = Some((j, dt)); }
-        }
-        if let Some((j, _)) = best {
-            raw[i].trigger_skill_id = raw[j].skill_id;
-        }
-    }
-
-    for i in 0..raw.len() {
-        if !(raw[i].buff_id == 890 || raw[i].skill_id == 890) { continue; }
-        let mut best: Option<(usize, u64)> = None;
+        let mut collected: Vec<u32> = Vec::new();
         for j in (0..i).rev() {
             if raw[j].src_character != raw[i].src_character || raw[j].src_account != raw[i].src_account { continue; }
             if raw[j].src_character.is_empty() && raw[j].src_account.is_empty() { continue; }
@@ -2648,10 +2636,15 @@ pub fn parse_revealed_sources(bytes: &[u8]) -> Option<Vec<RevealedSourceEvent>> 
             if raw[j].buff_id != 0 { continue; }
             let dt = raw[i].time.saturating_sub(raw[j].time);
             if dt > 1000 { break; }
-            if best.map_or(true, |(_, d)| dt < d) { best = Some((j, dt)); }
+            if !collected.contains(&raw[j].skill_id) {
+                collected.push(raw[j].skill_id);
+                if collected.len() >= 3 { break; }
+            }
         }
-        if let Some((j, _)) = best {
-            raw[i].trigger_skill_id = raw[j].skill_id;
+        if !collected.is_empty() {
+            raw[i].trigger_skill_id = collected.get(0).copied().unwrap_or(0);
+            raw[i].trigger_skill_id2 = collected.get(1).copied().unwrap_or(0);
+            raw[i].trigger_skill_id3 = collected.get(2).copied().unwrap_or(0);
         }
     }
 
@@ -3682,3 +3675,4 @@ mod quick_play_tests {
         //   full_fight_duration:  start=9125826, end=9621577 → 495.751 sec
     }
 }
+

@@ -392,6 +392,8 @@ fn parse_local_revealed_sources(file_path: String) -> Result<Vec<serde_json::Val
                 "dst_profession": e.dst_profession,
                 "skill_id": e.skill_id,
                 "trigger_skill_id": e.trigger_skill_id,
+                "trigger_skill_id2": e.trigger_skill_id2,
+                "trigger_skill_id3": e.trigger_skill_id3,
                 "src_character": e.src_character,
                 "src_account": e.src_account,
                 "src_profession": e.src_profession,
