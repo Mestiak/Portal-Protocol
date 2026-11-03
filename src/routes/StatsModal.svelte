@@ -84,20 +84,36 @@
   // Revealed feature flag: hide the tab + table until the feature is complete.
   let revealFeatureReady = $state(true);
 
-  let revealedByPlayer = $derived.by(() => {
-    const map = new Map<string, { player: string; toonName: string; profession: string; times: number[]; sources: Set<string> }>();
+  const PHASE_ICON: Record<string, string> = {
+    "Jormag": "/bosses/thejormagvoid.png",
+    "Primordus": "/bosses/theprimordusvoid.png",
+    "Kralkatorrik": "/bosses/thekralkatorrikvoid.png",
+    "Zhaitan": "/bosses/thezhaitanvoid.png",
+    "Mordremoth": "/bosses/themordremothvoid.png",
+    "Soo-Won": "/bosses/thesoowonvoid.png",
+    "Void Saltspray Dragon": "/bosses/voidsaltspraydragon.png",
+    "Void Goliath": "/bosses/voidgoliath.png",
+    "Void Obliterator": "/bosses/voidobliterator.png",
+    "Giants": "/bosses/giants.png",
+  };
+
+  let revealedByPhase = $derived.by(() => {
+    const map = new Map<string, { phase: string; time: number; player: string; toonName: string; profession: string; source: string }>();
     for (const r of mechanics?.revealedBreakers ?? []) {
-      const key = r.player || r.toonName || "Unknown";
-      if (!map.has(key)) {
-        map.set(key, { player: key, toonName: r.toonName || key, profession: r.profession || "", times: [], sources: new Set() });
+      const phase = r.phaseName || "Global";
+      const existing = map.get(phase);
+      if (!existing || r.time < existing.time) {
+        map.set(phase, {
+          phase,
+          time: r.time,
+          player: r.player || r.toonName || "Unknown",
+          toonName: r.toonName || r.player || "Unknown",
+          profession: r.profession || "",
+          source: r.source || "Unknown",
+        });
       }
-      const entry = map.get(key)!;
-      entry.times.push(r.time);
-      if (r.source) entry.sources.add(r.source);
     }
-    return Array.from(map.values())
-      .map((e) => ({ ...e, times: e.times.slice().sort((a, b) => a - b), sources: Array.from(e.sources) }))
-      .sort((a, b) => (a.times[0] ?? 0) - (b.times[0] ?? 0));
+    return Array.from(map.values()).sort((a, b) => a.time - b.time);
   });
 
   // Sort: default DPS desc.
@@ -670,16 +686,21 @@
                       <table class="revealed-table">
                         <thead>
                           <tr>
+                            <th class="col-phase-reveal">Phase</th>
                             <th class="col-player-reveal">Player</th>
-                            <th class="col-time-reveal">First</th>
-                            <th class="col-time-reveal">Second</th>
-                            <th class="col-time-reveal">Third</th>
+                            <th class="col-time-reveal">Time</th>
                             <th class="col-source-reveal">Source</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {#each revealedByPlayer as r}
+                          {#each revealedByPhase as r}
                             <tr>
+                              <td class="col-phase-reveal">
+                                <div class="phase-cell-reveal">
+                                  <img class="phase-icon-reveal" src={PHASE_ICON[r.phase] || "/bosses/dragonvoid.png"} alt={r.phase} onerror={(e) => ((e.currentTarget as HTMLImageElement).src = "/bosses/dragonvoid.png")} />
+                                  <span>{r.phase}</span>
+                                </div>
+                              </td>
                               <td class="col-player-reveal">
                                 <div class="player-cell-reveal">
                                   <img class="prof-icon-reveal" src={profIcon(r.profession)} alt={r.profession} onerror={(e) => ((e.currentTarget as HTMLImageElement).src = "/professions/guardian.png")} />
@@ -689,10 +710,8 @@
                                   </div>
                                 </div>
                               </td>
-                              <td class="col-time-reveal">{r.times[0] != null ? fmtClock(r.times[0]) : "—"}</td>
-                              <td class="col-time-reveal">{r.times[1] != null ? fmtClock(r.times[1]) : "—"}</td>
-                              <td class="col-time-reveal">{r.times[2] != null ? fmtClock(r.times[2]) : "—"}{r.times.length > 3 ? ` (+${r.times.length - 3})` : ""}</td>
-                              <td class="col-source-reveal">{r.sources.length ? r.sources.join(", ") : "Unknown"}</td>
+                              <td class="col-time-reveal">{fmtClock(r.time)}</td>
+                              <td class="col-source-reveal">{r.source}</td>
                             </tr>
                           {/each}
                         </tbody>
