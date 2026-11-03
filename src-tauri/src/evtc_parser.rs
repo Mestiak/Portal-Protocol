@@ -2503,6 +2503,7 @@ pub struct RevealedSourceEvent {
     pub skill_id: u32,
     pub buff_id: u32,
     pub trigger_skill_ids: Vec<u32>,
+    pub trigger_srcs: Vec<String>,
     pub src_character: String,
     pub src_account: String,
     pub src_profession: u32,
@@ -2607,6 +2608,7 @@ pub fn parse_revealed_sources(bytes: &[u8]) -> Option<Vec<RevealedSourceEvent>> 
             skill_id: ru32(&data, base + 36).unwrap_or(0),
             buff_id: ru32(&data, base + 24).unwrap_or(0),
             trigger_skill_ids: Vec::new(),
+            trigger_srcs: Vec::new(),
             src_character: source.0,
             src_account: source.1,
             src_profession: source.2,
@@ -2625,20 +2627,21 @@ pub fn parse_revealed_sources(bytes: &[u8]) -> Option<Vec<RevealedSourceEvent>> 
     for i in 0..raw.len() {
         if !(raw[i].buff_id == 890 || raw[i].skill_id == 890) { continue; }
         let mut collected: Vec<u32> = Vec::new();
+        let mut collected_srcs: Vec<String> = Vec::new();
         for j in (0..i).rev() {
-            if raw[j].src_character != raw[i].src_character && raw[j].src_account != raw[i].src_account { continue; }
-            if raw[j].src_character.is_empty() && raw[j].src_account.is_empty() { continue; }
             if raw[j].skill_id == 0 { continue; }
             if raw[j].buff_id != 0 { continue; }
             let dt = raw[i].time.saturating_sub(raw[j].time);
             if dt > 5000 { break; }
             if !collected.contains(&raw[j].skill_id) {
                 collected.push(raw[j].skill_id);
+                collected_srcs.push(raw[j].src_character.clone());
                 if collected.len() >= 10 { break; }
             }
         }
         if !collected.is_empty() {
             raw[i].trigger_skill_ids = collected;
+            raw[i].trigger_srcs = collected_srcs;
         }
     }
 

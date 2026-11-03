@@ -488,13 +488,15 @@
                   const skillMap: Record<string, { name?: string }> =
                     ((res as any)?.raw?.skillMap as Record<string, { name?: string }>) || {};
                   const skillIds = Array.isArray(src.trigger_skill_ids) ? src.trigger_skill_ids : [];
+                  const srcs = Array.isArray(src.trigger_srcs) ? src.trigger_srcs : [];
                   const skillId =
                     skillIds.find((id: number) => typeof id === "number" && id > 0 && skillMap["s" + id]?.name) ??
                     skillIds.find((id: number) => typeof id === "number" && id > 0) ??
                     (typeof src.skill_id === "number" ? src.skill_id : 0);
                   const skillName =
                     skillId > 0 ? skillMap["s" + skillId]?.name || "" : "";
-                  const localSource = [src.src_character, src.src_account, src.src_profession]
+                  const attacker = srcs[0] && String(srcs[0]).trim() ? String(srcs[0]) : "";
+                  const localSource = attacker || [src.src_character, src.src_account, src.src_profession]
                     .filter((v) => typeof v === "string" && v.trim() !== "")
                     .join(" | ");
                   const source = skillName || (skillId > 0 ? `skill:${skillId}` : "") || localSource || ev.source || "Unknown";
