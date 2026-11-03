@@ -331,7 +331,10 @@ function extractHarvestTemple(logData: Json, localRevealedSources?: { time: numb
     if (n.includes("zhaitan")) return "Zhaitan";
     if (n.includes("mordremoth")) return "Mordremoth";
     if (n.includes("soowon") || n.includes("soo-won")) return "Soo-Won";
-    if (n.includes("heart") || n.includes("purification")) return "Purification";
+    if (n.includes("heart")) return "Heart Breakbar";
+    const purMatch = n.match(/purification\s*(\d+)/);
+    if (purMatch) return `Purification ${purMatch[1]}`;
+    if (n.includes("purification")) return "Purification";
     if (n.includes("void time caster")) return "Void Time Caster";
     if (n.includes("giant")) return "Giants";
     if (n.includes("saltspray")) return "Void Saltspray Dragon";
