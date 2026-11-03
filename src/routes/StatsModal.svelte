@@ -450,12 +450,16 @@
           try {
             res = await invoke("get_local_log_full", { filePath: localPath }) as LogFull;
           } catch (e) {
-            if (permalink) {
-              res = await invoke("get_log_full", { permalink }) as LogFull;
-            } else {
-              // Try to generate EI cache on demand
+            // Try on-demand EI parse first
+            try {
               await invoke("run_local_ei_parse", { filePath: localPath });
               res = await invoke("get_local_log_full", { filePath: localPath }) as LogFull;
+            } catch (e2) {
+              if (permalink) {
+                res = await invoke("get_log_full", { permalink }) as LogFull;
+              } else {
+                throw e2;
+              }
             }
           }
         } else if (permalink) {
