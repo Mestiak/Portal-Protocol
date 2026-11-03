@@ -705,6 +705,7 @@
                   {#if !mechanics || mechanics.revealedBreakers.length === 0}
                     <div class="stat-note">No Revealed breaks detected for this log.</div>
                   {:else}
+                    <div class="revealed-disclaimer">Shows the first player revealed per phase. Does not necessarily mean an early break — only the first reveal event recorded.</div>
                     <div class="revealed-wrap">
                       <table class="revealed-table">
                         <thead>
