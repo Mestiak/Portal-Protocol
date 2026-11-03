@@ -355,6 +355,17 @@ function extractHarvestTemple(logData: Json, localRevealedSources?: { time: numb
       if (p.phaseName === "Full Fight") continue;
       if (t >= p.start && t <= p.end) return p.phaseName;
     }
+    // Reveal often lands in the short gap between phases (e.g. just before
+    // Primordus starts). Prefer the next phase within a small tolerance.
+    const TOL = 10000;
+    let bestNext: { phaseName: string; start: number } | null = null;
+    for (const p of mappedPhases) {
+      if (p.phaseName === "Full Fight") continue;
+      if (p.start >= t && p.start - t <= TOL) {
+        if (!bestNext || p.start < bestNext.start) bestNext = { phaseName: p.phaseName, start: p.start };
+      }
+    }
+    if (bestNext) return bestNext.phaseName;
     for (const p of mappedPhases) {
       if (p.phaseName === "Full Fight" && t >= p.start && t <= p.end) return p.phaseName;
     }
