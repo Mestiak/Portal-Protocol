@@ -2634,11 +2634,12 @@ pub fn parse_revealed_sources(bytes: &[u8]) -> Option<Vec<RevealedSourceEvent>> 
             if raw[j].skill_id == 0 { continue; }
             if raw[j].buff_id != 0 { continue; }
             let dt = raw[i].time.saturating_sub(raw[j].time);
-            if dt > 5000 { break; }
+            if dt > 10000 { break; }
             if !collected.contains(&raw[j].skill_id) {
                 collected.push(raw[j].skill_id);
                 collected_srcs.push(raw[j].src_character.clone());
-                if collected.len() >= 10 { break; }
+                eprintln!("CAND skill={} src_char={} src_acct={}", raw[j].skill_id, raw[j].src_character, raw[j].src_account);
+                if collected.len() >= 20 { break; }
             }
         }
         if !collected.is_empty() {
@@ -3674,4 +3675,5 @@ mod quick_play_tests {
         //   full_fight_duration:  start=9125826, end=9621577 → 495.751 sec
     }
 }
+
 
