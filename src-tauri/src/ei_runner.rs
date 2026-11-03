@@ -1931,3 +1931,4 @@ pub fn cleanup_leftover_ei_files(root: &std::path::Path) {
     }
     if root.is_dir() { walk(root); }
 }
+
