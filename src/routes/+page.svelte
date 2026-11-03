@@ -1842,7 +1842,7 @@
         if (uploadIdx >= 0) stages[uploadIdx].state = "done";
       }
     }
-    stages.push({ label: "Resolved", state: TERMINAL.includes(log.status) ? "done" : "pending" });
+    stages.push({ label: "Resolved", state: (log.status === "On Hold" ? "pending" : (TERMINAL.includes(log.status) ? "done" : "pending")) });
     return stages;
   }
 
@@ -5947,7 +5947,7 @@ async function testWebhook(wh: any) {
 
     <!-- Direct Quick Actions (responsive: hide/collapse on small screens) -->
     <div class="custom-tooltip-container quick-action-desktop-only">
-      <button class="action-btn secondary-action-btn" disabled={!log.url || !isOnline} onclick={(e) => { e.stopPropagation(); if (isOnline && log.url) copySingleLink(log.url, log.file_path); }}>
+      <button class="action-btn secondary-action-btn" disabled={!log.url || !isOnline || log.status === "On Hold"} onclick={(e) => { e.stopPropagation(); if (isOnline && log.url && log.status !== "On Hold") copySingleLink(log.url, log.file_path); }}>
         {#if copiedLogPath === log.file_path}
           <i class="fa-solid fa-check" style="color: var(--success); animation: copied-pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);"></i>
         {:else}
@@ -5959,7 +5959,7 @@ async function testWebhook(wh: any) {
     </div>
 
     <div class="custom-tooltip-container quick-action-desktop-only">
-      <button class="action-btn secondary-action-btn" disabled={!log.url || !isOnline} onclick={(e) => { e.stopPropagation(); if (isOnline && log.url) openReplayModal(log.url); }}>
+      <button class="action-btn secondary-action-btn" disabled={!log.url || !isOnline || log.status === "On Hold"} onclick={(e) => { e.stopPropagation(); if (isOnline && log.url && log.status !== "On Hold") openReplayModal(log.url); }}>
         <i class="fa-solid fa-gamepad"></i> <span class="btn-text">Replay</span>
       </button>
       <div class="custom-tooltip">Open 2D Fight Replay</div>
