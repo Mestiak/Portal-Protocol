@@ -95,6 +95,10 @@
     "Void Goliath": "/bosses/voidgoliath.png",
     "Void Obliterator": "/bosses/voidobliterator.png",
     "Giants": "/bosses/giants.png",
+    "Purification 1": "/bosses/purification.png",
+    "Purification 2": "/bosses/purification.png",
+    "Purification 3": "/bosses/purification.png",
+    "Purification 4": "/bosses/purification.png",
   };
 
   let revealedByPhase = $derived.by(() => {
@@ -483,21 +487,22 @@
                   const src = closest.row;
                   const skillMap: Record<string, { name?: string }> =
                     ((res as any)?.raw?.skillMap as Record<string, { name?: string }>) || {};
+                  const skillId =
+                    [src.trigger_skill_id, src.trigger_skill_id2, src.trigger_skill_id3]
+                      .find((id) => typeof id === "number" && id > 0 && skillMap["s" + id]?.name) ??
+                    (typeof src.trigger_skill_id === "number" && src.trigger_skill_id > 0
+                      ? src.trigger_skill_id
+                      : (typeof src.skill_id === "number" ? src.skill_id : 0));
                   const skillName =
-                    typeof src.skill_id === "number" && src.skill_id > 0
-                      ? skillMap["s" + src.skill_id]?.name || ""
-                      : "";
-                  const source = [skillName]
-                    .filter(Boolean)
+                    skillId > 0 ? skillMap["s" + skillId]?.name || "" : "";
+                  const localSource = [src.src_character, src.src_account, src.src_profession]
+                    .filter((v) => typeof v === "string" && v.trim() !== "")
                     .join(" | ");
-                  const fallback =
-                    skillName
-                      ? ev.source
-                      : `${ev.source}${typeof src.skill_id === "number" && src.skill_id > 0 ? ` (skill:${src.skill_id})` : ""}`;
+                  const source = skillName || localSource || ev.source || "Unknown";
                   return {
                     ...ev,
-                    source: source || fallback,
-                    sourceId: src.skill_id ?? ev.sourceId,
+                    source,
+                    sourceId: (skillId || src.skill_id) ?? ev.sourceId,
                   };
                 }),
               };
