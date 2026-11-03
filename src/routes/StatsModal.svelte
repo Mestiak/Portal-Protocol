@@ -82,7 +82,23 @@
   let openOrbPhase = $state<string | null>(null); // Orbs tab: expanded per-phase leaderboard
 
   // Revealed feature flag: hide the tab + table until the feature is complete.
-  let revealFeatureReady = $state(false);
+  let revealFeatureReady = $state(true);
+
+  let revealedByPlayer = $derived.by(() => {
+    const map = new Map<string, { player: string; toonName: string; profession: string; times: number[]; sources: Set<string> }>();
+    for (const r of mechanics?.revealedBreakers ?? []) {
+      const key = r.player || r.toonName || "Unknown";
+      if (!map.has(key)) {
+        map.set(key, { player: key, toonName: r.toonName || key, profession: r.profession || "", times: [], sources: new Set() });
+      }
+      const entry = map.get(key)!;
+      entry.times.push(r.time);
+      if (r.source) entry.sources.add(r.source);
+    }
+    return Array.from(map.values())
+      .map((e) => ({ ...e, times: e.times.slice().sort((a, b) => a - b), sources: Array.from(e.sources) }))
+      .sort((a, b) => (a.times[0] ?? 0) - (b.times[0] ?? 0));
+  });
 
   // Sort: default DPS desc.
   type SortKey = "dps" | "cleave" | "name" | "group";
@@ -655,12 +671,14 @@
                         <thead>
                           <tr>
                             <th class="col-player-reveal">Player</th>
-                            <th class="col-time-reveal">Revealed</th>
-                            <th class="col-phase-reveal">Phase</th>
+                            <th class="col-time-reveal">First</th>
+                            <th class="col-time-reveal">Second</th>
+                            <th class="col-time-reveal">Third</th>
+                            <th class="col-source-reveal">Source</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {#each mechanics.revealedBreakers as r}
+                          {#each revealedByPlayer as r}
                             <tr>
                               <td class="col-player-reveal">
                                 <div class="player-cell-reveal">
@@ -671,8 +689,10 @@
                                   </div>
                                 </div>
                               </td>
-                              <td class="col-time-reveal">{fmtClock(r.time)}</td>
-                              <td class="col-phase-reveal">{r.phaseName}</td>
+                              <td class="col-time-reveal">{r.times[0] != null ? fmtClock(r.times[0]) : "—"}</td>
+                              <td class="col-time-reveal">{r.times[1] != null ? fmtClock(r.times[1]) : "—"}</td>
+                              <td class="col-time-reveal">{r.times[2] != null ? fmtClock(r.times[2]) : "—"}{r.times.length > 3 ? ` (+${r.times.length - 3})` : ""}</td>
+                              <td class="col-source-reveal">{r.sources.length ? r.sources.join(", ") : "Unknown"}</td>
                             </tr>
                           {/each}
                         </tbody>
