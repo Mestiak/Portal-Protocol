@@ -82,7 +82,45 @@
   let openOrbPhase = $state<string | null>(null); // Orbs tab: expanded per-phase leaderboard
 
   // Revealed feature flag: hide the tab + table until the feature is complete.
-  let revealFeatureReady = $state(false);
+  let revealFeatureReady = $state(true);
+
+  const PHASE_ICON: Record<string, string> = {
+    "Jormag": "/bosses/thejormagvoid.png",
+    "Primordus": "/bosses/theprimordusvoid.png",
+    "Kralkatorrik": "/bosses/thekralkatorrikvoid.png",
+    "Zhaitan": "/bosses/thezhaitanvoid.png",
+    "Mordremoth": "/bosses/themordremothvoid.png",
+    "Soo-Won": "/bosses/thesoowonvoid.png",
+    "Void Saltspray Dragon": "/bosses/voidsaltspraydragon.png",
+    "Void Time Caster": "/bosses/timecaster.png",
+    "Void Goliath": "/bosses/voidgoliath.png",
+    "Void Obliterator": "/bosses/voidobliterator.png",
+    "Giants": "/bosses/giants.png",
+    "Purification 1": "/bosses/purification.png",
+    "Purification 2": "/bosses/purification.png",
+    "Purification 3": "/bosses/purification.png",
+    "Purification 4": "/bosses/purification.png",
+  };
+
+  let revealedByPhase = $derived.by(() => {
+    const map = new Map<string, { phase: string; time: number; player: string; toonName: string; profession: string; source: string; sourceIcon: string }>();
+    for (const r of mechanics?.revealedBreakers ?? []) {
+      const phase = r.phaseName || "Global";
+      const existing = map.get(phase);
+      if (!existing || r.time < existing.time) {
+        map.set(phase, {
+          phase,
+          time: r.time,
+          player: r.player || r.toonName || "Unknown",
+          toonName: r.toonName || r.player || "Unknown",
+          profession: r.profession || "",
+          source: r.source || "Unknown",
+          sourceIcon: r.sourceIcon || "",
+        });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => a.time - b.time);
+  });
 
   // Sort: default DPS desc.
   type SortKey = "dps" | "cleave" | "name" | "group";
@@ -397,22 +435,60 @@
     }
   }
 
-  // Module-level guard so a re-triggered effect (or double-open) can't stack
+  // Module-level cache so reopening a log is instant.
+  const statsCache = new Map<string, { stats: any; mechanics: any }>();
   // concurrent fetches to dps.report — on a flaky WiFi link a burst of large
   // (30MB+) responses can saturate the link and drop the connection.
   let inflight: Promise<unknown> | null = null;
   $effect(() => {
     if (!permalink && !localPath) return;
+    const cacheKey = localPath || permalink;
+    const cachedMem = statsCache.get(cacheKey);
+    if (cachedMem) {
+      stats = cachedMem.stats;
+      mechanics = cachedMem.mechanics;
+      loading = false;
+      activeTab = "statistics";
+      return;
+    }
     if (inflight) return;
     loading = true; error = null; stats = null; mechanics = null;
     activeTab = "statistics";
     inflight = (async () => {
+      // Try compact cache first (instant)
+      if (localPath) {
+        try {
+          const cached = await invoke("load_stats_cache", { filePath: localPath }) as { stats: any; mechanics: any } | null;
+          if (cached) {
+            stats = cached.stats;
+            mechanics = cached.mechanics;
+            loading = false;
+            activeTab = "statistics";
+            inflight = null;
+            return;
+          }
+        } catch (e) {}
+      }
       try {
         let res: LogFull;
-        if (permalink) {
+        if (localPath) {
+          try {
+            res = await invoke("get_local_log_full", { filePath: localPath }) as LogFull;
+          } catch (e) {
+            // Try on-demand EI parse first
+            try {
+              await invoke("run_local_ei_parse", { filePath: localPath });
+              res = await invoke("get_local_log_full", { filePath: localPath }) as LogFull;
+            } catch (e2) {
+              if (permalink) {
+                res = await invoke("get_log_full", { permalink }) as LogFull;
+              } else {
+                throw e2;
+              }
+            }
+          }
+        } else if (permalink) {
           res = await invoke("get_log_full", { permalink }) as LogFull;
-        } else if (localPath) {
-          res = await invoke("get_local_log_full", { filePath: localPath }) as LogFull;
         } else {
           return;
         }
@@ -449,23 +525,27 @@
                     Math.abs(cur.t - ev.time) < Math.abs(best.t - ev.time) ? cur : best
                   , cands[0]);
                   const src = closest.row;
-                  const skillMap: Record<string, { name?: string }> =
-                    ((res as any)?.raw?.skillMap as Record<string, { name?: string }>) || {};
+                  const skillMap: Record<string, { name?: string; icon?: string }> =
+                    ((res as any)?.raw?.skillMap as Record<string, { name?: string; icon?: string }>) || {};
+                  const skillIds = Array.isArray(src.trigger_skill_ids) ? src.trigger_skill_ids : [];
+                  const srcs = Array.isArray(src.trigger_srcs) ? src.trigger_srcs : [];
+                  const skillId =
+                    skillIds.find((id: number) => typeof id === "number" && id > 0 && skillMap["s" + id]?.name) ??
+                    skillIds.find((id: number) => typeof id === "number" && id > 0) ??
+                    (typeof src.skill_id === "number" ? src.skill_id : 0);
                   const skillName =
-                    typeof src.skill_id === "number" && src.skill_id > 0
-                      ? skillMap["s" + src.skill_id]?.name || ""
-                      : "";
-                  const source = [skillName]
-                    .filter(Boolean)
+                    skillId > 0 ? skillMap["s" + skillId]?.name || "" : "";
+                  const attacker = srcs[0] && String(srcs[0]).trim() ? String(srcs[0]) : "";
+                  const localSource = attacker || [src.src_character, src.src_account, src.src_profession]
+                    .filter((v) => typeof v === "string" && v.trim() !== "")
                     .join(" | ");
-                  const fallback =
-                    skillName
-                      ? ev.source
-                      : `${ev.source}${typeof src.skill_id === "number" && src.skill_id > 0 ? ` (skill:${src.skill_id})` : ""}`;
+                  const isSelf = !attacker || attacker === src.src_character;
+                  const source = skillName || (isSelf ? "Auto Attack" : attacker) || (skillId > 0 ? `skill:${skillId}` : "") || localSource || ev.source || "Unknown";
                   return {
                     ...ev,
-                    source: source || fallback,
-                    sourceId: src.skill_id ?? ev.sourceId,
+                    source,
+                    sourceId: (skillId || src.skill_id) ?? ev.sourceId,
+                    sourceIcon: skillName ? (skillMap["s" + skillId]?.icon || "") : "",
                   };
                 }),
               };
@@ -477,6 +557,10 @@
           // Local merge skipped — no error to surface.
         }
         mechanics = mech;
+        statsCache.set(cacheKey, { stats: res.stats, mechanics: mech });
+        if (localPath) {
+          try { await invoke("store_stats_cache", { filePath: localPath, data: { stats: res.stats, mechanics: mech } }); } catch (e) {}
+        }
         // Non-Cerus fights only get the Boon Uptime tab — skip Statistics.
         // Harvest Temple defaults to Revealed if break data is present.
         const isHT = mechanics && /harvest temple/i.test(res.stats.boss_name);
@@ -650,18 +734,26 @@
                   {#if !mechanics || mechanics.revealedBreakers.length === 0}
                     <div class="stat-note">No Revealed breaks detected for this log.</div>
                   {:else}
+                    <div class="revealed-disclaimer">Shows the first player revealed per phase. Does not necessarily mean an early break — only the first reveal event recorded.</div>
                     <div class="revealed-wrap">
                       <table class="revealed-table">
                         <thead>
                           <tr>
-                            <th class="col-player-reveal">Player</th>
-                            <th class="col-time-reveal">Revealed</th>
                             <th class="col-phase-reveal">Phase</th>
+                            <th class="col-player-reveal">Player</th>
+                            <th class="col-time-reveal">Time</th>
+                            <th class="col-source-reveal">Source</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {#each mechanics.revealedBreakers as r}
+                          {#each revealedByPhase as r}
                             <tr>
+                              <td class="col-phase-reveal">
+                                <div class="phase-cell-reveal">
+                                  <img class="phase-icon-reveal" src={PHASE_ICON[r.phase] || "/bosses/dragonvoid.png"} alt={r.phase} onerror={(e) => ((e.currentTarget as HTMLImageElement).src = "/bosses/dragonvoid.png")} />
+                                  <span>{r.phase}</span>
+                                </div>
+                              </td>
                               <td class="col-player-reveal">
                                 <div class="player-cell-reveal">
                                   <img class="prof-icon-reveal" src={profIcon(r.profession)} alt={r.profession} onerror={(e) => ((e.currentTarget as HTMLImageElement).src = "/professions/guardian.png")} />
@@ -672,7 +764,12 @@
                                 </div>
                               </td>
                               <td class="col-time-reveal">{fmtClock(r.time)}</td>
-                              <td class="col-phase-reveal">{r.phaseName}</td>
+                              <td class="col-source-reveal">
+                                {#if r.sourceIcon}
+                                  <img src={r.sourceIcon} alt="" class="source-icon" />
+                                {/if}
+                                {r.source}
+                              </td>
                             </tr>
                           {/each}
                         </tbody>
@@ -934,6 +1031,10 @@
     border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px;
   }
   .stat-note b { color: var(--text); }
+  .revealed-disclaimer {
+    font-size: 11px; color: var(--text); background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border: 1px solid var(--accent); border-radius: 10px; padding: 10px 14px; margin-bottom: 10px;
+  }
 
   /* ── Timeline chart ── */
   .timeline { background: var(--bg-sidebar); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }

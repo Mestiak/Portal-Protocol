@@ -120,6 +120,7 @@ export interface RevealedEvent {
   profession: string;   // elite-spec string → /professions/{profession}.png
   source: string;       // Revealed / player-name / add-name
   sourceId?: number;
+  sourceIcon?: string;
 }
 
 export interface MechanicReport {
@@ -331,7 +332,10 @@ function extractHarvestTemple(logData: Json, localRevealedSources?: { time: numb
     if (n.includes("zhaitan")) return "Zhaitan";
     if (n.includes("mordremoth")) return "Mordremoth";
     if (n.includes("soowon") || n.includes("soo-won")) return "Soo-Won";
-    if (n.includes("heart") || n.includes("purification")) return "Purification";
+    if (n.includes("heart")) return "Heart Breakbar";
+    const purMatch = n.match(/purification\s*(\d+)/);
+    if (purMatch) return `Purification ${purMatch[1]}`;
+    if (n.includes("purification")) return "Purification";
     if (n.includes("void time caster")) return "Void Time Caster";
     if (n.includes("giant")) return "Giants";
     if (n.includes("saltspray")) return "Void Saltspray Dragon";
@@ -352,7 +356,22 @@ function extractHarvestTemple(logData: Json, localRevealedSources?: { time: numb
 
   const matchPhase = (t: number) => {
     for (const p of mappedPhases) {
+      if (p.phaseName === "Full Fight") continue;
       if (t >= p.start && t <= p.end) return p.phaseName;
+    }
+    // Reveal often lands in the short gap between phases (e.g. just before
+    // Primordus starts). Prefer the next phase within a small tolerance.
+    const TOL = 10000;
+    let bestNext: { phaseName: string; start: number } | null = null;
+    for (const p of mappedPhases) {
+      if (p.phaseName === "Full Fight") continue;
+      if (p.start >= t && p.start - t <= TOL) {
+        if (!bestNext || p.start < bestNext.start) bestNext = { phaseName: p.phaseName, start: p.start };
+      }
+    }
+    if (bestNext) return bestNext.phaseName;
+    for (const p of mappedPhases) {
+      if (p.phaseName === "Full Fight" && t >= p.start && t <= p.end) return p.phaseName;
     }
     return "Global";
   };

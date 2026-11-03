@@ -386,6 +386,23 @@ pub fn run_ei(app: &AppHandle, input: &Path) -> Result<Value, String> {
         serde_json::from_str(&s).map_err(|e| format!("invalid EI JSON output: {}", e))?;
     // Clean up the raw EI output + the temp input copy; caller caches the slim result.
     let _ = std::fs::remove_file(&out);
+    // EI also writes a diagnostic .log next to the source log; sweep it too.
+    if let Some(stem) = input.file_stem().map(|s| s.to_string_lossy().to_string()) {
+        if let Some(parent) = input.parent() {
+            if let Ok(entries) = std::fs::read_dir(parent) {
+                for e in entries.flatten() {
+                    let p = e.path();
+                    if let Some(ext) = p.extension().and_then(|x| x.to_str()) {
+                        if (ext == "log" || ext == "html")
+                            && p.file_name().map(|n| n.to_string_lossy().starts_with(&stem)).unwrap_or(false)
+                        {
+                            let _ = std::fs::remove_file(&p);
+                        }
+                    }
+                }
+            }
+        }
+    }
     Ok(val)
 }
 
@@ -532,6 +549,45 @@ pub fn cached_local_ei_report(app: &AppHandle, file_path: &str) -> Option<Value>
 }
 
 /// Store a locally-parsed EI result keyed by the source file path.
+pub fn stats_cache_path(app: &AppHandle, file_path: &str) -> PathBuf {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    file_path.hash(&mut hasher);
+    let hash = hasher.finish();
+    let clean = file_path.replace(|c: char| !c.is_ascii_alphanumeric(), "_");
+    ei_cache_dir(app).join(format!("{}_stats_{:x}.json.gz", clean, hash))
+}
+
+pub fn load_stats_cache(app: &AppHandle, file_path: &str) -> Option<Value> {
+    let path = stats_cache_path(app, file_path);
+    if path.exists() {
+        if let Ok(gz) = std::fs::read(&path) {
+            use std::io::Read;
+            let mut decoder = flate2::read::GzDecoder::new(&gz[..]);
+            let mut s = String::new();
+            if decoder.read_to_string(&mut s).is_ok() {
+                if let Ok(v) = serde_json::from_str::<Value>(&s) {
+                    return Some(v);
+                }
+            }
+        }
+    }
+    None
+}
+
+pub fn store_stats_cache(app: &AppHandle, file_path: &str, data: Value) {
+    let path = stats_cache_path(app, file_path);
+    if let Ok(json_str) = serde_json::to_string(&data) {
+        use std::io::Write;
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        if encoder.write_all(json_str.as_bytes()).is_ok() {
+            if let Ok(gz) = encoder.finish() {
+                let _ = std::fs::write(path, gz);
+            }
+        }
+    }
+}
+
 pub fn store_local_ei_report(app: &AppHandle, file_path: &str, raw: Value) {
     let path = ei_cache_path_local(app, file_path);
     if let Ok(json_str) = serde_json::to_string(&raw) {
@@ -1843,4 +1899,30 @@ mod tests {
             "Non-QP bosses must not get QP flag from EI"
         );
     }
+}
+
+/// Sweep leftover Elite Insights `.log` and `.html` files created next to logs.
+/// Only deletes a sidecar when a matching `.evtc`/`.zevtc` sibling exists.
+pub fn cleanup_leftover_ei_files(root: &std::path::Path) {
+    fn walk(dir: &std::path::Path) {
+        let Ok(entries) = std::fs::read_dir(dir) else { return; };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                walk(&p);
+                continue;
+            }
+            let ext = p.extension().and_then(|x| x.to_str()).unwrap_or("");
+            if ext != "log" && ext != "html" { continue; }
+            let stem = match p.file_stem().and_then(|s| s.to_str()) { Some(s) => s, None => continue };
+            let parent = match p.parent() { Some(x) => x, None => continue };
+            // Only delete if a matching evtc/zevtc sibling exists.
+            let has_ev = parent.join(format!("{}.evtc", stem)).exists()
+                || parent.join(format!("{}.zevtc", stem)).exists();
+            if has_ev {
+                let _ = std::fs::remove_file(&p);
+            }
+        }
+    }
+    if root.is_dir() { walk(root); }
 }

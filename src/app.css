@@ -1969,6 +1969,23 @@ input:focus {
   min-width: 90px;
 }
 
+.phase-cell-reveal {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.phase-icon-reveal {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, .08);
+  border: 1px solid rgba(255, 255, 255, .08);
+}
+
 .player-cell-reveal {
   display: flex;
   align-items: center;
@@ -1984,6 +2001,18 @@ input:focus {
   flex-shrink: 0;
   background: rgba(255, 255, 255, .08);
   border: 1px solid rgba(255, 255, 255, .08);
+}
+
+.source-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, .08);
+  border: 1px solid rgba(255, 255, 255, .08);
+  vertical-align: middle;
+  margin-right: 4px;
 }
 
 .player-names-reveal {

@@ -523,6 +523,27 @@
   type PatchNoteVersion = { version: string; date: string; image?: string; notes: PatchNoteCategory[] };
   const PATCH_NOTES_DATA: PatchNoteVersion[] = [
     {
+      version: "0.7.4",
+      date: "November 2026",
+      notes: [
+        {
+          category: "✨ New Features",
+          items: [
+            { title: "Harvest Temple Revealed Tab", desc: "New tab in Stats modal tracking the first player revealed per phase, with skill name/icon, clone/phantasm name, or Auto Attack." },
+            { title: "On-Demand EI Parsing", desc: "Stats runs Elite Insights on demand when no cached report exists, so offline stats work for older logs." },
+            { title: "Compact Stats Cache", desc: "Stats writes a small compact cache after first load; subsequent opens are instant even after restart." }
+          ]
+        },
+        {
+          category: "🔧 Improvements",
+          items: [
+            { title: "Stats Offline-First", desc: "Stats now prefers local EI over dps.report and falls back only if needed." },
+            { title: "arcdps Sidecar Cleanup", desc: "Upload-time EI runs now delete both .log and .html sidecar files." }
+          ]
+        }
+      ]
+    },
+    {
       version: "0.7.3",
       date: "October 21, 2026",
       notes: [

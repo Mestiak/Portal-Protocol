@@ -378,6 +378,32 @@ async fn pick_log_files() -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
+async fn run_local_ei_parse(app: tauri::AppHandle, file_path: String) -> Result<serde_json::Value, String> {
+    let path = std::path::PathBuf::from(&file_path);
+    if !path.exists() {
+        return Err(format!("local log file does not exist: {}", file_path));
+    }
+    let app_clone = app.clone();
+    let handle = tauri::async_runtime::spawn_blocking(move || {
+        crate::ei_runner::run_ei(&app_clone, &path)
+    });
+    let raw = handle.await.map_err(|e| format!("EI task failed: {}", e))??;
+    crate::ei_runner::store_local_ei_report(&app, &file_path, raw.clone());
+    Ok(raw)
+}
+
+#[tauri::command]
+fn load_stats_cache(app: tauri::AppHandle, file_path: String) -> Result<Option<serde_json::Value>, String> {
+    Ok(crate::ei_runner::load_stats_cache(&app, &file_path))
+}
+
+#[tauri::command]
+fn store_stats_cache(app: tauri::AppHandle, file_path: String, data: serde_json::Value) -> Result<(), String> {
+    crate::ei_runner::store_stats_cache(&app, &file_path, data);
+    Ok(())
+}
+
+#[tauri::command]
 fn parse_local_revealed_sources(file_path: String) -> Result<Vec<serde_json::Value>, String> {
     let bytes = std::fs::read(&file_path).map_err(|e| e.to_string())?;
     let events = evtc_parser::parse_revealed_sources(&bytes)
@@ -391,6 +417,8 @@ fn parse_local_revealed_sources(file_path: String) -> Result<Vec<serde_json::Val
                 "dst_account": e.dst_account,
                 "dst_profession": e.dst_profession,
                 "skill_id": e.skill_id,
+                "trigger_skill_ids": e.trigger_skill_ids,
+                "trigger_srcs": e.trigger_srcs,
                 "src_character": e.src_character,
                 "src_account": e.src_account,
                 "src_profession": e.src_profession,
@@ -934,6 +962,10 @@ pub fn run() {
             crate::config::load_history_into_set(app.handle());
             if config.auto_upload && !config.logs_directory.is_empty() {
                 let _ = watcher.start(&config.logs_directory, tx.clone(), config.watch_stability_delay_ms, config.watch_poll_interval_ms);
+                let cleanup_dir = config.logs_directory.clone();
+                tauri::async_runtime::spawn(async move {
+                    crate::ei_runner::cleanup_leftover_ei_files(std::path::Path::new(&cleanup_dir));
+                });
             }
 
             // Start minimized to the system tray if enabled (window hidden until summoned).
@@ -1051,6 +1083,9 @@ pub fn run() {
             export_config,
             import_config,
             parse_local_revealed_sources,
+            load_stats_cache,
+            store_stats_cache,
+            run_local_ei_parse,
             crate::uploader::get_log_full,
             crate::uploader::get_local_log_full,
             crate::uploader::get_cache_size,

@@ -88,6 +88,7 @@ export interface AggregatedStats {
   totalLogs: number;
   totalKills: number;
   totalWipes: number;
+  uniquePlayers: number;
   overallSuccessRate: number;
   avgDuration: number | null;
   shortestKill: number | null;
@@ -116,8 +117,9 @@ const WIPE_BUCKETS: Omit<WipeBucket, "count">[] = [
 
 const memo = new Map<string, AggregatedStats>();
 
-function memoKey(logsLen: number, filters: AnalyticsFilters): string {
-  return `${logsLen}|${filters.boss}|${filters.mode}|${filters.range}|${filters.profession ?? 'all'}|${filters.professionKind ?? 'all'}|${filters.customStart ?? ''}|${filters.customEnd ?? ''}|${filters.customStartTime ?? ''}|${filters.customEndTime ?? ''}`;
+function memoKey(logs: AnalyticsLog[], filters: AnalyticsFilters): string {
+  const fp = `${logs.length}|${logs.reduce((a, l) => a + (l.timestamp?.length ?? 0), 0)}|${logs[0]?.timestamp ?? ''}|${logs[logs.length - 1]?.timestamp ?? ''}`;
+  return `${fp}|${filters.boss}|${filters.mode}|${filters.range}|${filters.profession ?? 'all'}|${filters.professionKind ?? 'all'}|${filters.customStart ?? ''}|${filters.customEnd ?? ''}|${filters.customStartTime ?? ''}|${filters.customEndTime ?? ''}`;
 }
 
 function memoSet(key: string, value: AggregatedStats): void {
@@ -256,6 +258,8 @@ const SHORT_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct
 
 function buildActivitySeries(logs: AnalyticsLog[], range: string): ActivityPoint[] {
   const byWeek = range === "90d" || range === "all";
+  const years = new Set(logs.map(l => parseLogDate(l.timestamp).getFullYear()));
+  const multiYear = years.size > 1;
   const map = new Map<string, { kills: number; wipes: number; date: Date }>();
   for (const log of logs) {
     const d = parseLogDate(log.timestamp);
@@ -271,8 +275,8 @@ function buildActivitySeries(logs: AnalyticsLog[], range: string): ActivityPoint
     .sort((a, b) => a[1].date.getTime() - b[1].date.getTime())
     .map(([, data]) => ({
       label: byWeek
-        ? `W${getISOWeek(data.date)} ${SHORT_MONTHS[data.date.getMonth()]}`
-        : `${SHORT_MONTHS[data.date.getMonth()]} ${data.date.getDate()}`,
+        ? `W${getISOWeek(data.date)} ${SHORT_MONTHS[data.date.getMonth()]}${multiYear ? ` ${data.date.getFullYear()}` : ''}`
+        : `${SHORT_MONTHS[data.date.getMonth()]} ${data.date.getDate()}${multiYear ? `, ${data.date.getFullYear()}` : ''}`,
       date: data.date,
       kills: data.kills,
       wipes: data.wipes,
@@ -443,14 +447,14 @@ export function defaultCerusSort(rows: CerusLeaderboardRow[]): CerusLeaderboardR
 }
 
 export function aggregateStats(logs: AnalyticsLog[], filters: AnalyticsFilters): AggregatedStats {
-  const key = memoKey(logs.length, filters);
+  const key = memoKey(logs, filters);
   const cached = memo.get(key);
   if (cached) return cached;
 
   const filtered = applyFilters(logs, filters);
   if (filtered.length === 0) {
     const empty: AggregatedStats = {
-      totalLogs: 0, totalKills: 0, totalWipes: 0, overallSuccessRate: 0,
+      totalLogs: 0, totalKills: 0, totalWipes: 0, uniquePlayers: 0, overallSuccessRate: 0,
       avgDuration: null, shortestKill: null, mostPlayedBoss: null,
       bossBreakdown: [], activitySeries: [], professionFrequency: [],
       wipeDepthBuckets: [], empty: true,
@@ -461,6 +465,7 @@ export function aggregateStats(logs: AnalyticsLog[], filters: AnalyticsFilters):
 
   const kills = filtered.filter((l) => l.success === true);
   const wipes = filtered.filter((l) => l.success === false);
+  const uniquePlayers = new Set(filtered.flatMap(l => (l.players ?? []).map(p => p.account).filter(Boolean))).size;
   const killDurations = kills.map((l) => l.duration).filter((d): d is number => d != null && d > 0);
   const avgDuration = killDurations.length ? killDurations.reduce((a, b) => a + b, 0) / killDurations.length : null;
   const shortestKill = killDurations.length ? Math.min(...killDurations) : null;
@@ -470,6 +475,7 @@ export function aggregateStats(logs: AnalyticsLog[], filters: AnalyticsFilters):
     totalLogs: filtered.length,
     totalKills: kills.length,
     totalWipes: wipes.length,
+    uniquePlayers,
     overallSuccessRate: filtered.length > 0 ? (kills.length / filtered.length) * 100 : 0,
     avgDuration,
     shortestKill,
