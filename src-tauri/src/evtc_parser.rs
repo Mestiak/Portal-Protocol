@@ -2629,6 +2629,8 @@ pub fn parse_revealed_sources(bytes: &[u8]) -> Option<Vec<RevealedSourceEvent>> 
         let mut collected: Vec<u32> = Vec::new();
         let mut collected_srcs: Vec<String> = Vec::new();
         for j in (0..i).rev() {
+            if raw[j].src_account != raw[i].src_account { continue; }
+            if raw[j].src_account.is_empty() { continue; }
             if raw[j].skill_id == 0 { continue; }
             if raw[j].buff_id != 0 { continue; }
             let dt = raw[i].time.saturating_sub(raw[j].time);
