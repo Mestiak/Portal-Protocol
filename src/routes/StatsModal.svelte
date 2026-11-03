@@ -499,7 +499,8 @@
                   const localSource = attacker || [src.src_character, src.src_account, src.src_profession]
                     .filter((v) => typeof v === "string" && v.trim() !== "")
                     .join(" | ");
-                  const source = skillName || attacker || (skillId > 0 ? `skill:${skillId}` : "") || localSource || ev.source || "Unknown";
+                  const isSelf = !attacker || attacker === src.src_character;
+                  const source = skillName || (isSelf ? "Auto Attack" : attacker) || (skillId > 0 ? `skill:${skillId}` : "") || localSource || ev.source || "Unknown";
                   return {
                     ...ev,
                     source,
