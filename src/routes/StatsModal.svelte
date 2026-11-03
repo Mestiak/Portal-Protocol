@@ -446,10 +446,10 @@
     inflight = (async () => {
       try {
         let res: LogFull;
-        if (permalink) {
-          res = await invoke("get_log_full", { permalink }) as LogFull;
-        } else if (localPath) {
+        if (localPath) {
           res = await invoke("get_local_log_full", { filePath: localPath }) as LogFull;
+        } else if (permalink) {
+          res = await invoke("get_log_full", { permalink }) as LogFull;
         } else {
           return;
         }
