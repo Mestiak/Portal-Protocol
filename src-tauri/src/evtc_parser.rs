@@ -2638,7 +2638,6 @@ pub fn parse_revealed_sources(bytes: &[u8]) -> Option<Vec<RevealedSourceEvent>> 
             if !collected.contains(&raw[j].skill_id) {
                 collected.push(raw[j].skill_id);
                 collected_srcs.push(raw[j].src_character.clone());
-                eprintln!("CAND skill={} src_char={} src_acct={}", raw[j].skill_id, raw[j].src_character, raw[j].src_account);
                 if collected.len() >= 40 { break; }
             }
         }
