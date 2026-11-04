@@ -1060,6 +1060,27 @@ fn set_wingman_status(app: &AppHandle, file_path: &str, status: &str) {
             false
         }
     });
+    // Rotating audit log (D1): append terminal outcomes.
+    if status == "failed" || status == "imported" || status == "done" {
+        let _ = append_audit_log(app, &format!(r#"{{"file_path":"{}","status":"{}","ts":{}}}"#, file_path, status, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)));
+    }
+}
+
+fn append_audit_log(app: &AppHandle, line: &str) -> Result<(), String> {
+    use std::io::Write;
+    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).ok();
+    let p = dir.join("upload_audit.jsonl");
+    // Rotate if > 10MB
+    if let Ok(meta) = std::fs::metadata(&p) {
+        if meta.len() > 10 * 1024 * 1024 {
+            let rotated = dir.join("upload_audit.1.jsonl");
+            let _ = std::fs::rename(&p, &rotated);
+        }
+    }
+    let mut f = std::fs::OpenOptions::new().create(true).append(true).open(&p).map_err(|e| e.to_string())?;
+    writeln!(f, "{}", line).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
