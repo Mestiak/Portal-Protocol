@@ -5721,7 +5721,7 @@ async function testWebhook(wh: any) {
               <span class="custom-tooltip">Re-checking Wingman's database for this log.</span>
             </span>
           {:else if wmState === "pending"}
-            <button class="wm-chip wm-pending custom-tooltip-container" onclick={(e) => { e.stopPropagation(); sendToWingman(log.file_path); }}>
+            <button class="wm-chip wm-pending custom-tooltip-container" onclick={(e) => { e.stopPropagation(); const now = Date.now(); if (verifyCooldown[log.file_path] && now - verifyCooldown[log.file_path] < 120000) return; verifyCooldown[log.file_path] = now; wingmanUi[log.file_path] = "verifying"; invoke("verify_wingman_status", { filePath: log.file_path }).catch((e) => console.error("verify failed:", e)).finally(() => { wingmanUi[log.file_path] = null; }); }}>
               <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Pending
               <span class="custom-tooltip">Upload started; waiting for Wingman. Click to re-check.</span>
             </button>
