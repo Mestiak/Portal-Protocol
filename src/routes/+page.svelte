@@ -8223,7 +8223,7 @@ async function testWebhook(wh: any) {
               {#each uploadQueue as q (q.file_path)}
                 <div class="queue-row queue-{q.state}" transition:fly={{ x: -8, duration: prefersReducedMotion ? 0 : 150 }}>
                   <i class="fa-solid {q.state === 'active' ? 'fa-spinner fa-spin' : q.state === 'done' ? 'fa-check' : q.state === 'skipped' ? 'fa-ban' : 'fa-clock'} queue-row-icon"></i>
-                  <span class="queue-row-name" title={q.file_name}>{q.file_name}</span>
+                  <span class="queue-row-name" title={q.state === 'skipped' ? 'Already in History — no re-upload needed' : q.file_name}>{q.file_name}</span>
                   <span class="queue-row-state">{q.state === 'active' ? 'Uploading' : q.state === 'done' ? 'Done' : q.state === 'skipped' ? 'Skipped' : 'Queued'}</span>
                 </div>
               {/each}
