@@ -568,6 +568,31 @@
   type PatchNoteVersion = { version: string; date: string; image?: string; notes: PatchNoteCategory[] };
   const PATCH_NOTES_DATA: PatchNoteVersion[] = [
     {
+      version: "0.7.6",
+      date: "November 2026",
+      notes: [
+        {
+          category: "✨ New Features",
+          items: [
+            { title: "Faster, Parallel Uploads", desc: "Different logs now parse with Elite Insights at the same time instead of one-by-one." },
+            { title: "New Badges", desc: "Retrying in Xs (backoff countdown), Paused (when uploads are paused), plus a cancel (✕) button on queued items." },
+            { title: "Upload Audit Log", desc: "Every Wingman result is saved to upload_audit.jsonl in your config folder for troubleshooting." }
+          ]
+        },
+        {
+          category: "🔧 Improvements",
+          items: [
+            { title: "Reliable Offline Detection", desc: "A service is only marked down after 3 failed checks in a row — no more false 'offline' flaps." },
+            { title: "Exponential Backoff", desc: "Failed Wingman retries wait 20s, then 40s, 80s, 160s (max 5 min) instead of retrying every 20s." },
+            { title: "Queue Survives Restarts", desc: "The Wingman queue is saved and restored, so pending work isn't lost if you close the app." },
+            { title: "Broader Recovery", desc: "Recovery now also scans logs inside sessions and subfolders, and waits for Wingman to be online before sweeping." },
+            { title: "Safer Elite Insights", desc: "Bundled EI is checked at startup; a hung EI run times out after 5 minutes instead of blocking forever." },
+            { title: "Pending Click Re-checks", desc: "Clicking a Pending badge now runs a quick Wingman database check (Verifying… badge)." }
+          ]
+        }
+      ]
+    },
+    {
       version: "0.7.5",
       date: "November 2026",
       notes: [
