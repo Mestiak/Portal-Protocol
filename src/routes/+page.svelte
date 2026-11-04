@@ -2770,7 +2770,7 @@
   // Count of logs currently parked as On Hold (dps.report down) — drives the
   // "Retry on Hold" button + resume counter below the dps.report API status.
   let onHoldCount = $derived(
-    [...uploads, ...allHistory].filter((h) => h.status === "On Hold").length,
+    new Set([...uploads, ...allHistory].filter((h) => h.status === "On Hold").map((h) => h.file_path)).size,
   );
   let historyLogs = $derived(filteredHistory);             // alias for code that expected the full list
   let historyTotalCount = $derived(filteredHistory.length);// drives the pager
