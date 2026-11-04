@@ -2750,6 +2750,15 @@
   // (Single source of truth — avoids duplicating the boss-classification logic in
   // Rust, which only the frontend has.)
   let allHistory = $state.raw<UploadRecord[]>([]);
+  // Auto-enqueue On Hold logs (no dps.report link) for Wingman raw upload on load
+  $effect(() => {
+    if (allHistory.length > 0) {
+      const pending = allHistory.filter((h) => !h.url && h.status === "On Hold" && (!h.wingman_status || h.wingman_status === "failed"));
+      for (const h of pending) {
+        if (!wingmanQueue.includes(h.file_path)) enqueueWingmanRetry(h.file_path);
+      }
+    }
+  });
   let isHistoryLoading = $state(false);
   let historyPage = $state(0);
   let historyLimit = $state(25);
