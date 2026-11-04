@@ -2901,6 +2901,10 @@
   let zoomLevel = $state(1.0);
   let isFullscreen = $state(false);
   let dpsReportStatus = $state<string>("unknown");
+  let dpsBannerDismissed = $state(false);
+  $effect(() => {
+    if (dpsReportStatus !== "offline") dpsBannerDismissed = false;
+  });
   let bDpsReportStatus = $state<string>("unknown");
   let wingmanStatus = $state<"online" | "offline" | "degraded" | "unknown">("unknown");
   let newSessionName = $state("");
@@ -6459,6 +6463,7 @@ async function testWebhook(wh: any) {
       <span class="pp-status-dot"></span>
       <span class="pp-status-icon">{toastIcon}</span>
       <span>{toastMsg}</span>
+      <button class="toast-close-btn" onclick={() => { toastMsg = null; if (toastTimer) clearTimeout(toastTimer); }} aria-label="Close notification">×</button>
     </div>
   {/if}
 
@@ -6472,7 +6477,7 @@ async function testWebhook(wh: any) {
     </div>
   {/if}
 
-  {#if dpsReportStatus === "offline"}
+  {#if dpsReportStatus === "offline" && !dpsBannerDismissed}
     <div class="app-toast app-dps-down-banner" role="status" aria-live="polite">
       <span class="app-toast-icon"><i class="fa-solid fa-triangle-exclamation"></i></span>
       {#if bDpsReportStatus === "online" && use_backup_dps}
@@ -6480,6 +6485,7 @@ async function testWebhook(wh: any) {
       {:else}
         <span>dps.report is unreachable — uploads are paused and will resume automatically when it comes back.</span>
       {/if}
+      <button class="toast-close-btn" onclick={() => (dpsBannerDismissed = true)} aria-label="Close notification">×</button>
     </div>
   {/if}
 

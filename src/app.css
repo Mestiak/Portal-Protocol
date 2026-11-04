@@ -3810,6 +3810,18 @@ html.reduce-motion .session-pill {
   cursor: not-allowed;
 }
 
+.toast-close-btn {
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 4px;
+  opacity: .7;
+}
+.toast-close-btn:hover { opacity: 1; }
+
 .empty {
   display: flex;
   flex-direction: column;
