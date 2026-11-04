@@ -5631,9 +5631,9 @@ async function testWebhook(wh: any) {
               {/if}
             {/if}
           {:else if wmState === "sending"}
-            <span class="wm-chip wm-sending"><img src="/wingman_icon.png" alt="" class="wm-spin" style="width:14px;height:14px;vertical-align:middle;" /> Uploading…</span>
+            <span class="wm-chip wm-sending" title="Uploading this log to Wingman — Elite Insights is running and the bundle is being sent."><img src="/wingman_icon.png" alt="" class="wm-spin" style="width:14px;height:14px;vertical-align:middle;" /> Uploading…</span>
           {:else if wmState === "done"}
-            <span class="wm-chip wm-done"><img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Completed</span>
+            <span class="wm-chip wm-done" title="Successfully uploaded and imported into Wingman."><img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Completed</span>
           {/if}
         {/if}
         {#if discord_webhooks.length > 0 && log.discord_pending === true}
