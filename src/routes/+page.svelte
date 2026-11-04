@@ -404,7 +404,7 @@
         const fp = wingmanQueue[0];
         wingmanUi[fp] = "sending";
         const hasUrl = allHistory.find((h) => h.file_path === fp)?.url;
-        const cmd = hasUrl ? "retry_wingman_import" : "retry_wingman_raw_upload";
+        const cmd = (hasUrl && dpsReportStatus === "online") ? "retry_wingman_import" : "retry_wingman_raw_upload";
         await invoke(cmd, { filePath: fp })
           .catch((e) => console.error("Wingman retry failed:", e))
           .finally(() => { wingmanUi[fp] = null; });
@@ -2750,10 +2750,18 @@
   // (Single source of truth — avoids duplicating the boss-classification logic in
   // Rust, which only the frontend has.)
   let allHistory = $state.raw<UploadRecord[]>([]);
-  // Auto-enqueue On Hold logs (no dps.report link) for Wingman raw upload on load
+  // Auto-retry On Hold logs on startup if dps.report is already online
+  $effect(() => {
+    if (allHistory.length > 0 && dpsReportStatus === "online") {
+      const onHold = allHistory.filter((h) => h.status === "On Hold");
+      if (onHold.length > 0) {
+        retryOnHoldLogs();
+      }
+    }
+  });
   $effect(() => {
     if (allHistory.length > 0) {
-      const pending = allHistory.filter((h) => !h.url && h.status === "On Hold" && (!h.wingman_status || h.wingman_status === "failed"));
+      const pending = allHistory.filter((h) => h.status === "On Hold" && (!h.wingman_status || h.wingman_status === "failed"));
       for (const h of pending) {
         if (!wingmanQueue.includes(h.file_path)) enqueueWingmanRetry(h.file_path);
       }
@@ -3859,6 +3867,8 @@
       checkDpsReportStatus();
       checkBackupDpsStatus();
       checkWingmanStatus();
+      const pendingOnHold = allHistory.filter((h) => h.status === "On Hold" && !dpsQueue.includes(h.file_path));
+      for (const h of pendingOnHold) enqueueDpsRetry(h.file_path);
     }, 20000);
     // Hourly update-poll handle (declared here so the onMount cleanup can clear it).
     let updatePollInterval: number | null = null;

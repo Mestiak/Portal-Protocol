@@ -2050,7 +2050,12 @@ async fn spawn_upload(
 
     // 1) Already in History? Skip the re-upload, but keep it visible in the
     //    drawer (state "skipped") for a short window so the user sees the full batch.
-    if already_in_history(&file_path) {
+    //    Exception: On Hold records are allowed through so recovery can re-process
+    //    them in place instead of being skipped (see retryOnHoldLogs).
+    let is_on_hold_recovery = crate::config::load_history(&app)
+        .iter()
+        .any(|r| r.file_path == file_path && r.status == "On Hold");
+    if already_in_history(&file_path) && !is_on_hold_recovery {
         emit_skipped(app, &file_path, &file_name);
         return;
     }
