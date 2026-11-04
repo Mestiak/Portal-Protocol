@@ -5702,6 +5702,9 @@ async function testWebhook(wh: any) {
             {/if}
           {:else if wmState === "sending"}
             <span class="wm-chip wm-sending custom-tooltip-container"><img src="/wingman_icon.png" alt="" class="wm-spin" style="width:14px;height:14px;vertical-align:middle;" /> Uploading…<span class="custom-tooltip">Uploading to Wingman — Elite Insights is running and the bundle is being sent, or the import is still in progress.</span></span>
+            {#if wingmanQueue.includes(log.file_path)}
+              <button class="wm-cancel" onclick={(e) => { e.stopPropagation(); wingmanQueue = wingmanQueue.filter((p) => p !== log.file_path); }} title="Cancel queued retry">✕</button>
+            {/if}
           {:else if wmState === "verifying"}
             <span class="wm-chip wm-verifying custom-tooltip-container">
               <img src="/wingman_icon.png" alt="" class="wm-spin" style="width:14px;height:14px;vertical-align:middle;" /> Verifying…
