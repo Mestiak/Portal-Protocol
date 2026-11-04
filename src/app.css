@@ -3820,6 +3820,19 @@ html.reduce-motion .session-pill {
   padding: 0 4px;
   opacity: .7;
 }
+.on-hold-banner {
+  background: var(--accent);
+  color: #fff;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.is-on-hold {
+  opacity: 0.85;
+}
 .toast-close-btn:hover { opacity: 1; }
 
 .empty {

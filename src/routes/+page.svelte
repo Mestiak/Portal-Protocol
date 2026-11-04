@@ -6781,7 +6781,12 @@ async function testWebhook(wh: any) {
                             {@const isExpanded = !!expanded[id]}
                             {@const isSelected = selectedLogs.has(log.file_path)}
                             {@const isCaptured = !!captureSession && captureSession.logPaths.includes(log.file_path)}
-                            <div class="log-card card" class:is-favorite={log.is_favorite === true} class:menu-open={activeMenuCard === id} class:is-expanded={isExpanded} class:uploading={log.status === "Uploading"} class:is-selected={isSelected} class:deleting={deletingLogPaths.has(log.file_path)} class:session-captured={isCaptured} style="position: relative; cursor: context-menu;" oncontextmenu={(e) => handleLogContextMenu(e, log, false, undefined, () => deleteLogRecord(log.file_path))} role="button" tabindex="0">
+                            <div class="log-card card" class:is-favorite={log.is_favorite === true} class:menu-open={activeMenuCard === id} class:is-expanded={isExpanded} class:uploading={log.status === "Uploading"} class:is-selected={isSelected} class:deleting={deletingLogPaths.has(log.file_path)} class:session-captured={isCaptured} class:is-on-hold={log.status === "On Hold"} style="position: relative; cursor: context-menu;" oncontextmenu={(e) => handleLogContextMenu(e, log, false, undefined, () => deleteLogRecord(log.file_path))} role="button" tabindex="0">
+                              {#if log.status === "On Hold"}
+                                <div class="on-hold-banner">
+                                  <i class="fa-solid fa-pause"></i> On Hold — dps.report is down; uploading to Wingman via local EI
+                                </div>
+                              {/if}
                               {#if log.status === "Uploading"}
                                 <div class="upload-progress-top"></div>
                               {/if}
