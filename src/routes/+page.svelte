@@ -5613,27 +5613,30 @@ async function testWebhook(wh: any) {
         {#if wingman_enabled && (log.wingman_status === "failed" || log.wingman_status === "imported" || wingmanUi[log.file_path] === "sending" || log.wingman_status === "done" || log.wingman_status === "in_progress")}
           {@const wmState = wingmanUi[log.file_path] === "sending" ? "sending" : (log.wingman_status === "in_progress" ? "sending" : (log.wingman_status ?? "failed"))}
           {#if wmState === "imported"}
-            <span class="wm-chip wm-imported" title="Already in Wingman's database — no further action needed.">
+            <span class="wm-chip wm-imported custom-tooltip-container" title="Already in Wingman's database — no further action needed.">
               <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Imported
+              <span class="custom-tooltip">Already in Wingman's database — no further action needed.</span>
             </span>
           {/if}
           {#if wmState === "failed"}
             {#if wingmanStatus === "offline"}
-              <span class="wm-chip wm-offline" title="Wingman is offline — this log will retry automatically when the service recovers.">
+              <span class="wm-chip wm-offline custom-tooltip-container" title="Wingman is offline — this log will retry automatically when the service recovers.">
                 <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Wingman offline
+                <span class="custom-tooltip">Wingman is offline — this log will retry automatically when the service recovers.</span>
               </span>
             {:else}
-              <button class="wm-chip wm-failed" title="Wingman import failed — click to retry sending this log." onclick={(e) => { e.stopPropagation(); sendToWingman(log.file_path); }}>
+              <button class="wm-chip wm-failed custom-tooltip-container" title="Wingman import failed — click to retry sending this log." onclick={(e) => { e.stopPropagation(); sendToWingman(log.file_path); }}>
                 <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Send to Wingman
+                <span class="custom-tooltip">Wingman import failed — click to retry sending this log.</span>
               </button>
               {#if likelyCause(log)}
                 <span class="wm-cause">{likelyCause(log)}</span>
               {/if}
             {/if}
           {:else if wmState === "sending"}
-            <span class="wm-chip wm-sending" title="Uploading to Wingman — Elite Insights is running and the bundle is being sent, or the import is still in progress."><img src="/wingman_icon.png" alt="" class="wm-spin" style="width:14px;height:14px;vertical-align:middle;" /> Uploading…</span>
+            <span class="wm-chip wm-sending custom-tooltip-container" title="Uploading to Wingman — Elite Insights is running and the bundle is being sent, or the import is still in progress."><img src="/wingman_icon.png" alt="" class="wm-spin" style="width:14px;height:14px;vertical-align:middle;" /> Uploading…<span class="custom-tooltip">Uploading to Wingman — Elite Insights is running and the bundle is being sent, or the import is still in progress.</span></span>
           {:else if wmState === "done"}
-            <span class="wm-chip wm-done" title="Successfully imported into Wingman."><img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Completed</span>
+            <span class="wm-chip wm-done custom-tooltip-container" title="Successfully imported into Wingman."><img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Completed<span class="custom-tooltip">Successfully imported into Wingman.</span></span>
           {/if}
         {/if}
         {#if discord_webhooks.length > 0 && log.discord_pending === true}
