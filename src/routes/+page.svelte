@@ -5631,7 +5631,7 @@ async function testWebhook(wh: any) {
               {/if}
             {/if}
           {:else if wmState === "sending"}
-            <span class="wm-chip wm-sending" title="Running local Elite Insights and sending the bundle to Wingman. This may take a minute."><img src="/wingman_icon.png" alt="" class="wm-spin" style="width:14px;height:14px;vertical-align:middle;" /> Uploading…</span>
+            <span class="wm-chip wm-sending" title="Uploading to Wingman — Elite Insights is running and the bundle is being sent, or the import is still in progress."><img src="/wingman_icon.png" alt="" class="wm-spin" style="width:14px;height:14px;vertical-align:middle;" /> Uploading…</span>
           {:else if wmState === "done"}
             <span class="wm-chip wm-done" title="Successfully imported into Wingman."><img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Completed</span>
           {/if}
