@@ -3990,6 +3990,9 @@
           return;
         }
 
+        // Skipped records only belong in the queue drawer, not the uploads feed.
+        if (r.status === "Skipped") return;
+
         // ── Keep the History in sync with live uploads ──
         // Patching allHistory keeps the API Tracker tab in sync in real time.
         const hIdx = allHistory.findIndex((h) => h.file_path === r.file_path);
@@ -9000,7 +9003,22 @@ async function testWebhook(wh: any) {
     font-size: 10px;
     font-weight: 700;
   }
-  .sb-chevron { font-size: 9px; transition: transform .2s ease; opacity: .7; }
+  .sb-chevron {
+    font-size: 11px;
+    transition: transform .2s ease, background .15s ease;
+    opacity: .85;
+    width: 20px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+  .sb-chevron:hover {
+    background: color-mix(in srgb, var(--accent) 25%, transparent);
+    opacity: 1;
+  }
   .sb-chevron.open { transform: rotate(180deg); }
 
   /* Paused state — amber pulse to signal uploads are held */
