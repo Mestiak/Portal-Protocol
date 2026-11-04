@@ -3717,7 +3717,7 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
     if !config.wingman_enabled {
         return;
     }
-    let is_terminal = matches!(record.status.as_str(), "Completed" | "Failed");
+    let is_terminal = matches!(record.status.as_str(), "Completed" | "Failed" | "On Hold");
     if !is_terminal {
         return;
     }
