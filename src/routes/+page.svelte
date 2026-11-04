@@ -5725,6 +5725,7 @@ async function testWebhook(wh: any) {
               <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Pending
               <span class="custom-tooltip">Upload started; waiting for Wingman. Click to re-check.</span>
             </button>
+            <button class="wm-cancel" onclick={(e) => { e.stopPropagation(); invoke("update_log_status", { filePath: log.file_path, status: "failed" }); wingmanQueue = wingmanQueue.filter((p) => p !== log.file_path); }} title="Cancel">✕</button>
           {:else if wmState === "done"}
             <span class="wm-chip wm-done custom-tooltip-container">
               <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Completed
