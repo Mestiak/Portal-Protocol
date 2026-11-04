@@ -6499,17 +6499,7 @@ async function testWebhook(wh: any) {
     </div>
   {/if}
 
-  {#if dpsReportStatus === "offline" && !dpsBannerDismissed}
-    <div class="app-toast app-dps-down-banner" role="status" aria-live="polite" transition:fade={{ duration: prefersReducedMotion ? 0 : 220 }}>
-      <span class="app-toast-icon"><i class="fa-solid fa-triangle-exclamation"></i></span>
-      {#if bDpsReportStatus === "online" && use_backup_dps}
-        <span>dps.report is unreachable — uploads are auto-routing to <strong>b.dps.report</strong> until it recovers.</span>
-      {:else}
-        <span>dps.report is unreachable — uploads are paused and will resume automatically when it comes back.</span>
-      {/if}
-      <button class="toast-close-btn" onclick={() => (dpsBannerDismissed = true)} aria-label="Close notification">×</button>
-    </div>
-  {/if}
+  <!-- dps-down banner removed; per-card On Hold banner now conveys status -->
 
   {#if updateModalOpen}
     <div class="update-overlay" transition:fade={{ duration: prefersReducedMotion ? 0 : 160 }}>
