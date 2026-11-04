@@ -11,7 +11,19 @@ mod watcher;
 
 use config::AppConfig;
 
-pub static EI_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+pub static EI_LOCKS: OnceLock<Mutex<std::collections::HashMap<std::path::PathBuf, Arc<Mutex<()>>>>> = OnceLock::new();
+pub fn ei_locks() -> &'static Mutex<std::collections::HashMap<std::path::PathBuf, Arc<Mutex<()>>>> {
+    EI_LOCKS.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+}
+pub fn ei_lock_for(path: &std::path::Path) -> Arc<Mutex<()>> {
+    let lock = ei_locks();
+    {
+        let map = lock.lock().unwrap();
+        if let Some(v) = map.get(path) { return v.clone(); }
+    }
+    let mut map = lock.lock().unwrap();
+    map.entry(path.to_path_buf()).or_insert_with(|| Arc::new(Mutex::new(()))).clone()
+}
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -883,7 +895,8 @@ pub async fn wingman_raw_upload(app: AppHandle, file_path: String) -> Result<(),
     let bundle = tokio::time::timeout(
         std::time::Duration::from_secs(300),
         tauri::async_runtime::spawn_blocking(move || {
-            let _guard = crate::EI_LOCK.lock().unwrap();
+            let _lock = crate::ei_lock_for(std::path::Path::new(&fp_clone));
+            let _guard = _lock.lock().unwrap();
             crate::ei_runner::run_ei_wingman_bundle(&app_clone, std::path::Path::new(&fp_clone))
         }),
     )
