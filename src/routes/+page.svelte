@@ -546,7 +546,7 @@
           category: "🔧 Improvements",
           items: [
             { title: "On Hold Recovery", desc: "On Hold logs now re-upload to dps.report and update in place instead of being skipped." },
-            { title: "Wingman Orphan Recovery", desc: "Stuck in_progress Wingman uploads are re-enqueued on restart; EI runs have a 5-minute timeout." },
+            { title: "Wingman Orphan Recovery", desc: "Stuck in_progress Wingman uploads (including resolved logs) are re-checked every 20s and on restart; EI runs have a 5-minute timeout." },
             { title: "Wingman Badge Statuses", desc: "Imported (already in DB), Uploading… (EI running and bundle sending), Pending (waiting for Wingman to finish), Completed (fresh import), Send to Wingman (retry), Wingman offline (service down)." },
           ]
         }
@@ -2789,7 +2789,7 @@
   });
   $effect(() => {
     if (allHistory.length > 0) {
-      const pending = allHistory.filter((h) => h.status === "On Hold" && (!h.wingman_status || h.wingman_status === "failed" || h.wingman_status === "in_progress"));
+      const pending = allHistory.filter((h) => h.wingman_status === "in_progress" || (h.status === "On Hold" && (!h.wingman_status || h.wingman_status === "failed")));
       for (const h of pending) {
         if (!wingmanQueue.includes(h.file_path)) enqueueWingmanRetry(h.file_path);
       }
@@ -3898,7 +3898,7 @@
       const pendingOnHold = allHistory.filter((h) => h.status === "On Hold" && !dpsQueue.includes(h.file_path));
       for (const h of pendingOnHold) enqueueDpsRetry(h.file_path);
       // Wingman safety net: re-enqueue orphaned in_progress/failed logs
-      const pendingWingman = allHistory.filter((h) => h.status === "On Hold" && (!h.wingman_status || h.wingman_status === "failed" || h.wingman_status === "in_progress") && !wingmanQueue.includes(h.file_path));
+      const pendingWingman = allHistory.filter((h) => (h.wingman_status === "in_progress" || (h.status === "On Hold" && (!h.wingman_status || h.wingman_status === "failed"))) && !wingmanQueue.includes(h.file_path));
       for (const h of pendingWingman) enqueueWingmanRetry(h.file_path);
     }, 20000);
     // Hourly update-poll handle (declared here so the onMount cleanup can clear it).
