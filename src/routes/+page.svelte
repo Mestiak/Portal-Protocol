@@ -549,7 +549,7 @@
           items: [
             { title: "On Hold Recovery", desc: "On Hold logs now re-upload to dps.report and update in place instead of being skipped." },
             { title: "Wingman Orphan Recovery", desc: "Stuck in_progress Wingman uploads (including resolved logs) are re-checked every 20s and on restart; EI runs have a 5-minute timeout." },
-            { title: "Wingman Badge Statuses", desc: "Imported (already in DB), Uploading… (EI running and bundle sending), Pending (waiting for Wingman to finish), Completed (fresh import), Send to Wingman (retry), Wingman offline (service down)." },
+            { title: "Wingman Badge Statuses", desc: "Imported (already in DB), Verifying… (re-checking Wingman, light blue), Uploading… (EI running and bundle sending), Pending (waiting for Wingman to finish), Completed (fresh import), Send to Wingman (retry), Wingman offline (service down)." },
           ]
         }
       ]
