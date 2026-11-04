@@ -521,6 +521,15 @@ pub fn run_ei_wingman_bundle(app: &AppHandle, input: &Path) -> Result<(PathBuf, 
         return Err(format!("local log file does not exist: {}", input.display()));
     }
     let input_win = path_to_windows(input);
+    // First run normal config to produce JSON
+    if let Some(normal_cfg) = ei_config_path(app) {
+        let mut cmd = Command::new(&bin);
+        cmd.arg("-c").arg(path_to_windows(&normal_cfg)).arg(&input_win);
+        #[cfg(windows)]
+        cmd.creation_flags(0x08000000);
+        let _ = cmd.status();
+    }
+    // Then run HTML config to produce HTML
     let mut cmd = Command::new(&bin);
     cmd.arg("-c").arg(path_to_windows(&cfg)).arg(&input_win);
     #[cfg(windows)]
