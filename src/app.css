@@ -2584,6 +2584,12 @@ html.reduce-motion .session-pill {
   color: #a5b4fc;
 }
 
+.wm-verifying {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  color: #a5b4fc;
+}
+
 .wm-pending {
   background: color-mix(in srgb, #fbbf24 16%, transparent);
   border-color: color-mix(in srgb, #fbbf24 40%, transparent);

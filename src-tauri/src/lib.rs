@@ -709,7 +709,137 @@ async fn retry_wingman_import(app: AppHandle, file_path: String) -> Result<(), S
     Ok(())
 }
 
-// Raw-log fallback for Wingman: when dps.report is down (no permalink), run
+// Lightweight re-check of Wingman's DB/queue state for a log that is currently
+// stuck in "in_progress". Does NOT run Elite Insights or re-upload; it only
+// asks Wingman whether the log is already imported or queued and flips the
+// persisted status accordingly. Used by the 20s safety net and startup recovery.
+#[tauri::command]
+async fn verify_wingman_status(app: AppHandle, file_path: String) -> Result<(), String> {
+    let config = crate::config::load_config(&app);
+    if !config.wingman_enabled {
+        return Ok(());
+    }
+    let history = crate::config::load_history(&app);
+    let rec = history.iter().find(|r| r.file_path == file_path);
+    let permalink = rec.and_then(|r| r.url.clone());
+    let account = if !config.wingman_account.trim().is_empty() {
+        config.wingman_account.clone()
+    } else {
+        config.wingman_accounts.first().cloned().unwrap_or_default()
+    };
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+
+    let mut outcome: Option<String> = None;
+
+    if let Some(link) = permalink {
+        // Link import path: ask Wingman's queue/DB.
+        let precheck_url = format!(
+            "https://gw2wingman.nevermindcreations.de/api/checkLogQueuedOrDB?link={}",
+            link
+        );
+        if let Ok(resp) = client.get(&precheck_url).send().await {
+            if let Ok(text) = resp.text().await {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+                    if v.get("inDB").and_then(|b| b.as_bool()) == Some(true) {
+                        outcome = Some("imported".to_string());
+                    } else if v.get("inQueue").and_then(|b| b.as_bool()) == Some(true) {
+                        outcome = Some("in_progress".to_string());
+                    }
+                }
+            }
+        }
+        // If Wingman doesn't know, try importing by link (idempotent).
+        if outcome.is_none() {
+            let url = format!(
+                "https://gw2wingman.nevermindcreations.de/api/importLogQueued?link={}",
+                link
+            );
+            if let Ok(resp) = client.get(&url).send().await {
+                let status = resp.status();
+                let text = resp.text().await.unwrap_or_default();
+                if status.is_success() {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+                        let success = v.get("success").and_then(|s| s.as_i64());
+                        let note = v.get("note").and_then(|s| s.as_str()).unwrap_or("").to_lowercase();
+                        if success == Some(0) || note.contains("already") || note.contains("in wingman") {
+                            outcome = Some("imported".to_string());
+                        } else {
+                            outcome = Some("done".to_string());
+                        }
+                    } else {
+                        outcome = Some("done".to_string());
+                    }
+                } else {
+                    outcome = Some("failed".to_string());
+                }
+            } else {
+                outcome = Some("failed".to_string());
+            }
+        }
+    } else {
+        // Raw upload path: pre-check by file metadata.
+        let file_name = std::path::Path::new(&file_path)
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let (file_size, file_ts) = match std::fs::metadata(&file_path) {
+            Ok(m) => {
+                let size = m.len();
+                let ts = m
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                (size, ts)
+            }
+            Err(_) => (0, 0),
+        };
+        let precheck_url = format!(
+            "https://gw2wingman.nevermindcreations.de/api/checkUpload?file={}&timestamp={}&filesize={}&account={}",
+            file_name.replace(' ', "%20"),
+            file_ts,
+            file_size,
+            account.replace(' ', "%20")
+        );
+        if let Ok(resp) = client.get(&precheck_url).send().await {
+            if let Ok(text) = resp.text().await {
+                let ok = if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+                    v.as_bool().or_else(|| v.as_str().map(|s| s.eq_ignore_ascii_case("true")))
+                } else {
+                    let t = text.trim().to_lowercase();
+                    if t == "true" { Some(true) } else if t == "false" { Some(false) } else { None }
+                };
+                if ok == Some(false) {
+                    outcome = Some("imported".to_string());
+                }
+            }
+        }
+        // If Wingman doesn't have it, leave as in_progress (don't re-run EI here).
+        if outcome.is_none() {
+            outcome = Some("in_progress".to_string());
+        }
+    }
+
+    if let Some(o) = outcome {
+        let path = file_path.clone();
+        let _ = crate::config::with_history_mut(&app, |history| {
+            if let Some(idx) = history.iter().position(|r| r.file_path == path) {
+                history[idx].wingman_status = Some(o.clone());
+                let _ = app.emit("upload-status", history[idx].clone());
+                true
+            } else {
+                false
+            }
+        });
+    }
+    Ok(())
+}
 // local Elite Insights to produce the JSON+HTML bundle and upload that to
 // Wingman via /api/uploadProcessed instead of importing by dps.report link.
 #[tauri::command]
@@ -1300,6 +1430,7 @@ pub fn run() {
             add_log_note,
             delete_log_note,
             retry_wingman_import,
+            verify_wingman_status,
             retry_wingman_raw_upload,
             toggle_favorite,
             get_vl_rank_catalog,

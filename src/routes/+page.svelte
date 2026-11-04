@@ -294,7 +294,7 @@
   // Live Wingman retry UI state per log path: null = idle, 'sending' = in-flight.
   // The persistent record.wingman_status drives 'failed'/'done'; this only adds the
   // transient 'sending' phase so the animation can play in every view without polling.
-  let wingmanUi = $state<Record<string, "sending" | null>>({});
+  let wingmanUi = $state<Record<string, "sending" | "verifying" | null>>({});
 
   // Serial retry queue: drains failed Wingman imports one at a time (with a gap)
   // so N clients recovering simultaneously don't stampede the server. Concurrency 1.
@@ -2789,8 +2789,17 @@
   });
   $effect(() => {
     if (allHistory.length > 0) {
-      const pending = allHistory.filter((h) => h.wingman_status === "in_progress" || (h.status === "On Hold" && (!h.wingman_status || h.wingman_status === "failed")));
+      const pending = allHistory.filter((h) => h.wingman_status === "in_progress");
       for (const h of pending) {
+        if (!wingmanQueue.includes(h.file_path)) {
+          wingmanUi[h.file_path] = "verifying";
+          invoke("verify_wingman_status", { filePath: h.file_path })
+            .catch((e) => console.error("verify failed:", e))
+            .finally(() => { wingmanUi[h.file_path] = null; });
+        }
+      }
+      const pendingFailed = allHistory.filter((h) => h.status === "On Hold" && (!h.wingman_status || h.wingman_status === "failed"));
+      for (const h of pendingFailed) {
         if (!wingmanQueue.includes(h.file_path)) enqueueWingmanRetry(h.file_path);
       }
     }
@@ -3897,9 +3906,17 @@
       checkWingmanStatus();
       const pendingOnHold = allHistory.filter((h) => h.status === "On Hold" && !dpsQueue.includes(h.file_path));
       for (const h of pendingOnHold) enqueueDpsRetry(h.file_path);
-      // Wingman safety net: re-enqueue orphaned in_progress/failed logs
-      const pendingWingman = allHistory.filter((h) => (h.wingman_status === "in_progress" || (h.status === "On Hold" && (!h.wingman_status || h.wingman_status === "failed"))) && !wingmanQueue.includes(h.file_path));
-      for (const h of pendingWingman) enqueueWingmanRetry(h.file_path);
+      // Wingman safety net: verify orphaned in_progress logs (no EI re-run)
+      const pendingWingman = allHistory.filter((h) => (h.wingman_status === "in_progress") && !wingmanQueue.includes(h.file_path));
+      for (const h of pendingWingman) {
+        wingmanUi[h.file_path] = "verifying";
+        invoke("verify_wingman_status", { filePath: h.file_path })
+          .catch((e) => console.error("verify failed:", e))
+          .finally(() => { wingmanUi[h.file_path] = null; });
+      }
+      // On Hold failed logs: re-enqueue
+      const pendingFailed = allHistory.filter((h) => h.status === "On Hold" && (!h.wingman_status || h.wingman_status === "failed") && !wingmanQueue.includes(h.file_path));
+      for (const h of pendingFailed) enqueueWingmanRetry(h.file_path);
     }, 20000);
     // Hourly update-poll handle (declared here so the onMount cleanup can clear it).
     let updatePollInterval: number | null = null;
@@ -5610,9 +5627,10 @@ async function testWebhook(wh: any) {
             <img src="/wingman_icon.png" alt="" class="wm-spin" style="width:14px;height:14px;vertical-align:middle;" /> Queued
           </span>
         {/if}
-        {#if wingman_enabled && (log.wingman_status === "failed" || log.wingman_status === "imported" || wingmanUi[log.file_path] === "sending" || log.wingman_status === "done" || log.wingman_status === "in_progress")}
+        {#if wingman_enabled && (log.wingman_status === "failed" || log.wingman_status === "imported" || wingmanUi[log.file_path] === "sending" || wingmanUi[log.file_path] === "verifying" || log.wingman_status === "done" || log.wingman_status === "in_progress")}
           {@const isActive = wingmanUi[log.file_path] === "sending" || wingmanQueue.includes(log.file_path)}
-          {@const wmState = isActive ? "sending" : (log.wingman_status === "in_progress" ? "pending" : (log.wingman_status ?? "failed"))}
+          {@const isVerifying = wingmanUi[log.file_path] === "verifying"}
+          {@const wmState = isVerifying ? "verifying" : (isActive ? "sending" : (log.wingman_status === "in_progress" ? "pending" : (log.wingman_status ?? "failed")))}
           {#if wmState === "imported"}
             <span class="wm-chip wm-imported custom-tooltip-container">
               <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Imported
@@ -5636,6 +5654,11 @@ async function testWebhook(wh: any) {
             {/if}
           {:else if wmState === "sending"}
             <span class="wm-chip wm-sending custom-tooltip-container"><img src="/wingman_icon.png" alt="" class="wm-spin" style="width:14px;height:14px;vertical-align:middle;" /> Uploading…<span class="custom-tooltip">Uploading to Wingman — Elite Insights is running and the bundle is being sent, or the import is still in progress.</span></span>
+          {:else if wmState === "verifying"}
+            <span class="wm-chip wm-verifying custom-tooltip-container">
+              <img src="/wingman_icon.png" alt="" class="wm-spin" style="width:14px;height:14px;vertical-align:middle;" /> Verifying…
+              <span class="custom-tooltip">Re-checking Wingman's database for this log.</span>
+            </span>
           {:else if wmState === "pending"}
             <button class="wm-chip wm-pending custom-tooltip-container" onclick={(e) => { e.stopPropagation(); sendToWingman(log.file_path); }}>
               <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Pending
