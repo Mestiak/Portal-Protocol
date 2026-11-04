@@ -6136,7 +6136,7 @@ async function testWebhook(wh: any) {
     </div>
   {/if}
 
-  {#if log.error_msg && !retryingPaths.has(log.file_path) && log.status !== "Skipped"}
+  {#if log.error_msg && !retryingPaths.has(log.file_path) && log.status !== "Skipped" && log.status !== "On Hold"}
     <div class="error-msg-row">
       {#if log.status === "On Hold"}
         <span class="onhold-reason"><i class="fa-solid fa-pause" style="margin-right: 5px;"></i>{log.error_msg}</span>
