@@ -10,6 +10,8 @@ mod vl_ranks;
 mod watcher;
 
 use config::AppConfig;
+
+pub static EI_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -731,6 +733,7 @@ pub async fn wingman_raw_upload(app: AppHandle, file_path: String) -> Result<(),
     let app_clone = app.clone();
     let fp_clone = file_path.clone();
     let bundle = tauri::async_runtime::spawn_blocking(move || {
+        let _guard = crate::EI_LOCK.lock().unwrap();
         crate::ei_runner::run_ei_wingman_bundle(&app_clone, std::path::Path::new(&fp_clone))
     })
     .await
