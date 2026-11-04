@@ -565,7 +565,10 @@ pub fn run_ei_wingman_bundle(app: &AppHandle, input: &Path) -> Result<(PathBuf, 
             if !name_matches { continue; }
             if p.extension().and_then(|x| x.to_str()) == Some("html") && html_found.is_none() {
                 html_found = Some(p);
-            } else if p.extension().and_then(|x| x.to_str()) == Some("json") && json_found.is_none() {
+            } else if (p.extension().and_then(|x| x.to_str()) == Some("json")
+                || p.to_string_lossy().ends_with(".json.gz"))
+                && json_found.is_none()
+            {
                 json_found = Some(p);
             }
         }

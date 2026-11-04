@@ -747,6 +747,21 @@ pub async fn wingman_raw_upload(app: AppHandle, file_path: String) -> Result<(),
         }
     };
 
+    // Decompress JSON if gzipped
+    let mut json_path = json_path;
+    if json_path.to_string_lossy().ends_with(".json.gz") {
+        let out = json_path.with_extension("").with_extension("json");
+        if let Ok(gz) = std::fs::read(&json_path) {
+            use std::io::Read;
+            let mut decoder = flate2::read::GzDecoder::new(&gz[..]);
+            let mut s = String::new();
+            if decoder.read_to_string(&mut s).is_ok() {
+                let _ = std::fs::write(&out, s);
+                json_path = out;
+            }
+        }
+    }
+
     // File metadata for the pre-check.
     let file_name = std::path::Path::new(&file_path)
         .file_name()
