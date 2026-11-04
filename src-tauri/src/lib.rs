@@ -299,7 +299,7 @@ async fn check_dps_report_status() -> Result<String, String> {
     let down = matches!(status, Ok(ref s) if s == "offline");
     if down {
         let n = FAILS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-        if n >= 2 {
+        if n >= 3 {
             crate::uploader::set_dps_report_down(true);
         }
     } else {
@@ -340,7 +340,7 @@ async fn check_backup_dps_status() -> Result<String, String> {
     let down = matches!(status, Ok(ref s) if s == "offline");
     if down {
         let n = FAILS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-        if n >= 2 {
+        if n >= 3 {
             crate::uploader::set_backup_dps_down(true);
         }
     } else {
