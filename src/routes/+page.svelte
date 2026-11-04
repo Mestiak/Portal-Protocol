@@ -360,7 +360,7 @@
         const dpsStatusNow = (dpsReportStatus as string);
         if (dpsStatusNow !== "online") break; // pause; remaining stays queued
         const fp = dpsQueue[0];
-        // Gap 6: skip if dps.report already succeeded for this log
+        // Skip if dps.report already succeeded for this log (avoids redundant re-upload)
         const rec = uploads.find((u) => u.file_path === fp) ?? allHistory.find((h) => h.file_path === fp);
         if (rec && rec.url && rec.status === "Completed") {
           dpsQueueDone += 1;
