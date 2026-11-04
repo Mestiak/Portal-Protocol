@@ -6478,7 +6478,7 @@ async function testWebhook(wh: any) {
   {/if}
 
   {#if dpsReportStatus === "offline" && !dpsBannerDismissed}
-    <div class="app-toast app-dps-down-banner" role="status" aria-live="polite">
+    <div class="app-toast app-dps-down-banner" role="status" aria-live="polite" transition:fade={{ duration: prefersReducedMotion ? 0 : 220 }}>
       <span class="app-toast-icon"><i class="fa-solid fa-triangle-exclamation"></i></span>
       {#if bDpsReportStatus === "online" && use_backup_dps}
         <span>dps.report is unreachable — uploads are auto-routing to <strong>b.dps.report</strong> until it recovers.</span>
