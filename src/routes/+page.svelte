@@ -3987,6 +3987,11 @@
           allHistory = [r, ...allHistory];
         }
 
+        // Auto-enqueue On Hold logs (no dps.report link) for Wingman raw upload
+        if (r.status === "On Hold" && !r.url && (!r.wingman_status || r.wingman_status === "failed")) {
+          enqueueWingmanRetry(r.file_path);
+        }
+
         const idx = uploads.findIndex((u) => u.file_path === r.file_path);
         let wasCompleted = false;
         if (idx !== -1) {
