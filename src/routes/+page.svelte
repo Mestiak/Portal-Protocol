@@ -5913,11 +5913,6 @@ async function testWebhook(wh: any) {
       </div>
     </div>
   {/if}
-  {#if log.status === "On Hold"}
-    <div class="on-hold-footer-banner">
-      <i class="fa-solid fa-pause"></i> On Hold — dps.report is down; uploading to Wingman via local EI
-    </div>
-  {/if}
 </div>
 {/snippet}
 
@@ -6213,6 +6208,11 @@ async function testWebhook(wh: any) {
           <pre style="margin: 0; background: rgba(0,0,0,0.3); padding: 6px; border-radius: 4px; overflow-x: auto; color: #cbd5e1; max-height: 80px; font-size: 10px;">{d.upload_response_body}</pre>
         </div>
       {/if}
+    </div>
+  {/if}
+  {#if log.status === "On Hold"}
+    <div class="on-hold-footer-banner">
+      <i class="fa-solid fa-pause"></i> On Hold — dps.report is down; uploading to Wingman via local EI
     </div>
   {/if}
 </div>
