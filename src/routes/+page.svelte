@@ -5613,17 +5613,17 @@ async function testWebhook(wh: any) {
         {#if wingman_enabled && (log.wingman_status === "failed" || log.wingman_status === "imported" || wingmanUi[log.file_path] === "sending" || log.wingman_status === "done" || log.wingman_status === "in_progress")}
           {@const wmState = wingmanUi[log.file_path] === "sending" ? "sending" : (log.wingman_status === "in_progress" ? "sending" : (log.wingman_status ?? "failed"))}
           {#if wmState === "imported"}
-            <span class="wm-chip wm-imported" title="This log was already imported into Wingman.">
+            <span class="wm-chip wm-imported" title="Already in Wingman's database — no further action needed.">
               <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Imported
             </span>
           {/if}
           {#if wmState === "failed"}
             {#if wingmanStatus === "offline"}
-              <span class="wm-chip wm-offline" title="GW2 Wingman is currently offline — this log will be retried once the service is reachable again.">
+              <span class="wm-chip wm-offline" title="Wingman is offline — this log will retry automatically when the service recovers.">
                 <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Wingman offline
               </span>
             {:else}
-              <button class="wm-chip wm-failed" title="Wingman was unreachable when this log uploaded — click to retry importing it into Wingman." onclick={(e) => { e.stopPropagation(); sendToWingman(log.file_path); }}>
+              <button class="wm-chip wm-failed" title="Wingman import failed — click to retry sending this log." onclick={(e) => { e.stopPropagation(); sendToWingman(log.file_path); }}>
                 <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Send to Wingman
               </button>
               {#if likelyCause(log)}
@@ -5631,9 +5631,9 @@ async function testWebhook(wh: any) {
               {/if}
             {/if}
           {:else if wmState === "sending"}
-            <span class="wm-chip wm-sending" title="Uploading this log to Wingman — Elite Insights is running and the bundle is being sent."><img src="/wingman_icon.png" alt="" class="wm-spin" style="width:14px;height:14px;vertical-align:middle;" /> Uploading…</span>
+            <span class="wm-chip wm-sending" title="Running local Elite Insights and sending the bundle to Wingman. This may take a minute."><img src="/wingman_icon.png" alt="" class="wm-spin" style="width:14px;height:14px;vertical-align:middle;" /> Uploading…</span>
           {:else if wmState === "done"}
-            <span class="wm-chip wm-done" title="Successfully uploaded and imported into Wingman."><img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Completed</span>
+            <span class="wm-chip wm-done" title="Successfully imported into Wingman."><img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Completed</span>
           {/if}
         {/if}
         {#if discord_webhooks.length > 0 && log.discord_pending === true}
