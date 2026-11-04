@@ -2795,7 +2795,7 @@
       for (const h of pending) {
         if (!wingmanQueue.includes(h.file_path)) {
           const now = Date.now();
-          if (verifyCooldown[h.file_path] && now - verifyCooldown[h.file_path] < 30000) continue;
+          if (verifyCooldown[h.file_path] && now - verifyCooldown[h.file_path] < 120000) continue;
           verifyCooldown[h.file_path] = now;
           wingmanUi[h.file_path] = "verifying";
           invoke("verify_wingman_status", { filePath: h.file_path })
@@ -3915,7 +3915,7 @@
       const pendingWingman = allHistory.filter((h) => (h.wingman_status === "in_progress") && !wingmanQueue.includes(h.file_path));
       for (const h of pendingWingman) {
         const now = Date.now();
-        if (verifyCooldown[h.file_path] && now - verifyCooldown[h.file_path] < 30000) continue;
+        if (verifyCooldown[h.file_path] && now - verifyCooldown[h.file_path] < 120000) continue;
         verifyCooldown[h.file_path] = now;
         wingmanUi[h.file_path] = "verifying";
         invoke("verify_wingman_status", { filePath: h.file_path })
