@@ -6109,6 +6109,11 @@ async function testWebhook(wh: any) {
   {/if}
   <div class="file-name-bar">
     <span class="file-name">{basename(log.file_path)}</span>
+    {#if log.status === "On Hold"}
+      <div class="on-hold-footer-banner" style="margin-left: auto;">
+        <i class="fa-solid fa-pause"></i> On Hold — dps.report is down; uploading to Wingman via local EI
+      </div>
+    {/if}
   </div>
   {#if notesOpen[cardId(log)]}
     <div class="notes-section">
@@ -6212,11 +6217,6 @@ async function testWebhook(wh: any) {
           <pre style="margin: 0; background: rgba(0,0,0,0.3); padding: 6px; border-radius: 4px; overflow-x: auto; color: #cbd5e1; max-height: 80px; font-size: 10px;">{d.upload_response_body}</pre>
         </div>
       {/if}
-    </div>
-  {/if}
-  {#if log.status === "On Hold"}
-    <div class="on-hold-footer-banner">
-      <i class="fa-solid fa-pause"></i> On Hold — dps.report is down; uploading to Wingman via local EI
     </div>
   {/if}
 </div>
@@ -9079,6 +9079,9 @@ async function testWebhook(wh: any) {
   .file-name-bar {
     margin-top: 6px;
     padding: 2px 0 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
   .file-name {
     display: block;
