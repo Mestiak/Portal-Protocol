@@ -293,8 +293,10 @@
   let kaiPhasesCollapsed = $state(true);
   // Live Wingman retry UI state per log path: null = idle, 'sending' = in-flight.
   // The persistent record.wingman_status drives 'failed'/'done'; this only adds the
-  // transient 'sending' phase so the animation can play in every view without polling.
+  // transient 'sending'/'verifying' phase so the animation can play.
   let wingmanUi = $state<Record<string, "sending" | "verifying" | null>>({});
+  // Cooldown (ms) between verify calls per log to avoid tight verify→pending→verify loops.
+  let verifyCooldown = $state<Record<string, number>>({});
 
   // Serial retry queue: drains failed Wingman imports one at a time (with a gap)
   // so N clients recovering simultaneously don't stampede the server. Concurrency 1.
@@ -2792,6 +2794,9 @@
       const pending = allHistory.filter((h) => h.wingman_status === "in_progress");
       for (const h of pending) {
         if (!wingmanQueue.includes(h.file_path)) {
+          const now = Date.now();
+          if (verifyCooldown[h.file_path] && now - verifyCooldown[h.file_path] < 30000) continue;
+          verifyCooldown[h.file_path] = now;
           wingmanUi[h.file_path] = "verifying";
           invoke("verify_wingman_status", { filePath: h.file_path })
             .catch((e) => console.error("verify failed:", e))
@@ -3909,6 +3914,9 @@
       // Wingman safety net: verify orphaned in_progress logs (no EI re-run)
       const pendingWingman = allHistory.filter((h) => (h.wingman_status === "in_progress") && !wingmanQueue.includes(h.file_path));
       for (const h of pendingWingman) {
+        const now = Date.now();
+        if (verifyCooldown[h.file_path] && now - verifyCooldown[h.file_path] < 30000) continue;
+        verifyCooldown[h.file_path] = now;
         wingmanUi[h.file_path] = "verifying";
         invoke("verify_wingman_status", { filePath: h.file_path })
           .catch((e) => console.error("verify failed:", e))
