@@ -5611,7 +5611,8 @@ async function testWebhook(wh: any) {
           </span>
         {/if}
         {#if wingman_enabled && (log.wingman_status === "failed" || log.wingman_status === "imported" || wingmanUi[log.file_path] === "sending" || log.wingman_status === "done" || log.wingman_status === "in_progress")}
-          {@const wmState = wingmanUi[log.file_path] === "sending" ? "sending" : (log.wingman_status === "in_progress" ? "sending" : (log.wingman_status ?? "failed"))}
+          {@const isActive = wingmanUi[log.file_path] === "sending" || wingmanQueue.includes(log.file_path)}
+          {@const wmState = isActive ? "sending" : (log.wingman_status === "in_progress" ? "pending" : (log.wingman_status ?? "failed"))}
           {#if wmState === "imported"}
             <span class="wm-chip wm-imported custom-tooltip-container">
               <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Imported
@@ -5635,9 +5636,17 @@ async function testWebhook(wh: any) {
             {/if}
           {:else if wmState === "sending"}
             <span class="wm-chip wm-sending custom-tooltip-container"><img src="/wingman_icon.png" alt="" class="wm-spin" style="width:14px;height:14px;vertical-align:middle;" /> Uploading…<span class="custom-tooltip">Uploading to Wingman — Elite Insights is running and the bundle is being sent, or the import is still in progress.</span></span>
+          {:else if wmState === "pending"}
+            <span class="wm-chip wm-pending custom-tooltip-container">
+              <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Pending
+              <span class="custom-tooltip">Waiting for Wingman to finish processing this log.</span>
+            </span>
           {:else if wmState === "done"}
-            <span class="wm-chip wm-done custom-tooltip-container"><img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Completed<span class="custom-tooltip">Successfully imported into Wingman.</span></span>
-          {/if}
+            <span class="wm-chip wm-done custom-tooltip-container">
+              <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Completed
+              <span class="custom-tooltip">Successfully imported into Wingman.</span>
+            </span>
+        {/if}
         {/if}
         {#if discord_webhooks.length > 0 && log.discord_pending === true}
           <span class="wm-chip wm-offline" title="A Discord webhook post failed when this log uploaded. It will be retried automatically the next time this log uploads successfully (e.g. on a dps.report recovery sweep).">
