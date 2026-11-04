@@ -576,7 +576,9 @@
           items: [
             { title: "Faster, Parallel Uploads", desc: "Different logs now parse with Elite Insights at the same time instead of one-by-one." },
             { title: "New Badges", desc: "Retrying in Xs (backoff countdown), Paused (when uploads are paused), plus a cancel (✕) button on queued items." },
-            { title: "Upload Audit Log", desc: "Every Wingman result is saved to upload_audit.jsonl in your config folder for troubleshooting." }
+            { title: "Upload Audit Log", desc: "Every Wingman result is saved to upload_audit.jsonl in your config folder for troubleshooting." },
+            { title: "Wingman Badge Statuses", desc: "Imported (already in DB), Verifying… (re-checking, light blue), Uploading… (EI running), Pending (waiting), Completed (success), Send to Wingman (retry), Wingman offline (service down), Retrying in Xs (backoff), Paused (queued while paused)." },
+            { title: "Upload Flow", desc: "Log → dps.report (link + success/failed) → Wingman link import when a link exists; On Hold (no link) → local Elite Insights raw upload to Wingman." }
           ]
         },
         {
