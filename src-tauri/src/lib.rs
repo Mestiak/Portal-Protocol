@@ -11,7 +11,19 @@ mod watcher;
 
 use config::AppConfig;
 
-pub static EI_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+pub static EI_LOCKS: OnceLock<Mutex<std::collections::HashMap<std::path::PathBuf, Arc<Mutex<()>>>>> = OnceLock::new();
+pub fn ei_locks() -> &'static Mutex<std::collections::HashMap<std::path::PathBuf, Arc<Mutex<()>>>> {
+    EI_LOCKS.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+}
+pub fn ei_lock_for(path: &std::path::Path) -> Arc<Mutex<()>> {
+    let lock = ei_locks();
+    {
+        let map = lock.lock().unwrap();
+        if let Some(v) = map.get(path) { return v.clone(); }
+    }
+    let mut map = lock.lock().unwrap();
+    map.entry(path.to_path_buf()).or_insert_with(|| Arc::new(Mutex::new(()))).clone()
+}
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -299,7 +311,7 @@ async fn check_dps_report_status() -> Result<String, String> {
     let down = matches!(status, Ok(ref s) if s == "offline");
     if down {
         let n = FAILS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-        if n >= 2 {
+        if n >= 3 {
             crate::uploader::set_dps_report_down(true);
         }
     } else {
@@ -307,6 +319,11 @@ async fn check_dps_report_status() -> Result<String, String> {
         crate::uploader::set_dps_report_down(false);
     }
     status
+}
+
+#[tauri::command]
+fn check_bundled_ei(app: AppHandle) -> Result<(), String> {
+    crate::ei_runner::check_bundled_ei(&app)
 }
 
 #[tauri::command]
@@ -335,7 +352,7 @@ async fn check_backup_dps_status() -> Result<String, String> {
     let down = matches!(status, Ok(ref s) if s == "offline");
     if down {
         let n = FAILS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-        if n >= 2 {
+        if n >= 3 {
             crate::uploader::set_backup_dps_down(true);
         }
     } else {
@@ -878,7 +895,8 @@ pub async fn wingman_raw_upload(app: AppHandle, file_path: String) -> Result<(),
     let bundle = tokio::time::timeout(
         std::time::Duration::from_secs(300),
         tauri::async_runtime::spawn_blocking(move || {
-            let _guard = crate::EI_LOCK.lock().unwrap();
+            let _lock = crate::ei_lock_for(std::path::Path::new(&fp_clone));
+            let _guard = _lock.lock().unwrap();
             crate::ei_runner::run_ei_wingman_bundle(&app_clone, std::path::Path::new(&fp_clone))
         }),
     )
@@ -1042,6 +1060,27 @@ fn set_wingman_status(app: &AppHandle, file_path: &str, status: &str) {
             false
         }
     });
+    // Rotating audit log (D1): append terminal outcomes.
+    if status == "failed" || status == "imported" || status == "done" {
+        let _ = append_audit_log(app, &format!(r#"{{"file_path":"{}","status":"{}","ts":{}}}"#, file_path, status, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)));
+    }
+}
+
+fn append_audit_log(app: &AppHandle, line: &str) -> Result<(), String> {
+    use std::io::Write;
+    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).ok();
+    let p = dir.join("upload_audit.jsonl");
+    // Rotate if > 10MB
+    if let Ok(meta) = std::fs::metadata(&p) {
+        if meta.len() > 10 * 1024 * 1024 {
+            let rotated = dir.join("upload_audit.1.jsonl");
+            let _ = std::fs::rename(&p, &rotated);
+        }
+    }
+    let mut f = std::fs::OpenOptions::new().create(true).append(true).open(&p).map_err(|e| e.to_string())?;
+    writeln!(f, "{}", line).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -1453,6 +1492,7 @@ pub fn run() {
             crate::uploader::read_webhook_log,
             crate::uploader::resend_failed_webhooks,
             crate::ei_runner::check_ei_runtime,
+            check_bundled_ei,
             crate::ei_runner::open_ei_html_report,
             crate::ei_runner::clear_ei_html_cache,
             crate::ei_runner::get_ei_html_cache_info,

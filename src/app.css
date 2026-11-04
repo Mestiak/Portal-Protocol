@@ -8915,3 +8915,8 @@ input:focus {
   box-shadow: 0 0 12px rgba(250, 204, 21, 0.15);
 }
 
+
+.wm-cancel { background: transparent; border: none; color: var(--muted-foreground); cursor: pointer; font-size: 12px; padding: 0 4px; }
+.wm-cancel:hover { color: var(--accent); }
+
+.wm-retry-in { font-size: 11px; color: var(--muted-foreground); margin-left: 4px; }

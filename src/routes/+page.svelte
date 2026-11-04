@@ -295,6 +295,9 @@
   // The persistent record.wingman_status drives 'failed'/'done'; this only adds the
   // transient 'sending'/'verifying' phase so the animation can play.
   let wingmanUi = $state<Record<string, "sending" | "verifying" | null>>({});
+  // Exponential backoff for failed Wingman retries: 20s → 40s → 80s → 160s → cap 5min.
+  let wingmanRetryAt = $state<Record<string, number>>({});
+  let wingmanRetryCount = $state<Record<string, number>>({});
   // Cooldown (ms) between verify calls per log to avoid tight verify→pending→verify loops.
   let verifyCooldown = $state<Record<string, number>>({});
 
@@ -302,6 +305,10 @@
   // so N clients recovering simultaneously don't stampede the server. Concurrency 1.
   const WM_SEND_GAP_MS = 2000;
   let wingmanQueue = $state<string[]>([]);
+  // Persist Wingman queue to localStorage so it survives app restarts.
+  $effect(() => {
+    try { localStorage.setItem("wingmanQueue", JSON.stringify(wingmanQueue)); } catch {}
+  });
   let wingmanQueueRunning = $state(false);
   let wingmanQueueDone = $state(0);
 
@@ -403,20 +410,37 @@
     wingmanQueueRunning = true;
     try {
       while (wingmanQueue.length > 0) {
+        const fp = wingmanQueue[0];
+        // Respect exponential backoff: skip if not yet due.
+        const due = wingmanRetryAt[fp] ?? 0;
+        if (Date.now() < due) {
+          // Move to back of queue and wait briefly.
+          wingmanQueue = [...wingmanQueue.slice(1), fp];
+          await new Promise((r) => setTimeout(r, 1000));
+          continue;
+        }
         if ((wingmanStatus as string) === "offline") {
-          // Wingman is down: sleep briefly and re-check instead of abandoning
-          // the queue. When it recovers, draining resumes automatically with
-          // normal spacing. Without this, queued items would stall forever.
           await new Promise((r) => setTimeout(r, 2000));
           continue;
         }
-        const fp = wingmanQueue[0];
         wingmanUi[fp] = "sending";
         const hasUrl = allHistory.find((h) => h.file_path === fp)?.url;
         const cmd = (hasUrl && dpsReportStatus === "online") ? "retry_wingman_import" : "retry_wingman_raw_upload";
         await invoke(cmd, { filePath: fp })
-          .catch((e) => console.error("Wingman retry failed:", e))
+          .catch((e) => { console.error("Wingman retry failed:", e); showToast(`Wingman upload failed: ${e}`, "default"); })
           .finally(() => { wingmanUi[fp] = null; });
+        // Apply exponential backoff if still failed.
+        const rec = allHistory.find((h) => h.file_path === fp);
+        if (rec?.wingman_status === "failed") {
+          const n = (wingmanRetryCount[fp] ?? 0) + 1;
+          wingmanRetryCount[fp] = n;
+          const delay = Math.min(20000 * Math.pow(2, n - 1), 300000);
+          wingmanRetryAt[fp] = Date.now() + delay;
+        } else {
+          // Success: clear backoff.
+          wingmanRetryCount[fp] = 0;
+          wingmanRetryAt[fp] = 0;
+        }
         wingmanQueueDone += 1;
         wingmanQueue = wingmanQueue.slice(1);
         await new Promise((r) => setTimeout(r, WM_SEND_GAP_MS)); // spacing + UI paint
@@ -436,9 +460,19 @@
   // On Wingman recovery, sweep all failed logs into the queue. Jitter spreads
   // client start times so recovery doesn't trigger a synchronized herd.
   function enqueueAllFailedOnRecovery() {
-    const failed = allHistory
-      .filter((h) => h.wingman_status === "failed")
-      .map((h) => h.file_path);
+    if (wingmanStatus !== "online") return; // defer until online
+    const collectFailed = (logs: UploadRecord[]) =>
+      logs.filter((h) => h.wingman_status === "failed").map((h) => h.file_path);
+    const failedSet = new Set<string>();
+    for (const fp of collectFailed(allHistory)) failedSet.add(fp);
+    for (const fp of collectFailed(uploads)) failedSet.add(fp);
+    for (const s of sessions) {
+      for (const fp of collectFailed(s.logs ?? [])) failedSet.add(fp);
+      for (const sf of s.subfolders ?? []) {
+        for (const fp of collectFailed(sf.logs ?? [])) failedSet.add(fp);
+      }
+    }
+    const failed = [...failedSet];
     if (failed.length === 0) return;
     const jitter = Math.floor(Math.random() * 15000);
     setTimeout(() => { for (const fp of failed) enqueueWingmanRetry(fp); }, jitter);
@@ -533,6 +567,33 @@
   type PatchNoteCategory = { category: string; items: PatchNoteItem[] };
   type PatchNoteVersion = { version: string; date: string; image?: string; notes: PatchNoteCategory[] };
   const PATCH_NOTES_DATA: PatchNoteVersion[] = [
+    {
+      version: "0.7.6",
+      date: "November 2026",
+      notes: [
+        {
+          category: "✨ New Features",
+          items: [
+            { title: "Faster, Parallel Uploads", desc: "Different logs now parse with Elite Insights at the same time instead of one-by-one." },
+            { title: "New Badges", desc: "Retrying in Xs (backoff countdown), Paused (when uploads are paused), plus a cancel (✕) button on queued items." },
+            { title: "Upload Audit Log", desc: "Every Wingman result is saved to upload_audit.jsonl in your config folder for troubleshooting." },
+            { title: "Wingman Badge Statuses", desc: "Imported (already in DB), Verifying… (re-checking, light blue), Uploading… (EI running), Pending (waiting), Completed (success), Send to Wingman (retry), Wingman offline (service down), Retrying in Xs (backoff), Paused (queued while paused)." },
+            { title: "Upload Flow", desc: "Log → dps.report (link + success/failed) → Wingman link import when a link exists; On Hold (no link) → local Elite Insights raw upload to Wingman." }
+          ]
+        },
+        {
+          category: "🔧 Improvements",
+          items: [
+            { title: "Reliable Offline Detection", desc: "A service is only marked down after 3 failed checks in a row — no more false 'offline' flaps." },
+            { title: "Exponential Backoff", desc: "Failed Wingman retries wait 20s, then 40s, 80s, 160s (max 5 min) instead of retrying every 20s." },
+            { title: "Queue Survives Restarts", desc: "The Wingman queue is saved and restored, so pending work isn't lost if you close the app." },
+            { title: "Broader Recovery", desc: "Recovery now also scans logs inside sessions and subfolders, and waits for Wingman to be online before sweeping." },
+            { title: "Safer Elite Insights", desc: "Bundled EI is checked at startup; a hung EI run times out after 5 minutes instead of blocking forever." },
+            { title: "Pending Click Re-checks", desc: "Clicking a Pending badge now runs a quick Wingman database check (Verifying… badge)." }
+          ]
+        }
+      ]
+    },
     {
       version: "0.7.5",
       date: "November 2026",
@@ -3905,6 +3966,13 @@
   });
 
   onMount(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("wingmanQueue") || "[]");
+      if (Array.isArray(saved) && saved.length) wingmanQueue = saved;
+    } catch {}
+    invoke("check_bundled_ei").catch((e) => {
+      console.error("Bundled EI check failed:", e);
+    });
     const statusInterval = setInterval(() => {
       checkDpsReportStatus();
       checkBackupDpsStatus();
@@ -5635,6 +5703,12 @@ async function testWebhook(wh: any) {
             <img src="/wingman_icon.png" alt="" class="wm-spin" style="width:14px;height:14px;vertical-align:middle;" /> Queued
           </span>
         {/if}
+        {#if uploadPaused && (wingmanQueue.includes(log.file_path) || dpsQueue.includes(log.file_path))}
+          <span class="wm-chip wm-paused custom-tooltip-container">
+            <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Paused
+            <span class="custom-tooltip">Uploads paused — resume in settings.</span>
+          </span>
+        {/if}
         {#if wingman_enabled && (log.wingman_status === "failed" || log.wingman_status === "imported" || wingmanUi[log.file_path] === "sending" || wingmanUi[log.file_path] === "verifying" || log.wingman_status === "done" || log.wingman_status === "in_progress")}
           {@const isActive = wingmanUi[log.file_path] === "sending" || wingmanQueue.includes(log.file_path)}
           {@const isVerifying = wingmanUi[log.file_path] === "verifying"}
@@ -5656,22 +5730,29 @@ async function testWebhook(wh: any) {
                 <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Send to Wingman
                 <span class="custom-tooltip">Wingman import failed — click to retry sending this log.</span>
               </button>
+              {#if wingmanRetryAt[log.file_path] && wingmanRetryAt[log.file_path] > Date.now()}
+                <span class="wm-retry-in">Retrying in {Math.ceil((wingmanRetryAt[log.file_path] - Date.now()) / 1000)}s</span>
+              {/if}
               {#if likelyCause(log)}
                 <span class="wm-cause">{likelyCause(log)}</span>
               {/if}
             {/if}
           {:else if wmState === "sending"}
             <span class="wm-chip wm-sending custom-tooltip-container"><img src="/wingman_icon.png" alt="" class="wm-spin" style="width:14px;height:14px;vertical-align:middle;" /> Uploading…<span class="custom-tooltip">Uploading to Wingman — Elite Insights is running and the bundle is being sent, or the import is still in progress.</span></span>
+            {#if wingmanQueue.includes(log.file_path)}
+              <button class="wm-cancel" onclick={(e) => { e.stopPropagation(); wingmanQueue = wingmanQueue.filter((p) => p !== log.file_path); }} title="Cancel queued retry">✕</button>
+            {/if}
           {:else if wmState === "verifying"}
             <span class="wm-chip wm-verifying custom-tooltip-container">
               <img src="/wingman_icon.png" alt="" class="wm-spin" style="width:14px;height:14px;vertical-align:middle;" /> Verifying…
               <span class="custom-tooltip">Re-checking Wingman's database for this log.</span>
             </span>
           {:else if wmState === "pending"}
-            <button class="wm-chip wm-pending custom-tooltip-container" onclick={(e) => { e.stopPropagation(); sendToWingman(log.file_path); }}>
+            <button class="wm-chip wm-pending custom-tooltip-container" onclick={(e) => { e.stopPropagation(); const now = Date.now(); if (verifyCooldown[log.file_path] && now - verifyCooldown[log.file_path] < 120000) return; verifyCooldown[log.file_path] = now; wingmanUi[log.file_path] = "verifying"; invoke("verify_wingman_status", { filePath: log.file_path }).catch((e) => console.error("verify failed:", e)).finally(() => { wingmanUi[log.file_path] = null; }); }}>
               <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Pending
               <span class="custom-tooltip">Upload started; waiting for Wingman. Click to re-check.</span>
             </button>
+            <button class="wm-cancel" onclick={(e) => { e.stopPropagation(); invoke("update_log_status", { filePath: log.file_path, status: "failed" }); wingmanQueue = wingmanQueue.filter((p) => p !== log.file_path); }} title="Cancel">✕</button>
           {:else if wmState === "done"}
             <span class="wm-chip wm-done custom-tooltip-container">
               <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Completed
