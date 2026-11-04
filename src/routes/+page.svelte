@@ -5913,6 +5913,11 @@ async function testWebhook(wh: any) {
       </div>
     </div>
   {/if}
+  {#if log.status === "On Hold"}
+    <div class="on-hold-footer-banner">
+      <i class="fa-solid fa-pause"></i> On Hold — dps.report is down; uploading to Wingman via local EI
+    </div>
+  {/if}
 </div>
 {/snippet}
 
@@ -6499,7 +6504,17 @@ async function testWebhook(wh: any) {
     </div>
   {/if}
 
-  <!-- dps-down banner removed; per-card On Hold banner now conveys status -->
+  {#if dpsReportStatus === "offline" && !dpsBannerDismissed}
+    <div class="app-toast app-dps-down-banner" role="status" aria-live="polite" transition:fade={{ duration: prefersReducedMotion ? 0 : 220 }}>
+      <span class="app-toast-icon"><i class="fa-solid fa-triangle-exclamation"></i></span>
+      {#if bDpsReportStatus === "online" && use_backup_dps}
+        <span>dps.report is unreachable — uploads are auto-routing to <strong>b.dps.report</strong> until it recovers.</span>
+      {:else}
+        <span>dps.report is unreachable — uploads are paused and will resume automatically when it comes back.</span>
+      {/if}
+      <button class="toast-close-btn" onclick={() => (dpsBannerDismissed = true)} aria-label="Close notification">×</button>
+    </div>
+  {/if}
 
   {#if updateModalOpen}
     <div class="update-overlay" transition:fade={{ duration: prefersReducedMotion ? 0 : 160 }}>
@@ -6783,11 +6798,6 @@ async function testWebhook(wh: any) {
                             {@const isSelected = selectedLogs.has(log.file_path)}
                             {@const isCaptured = !!captureSession && captureSession.logPaths.includes(log.file_path)}
                             <div class="log-card card" class:is-favorite={log.is_favorite === true} class:menu-open={activeMenuCard === id} class:is-expanded={isExpanded} class:uploading={log.status === "Uploading"} class:is-selected={isSelected} class:deleting={deletingLogPaths.has(log.file_path)} class:session-captured={isCaptured} class:is-on-hold={log.status === "On Hold"} style="position: relative; cursor: context-menu;" oncontextmenu={(e) => handleLogContextMenu(e, log, false, undefined, () => deleteLogRecord(log.file_path))} role="button" tabindex="0">
-                              {#if log.status === "On Hold"}
-                                <div class="on-hold-banner">
-                                  <i class="fa-solid fa-pause"></i> On Hold — dps.report is down; uploading to Wingman via local EI
-                                </div>
-                              {/if}
                               {#if log.status === "Uploading"}
                                 <div class="upload-progress-top"></div>
                               {/if}

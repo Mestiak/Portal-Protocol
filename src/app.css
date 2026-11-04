@@ -3820,15 +3820,20 @@ html.reduce-motion .session-pill {
   padding: 0 4px;
   opacity: .7;
 }
-.on-hold-banner {
+.on-hold-footer-banner {
+  margin: 8px auto;
+  padding: 6px 12px;
+  border-radius: 8px;
   background: var(--accent);
   color: #fff;
-  padding: 4px 8px;
   font-size: 12px;
   font-weight: 600;
+  text-align: center;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
+  width: fit-content;
 }
 .is-on-hold {
   opacity: 0.85;
@@ -6117,9 +6122,9 @@ html.reduce-motion .session-pill {
 }
 
 .app-dps-down-banner {
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-  color: var(--accent);
+  background: rgba(245, 158, 11, 0.16);
+  border-color: rgba(245, 158, 11, 0.45);
+  color: #fcd34d;
 }
 
 .app-update-btn {
