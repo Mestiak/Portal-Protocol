@@ -2588,6 +2588,7 @@ html.reduce-motion .session-pill {
   background: color-mix(in srgb, #fbbf24 16%, transparent);
   border-color: color-mix(in srgb, #fbbf24 40%, transparent);
   color: #fde68a;
+  cursor: pointer;
 }
 
 .wm-done {

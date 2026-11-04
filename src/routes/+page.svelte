@@ -547,7 +547,7 @@
           items: [
             { title: "On Hold Recovery", desc: "On Hold logs now re-upload to dps.report and update in place instead of being skipped." },
             { title: "Wingman Orphan Recovery", desc: "Stuck in_progress Wingman uploads are re-enqueued on restart; EI runs have a 5-minute timeout." },
-            { title: "Wingman Badge Statuses", desc: "Imported (already in DB), Uploading… (EI running or import in progress), Completed (fresh import), Send to Wingman (retry), Wingman offline (service down)." },
+            { title: "Wingman Badge Statuses", desc: "Imported (already in DB), Uploading… (EI running and bundle sending), Pending (waiting for Wingman to finish), Completed (fresh import), Send to Wingman (retry), Wingman offline (service down)." },
           ]
         }
       ]
@@ -5637,10 +5637,10 @@ async function testWebhook(wh: any) {
           {:else if wmState === "sending"}
             <span class="wm-chip wm-sending custom-tooltip-container"><img src="/wingman_icon.png" alt="" class="wm-spin" style="width:14px;height:14px;vertical-align:middle;" /> Uploading…<span class="custom-tooltip">Uploading to Wingman — Elite Insights is running and the bundle is being sent, or the import is still in progress.</span></span>
           {:else if wmState === "pending"}
-            <span class="wm-chip wm-pending custom-tooltip-container">
+            <button class="wm-chip wm-pending custom-tooltip-container" onclick={(e) => { e.stopPropagation(); sendToWingman(log.file_path); }}>
               <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Pending
-              <span class="custom-tooltip">Waiting for Wingman to finish processing this log.</span>
-            </span>
+              <span class="custom-tooltip">Upload started; waiting for Wingman. Click to re-check.</span>
+            </button>
           {:else if wmState === "done"}
             <span class="wm-chip wm-done custom-tooltip-container">
               <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Completed
