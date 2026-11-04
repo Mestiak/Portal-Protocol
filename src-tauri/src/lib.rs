@@ -844,7 +844,7 @@ pub async fn wingman_raw_upload(app: AppHandle, file_path: String) -> Result<(),
             .text("account", account.clone());
 
         match client
-            .post("https://gw2wingman.nevermindcreations.de/api/uploadProcessed")
+            .post("https://gw2wingman.nevermindcreations.de/uploadProcessed")
             .multipart(form)
             .send()
             .await
