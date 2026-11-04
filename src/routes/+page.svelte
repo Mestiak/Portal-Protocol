@@ -532,6 +532,27 @@
   type PatchNoteVersion = { version: string; date: string; image?: string; notes: PatchNoteCategory[] };
   const PATCH_NOTES_DATA: PatchNoteVersion[] = [
     {
+      version: "0.7.5",
+      date: "November 2026",
+      notes: [
+        {
+          category: "✨ New Features",
+          items: [
+            { title: "Wingman Raw Upload Fallback", desc: "When dps.report is down, the app runs local Elite Insights and uploads the JSON+HTML bundle directly to Wingman." },
+            { title: "On Hold Card Revamp", desc: "On Hold logs get their own header, hide the stepper, and show Fight Time, HP% left, players, and date." }
+          ]
+        },
+        {
+          category: "🔧 Improvements",
+          items: [
+            { title: "On Hold Recovery", desc: "On Hold logs now re-upload to dps.report and update in place instead of being skipped." },
+            { title: "Wingman Orphan Recovery", desc: "Stuck in_progress Wingman uploads are re-enqueued on restart; EI runs have a 5-minute timeout." },
+            { title: "Skipped Logs Cleanup", desc: "Skipped logs only appear in the queue drawer with an explanatory tooltip." }
+          ]
+        }
+      ]
+    },
+    {
       version: "0.7.4",
       date: "November 2026",
       notes: [
