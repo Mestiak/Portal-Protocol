@@ -3260,9 +3260,14 @@
   function groupLogsForSession(sessionLogs: UploadRecord[]): FeedItem[] {
     const items: FeedItem[] = [];
     const resolvedLogs = sessionLogs.filter(l => l.boss_name);
+    const onHoldLogs = resolvedLogs.filter(l => l.status === "On Hold");
+    const otherLogs = resolvedLogs.filter(l => l.status !== "On Hold");
+    if (onHoldLogs.length > 0) {
+      items.push({ kind: "wing", wingIdx: -1, wingName: "On Hold uploads", bossBuckets: [{ bossKey: "on-hold", bossName: "On Hold", logs: onHoldLogs }] });
+    }
 
     const wingBuckets = new Map<number, Map<string, { bossName: string; logs: UploadRecord[] }>>();
-    for (const log of resolvedLogs) {
+    for (const log of otherLogs) {
       if (getEncounterType(log.boss_name, log.num_players, log.is_convergence) !== "raid") continue;
       const c = clean(log.boss_name);
       const wi = BOSS_TO_WING[c] ?? 999;
@@ -3284,7 +3289,7 @@
     }
 
     const catBuckets = new Map<string, Map<string, { bossName: string; logs: UploadRecord[] }>>();
-    for (const log of resolvedLogs) {
+    for (const log of otherLogs) {
       if (getEncounterType(log.boss_name, log.num_players, log.is_convergence) === "raid") continue;
       const c = clean(log.boss_name);
       const frac = getFractalName(log.boss_name, log.num_players);
@@ -3545,8 +3550,14 @@
     // Only resolved logs (with boss_name and non-Uploading status) go into the feed groups.
     // Uploading logs are rendered separately as floating stepper cards above the feed.
     const resolvedLogs = filteredUploads.filter(l => l.status !== "Uploading" && l.boss_name);
+    const onHoldLogs = resolvedLogs.filter(l => l.status === "On Hold");
+    const otherLogs = resolvedLogs.filter(l => l.status !== "On Hold");
+    // Create a dedicated "On Hold uploads" group
+    if (onHoldLogs.length > 0) {
+      items.push({ kind: "wing", wingIdx: -1, wingName: "On Hold uploads", bossBuckets: [{ bossKey: "on-hold", bossName: "On Hold", logs: onHoldLogs }] });
+    }
     const wingBuckets = new Map<number, Map<string, { bossName: string; logs: UploadRecord[] }>>();
-    for (const log of resolvedLogs) {
+    for (const log of otherLogs) {
       if (getEncounterType(log.boss_name, log.num_players, log.is_convergence) !== "raid") continue;
       const c = clean(log.boss_name);
       const wi = BOSS_TO_WING[c] ?? 999;
@@ -3569,7 +3580,7 @@
       items.push({ kind: "wing", wingIdx: wi, wingName, bossBuckets });
     }
     const catBuckets = new Map<string, Map<string, { bossName: string; logs: UploadRecord[] }>>();
-    for (const log of resolvedLogs) {
+    for (const log of otherLogs) {
       if (getEncounterType(log.boss_name, log.num_players, log.is_convergence) === "raid") continue;
       const c = clean(log.boss_name);
       const frac = getFractalName(log.boss_name, log.num_players);
