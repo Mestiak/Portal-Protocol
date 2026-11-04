@@ -2050,7 +2050,12 @@ async fn spawn_upload(
 
     // 1) Already in History? Skip the re-upload, but keep it visible in the
     //    drawer (state "skipped") for a short window so the user sees the full batch.
-    if already_in_history(&file_path) {
+    //    Exception: On Hold records are allowed through so recovery can re-process
+    //    them in place instead of being skipped (see retryOnHoldLogs).
+    let is_on_hold_recovery = crate::config::load_history(&app)
+        .iter()
+        .any(|r| r.file_path == file_path && r.status == "On Hold");
+    if already_in_history(&file_path) && !is_on_hold_recovery {
         emit_skipped(app, &file_path, &file_name);
         return;
     }
@@ -3717,7 +3722,7 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
     if !config.wingman_enabled {
         return;
     }
-    let is_terminal = matches!(record.status.as_str(), "Completed" | "Failed");
+    let is_terminal = matches!(record.status.as_str(), "Completed" | "Failed" | "On Hold");
     if !is_terminal {
         return;
     }
@@ -3821,6 +3826,26 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
             rec.wingman_status = Some(outcome.to_string());
             let _ = crate::config::add_to_history(&app_clone, rec);
         });
+    }
+
+    // Raw-log Wingman fallback when dps.report is down / no permalink.
+    if record.url.is_none() && config.wingman_enabled {
+        let skip_wingman = (record.is_convergence == Some(true) && record.is_cm == Some(true))
+            || record.is_wvw == Some(true);
+        if !skip_wingman && matches!(record.status.as_str(), "On Hold" | "Failed" | "Completed") {
+            let fp = record.file_path.clone();
+            let app_clone = app.clone();
+            let already = crate::config::load_history(&app).iter().any(|r| {
+                r.file_path == fp
+                    && (r.wingman_status.as_deref() == Some("imported")
+                        || r.wingman_status.as_deref() == Some("in_progress"))
+            });
+            if !already {
+                tauri::async_runtime::spawn(async move {
+                    let _ = crate::wingman_raw_upload(app_clone, fp).await;
+                });
+            }
+        }
     }
 }
 

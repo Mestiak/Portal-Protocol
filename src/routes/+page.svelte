@@ -293,8 +293,10 @@
   let kaiPhasesCollapsed = $state(true);
   // Live Wingman retry UI state per log path: null = idle, 'sending' = in-flight.
   // The persistent record.wingman_status drives 'failed'/'done'; this only adds the
-  // transient 'sending' phase so the animation can play in every view without polling.
-  let wingmanUi = $state<Record<string, "sending" | null>>({});
+  // transient 'sending'/'verifying' phase so the animation can play.
+  let wingmanUi = $state<Record<string, "sending" | "verifying" | null>>({});
+  // Cooldown (ms) between verify calls per log to avoid tight verify→pending→verify loops.
+  let verifyCooldown = $state<Record<string, number>>({});
 
   // Serial retry queue: drains failed Wingman imports one at a time (with a gap)
   // so N clients recovering simultaneously don't stampede the server. Concurrency 1.
@@ -306,7 +308,7 @@
   // Mirror of the Wingman queue, but for dps.report On Hold logs. Re-uploads parked
   // logs one at a time (gap spacing) so recovery doesn't stampede dps.report. The
   // x/total counter drives the "Re-uploading x/total" line below the dps.report API.
-  const DPS_RETRY_GAP_MS = 2000;
+  const DPS_RETRY_GAP_MS = 3000;
   let dpsQueue = $state<string[]>([]);
   let dpsQueueRunning = $state(false);
   let dpsQueueDone = $state(0);
@@ -360,6 +362,13 @@
         const dpsStatusNow = (dpsReportStatus as string);
         if (dpsStatusNow !== "online") break; // pause; remaining stays queued
         const fp = dpsQueue[0];
+        // Skip if dps.report already succeeded for this log (avoids redundant re-upload)
+        const rec = uploads.find((u) => u.file_path === fp) ?? allHistory.find((h) => h.file_path === fp);
+        if (rec && rec.url && rec.status === "Completed") {
+          dpsQueueDone += 1;
+          dpsQueue = dpsQueue.slice(1);
+          continue;
+        }
         await invoke("trigger_manual_upload", { filePath: fp })
           .catch((e) => console.error("dps.report retry failed:", e));
         // After the upload attempt, inspect the live feed/history record for this path.
@@ -403,7 +412,9 @@
         }
         const fp = wingmanQueue[0];
         wingmanUi[fp] = "sending";
-        await invoke("retry_wingman_import", { filePath: fp })
+        const hasUrl = allHistory.find((h) => h.file_path === fp)?.url;
+        const cmd = (hasUrl && dpsReportStatus === "online") ? "retry_wingman_import" : "retry_wingman_raw_upload";
+        await invoke(cmd, { filePath: fp })
           .catch((e) => console.error("Wingman retry failed:", e))
           .finally(() => { wingmanUi[fp] = null; });
         wingmanQueueDone += 1;
@@ -522,6 +533,27 @@
   type PatchNoteCategory = { category: string; items: PatchNoteItem[] };
   type PatchNoteVersion = { version: string; date: string; image?: string; notes: PatchNoteCategory[] };
   const PATCH_NOTES_DATA: PatchNoteVersion[] = [
+    {
+      version: "0.7.5",
+      date: "November 2026",
+      notes: [
+        {
+          category: "✨ New Features",
+          items: [
+            { title: "Wingman Raw Upload Fallback", desc: "When dps.report is down, the app runs local Elite Insights and uploads the JSON+HTML bundle directly to Wingman." },
+            { title: "On Hold Card Revamp", desc: "On Hold logs get their own header, hide the stepper, and show Fight Time, HP% left, players, and date." }
+          ]
+        },
+        {
+          category: "🔧 Improvements",
+          items: [
+            { title: "On Hold Recovery", desc: "On Hold logs now re-upload to dps.report and update in place instead of being skipped." },
+            { title: "Wingman Orphan Recovery", desc: "Stuck in_progress Wingman uploads (including resolved logs) are re-checked every 20s and on restart; EI runs have a 5-minute timeout." },
+            { title: "Wingman Badge Statuses", desc: "Imported (already in DB), Verifying… (re-checking Wingman, light blue), Uploading… (EI running and bundle sending), Pending (waiting for Wingman to finish), Completed (fresh import), Send to Wingman (retry), Wingman offline (service down)." },
+          ]
+        }
+      ]
+    },
     {
       version: "0.7.4",
       date: "November 2026",
@@ -2748,6 +2780,35 @@
   // (Single source of truth — avoids duplicating the boss-classification logic in
   // Rust, which only the frontend has.)
   let allHistory = $state.raw<UploadRecord[]>([]);
+  // Auto-retry On Hold logs on startup if dps.report is already online
+  $effect(() => {
+    if (allHistory.length > 0 && dpsReportStatus === "online") {
+      const onHold = allHistory.filter((h) => h.status === "On Hold");
+      if (onHold.length > 0) {
+        retryOnHoldLogs();
+      }
+    }
+  });
+  $effect(() => {
+    if (allHistory.length > 0) {
+      const pending = allHistory.filter((h) => h.wingman_status === "in_progress");
+      for (const h of pending) {
+        if (!wingmanQueue.includes(h.file_path)) {
+          const now = Date.now();
+          if (verifyCooldown[h.file_path] && now - verifyCooldown[h.file_path] < 120000) continue;
+          verifyCooldown[h.file_path] = now;
+          wingmanUi[h.file_path] = "verifying";
+          invoke("verify_wingman_status", { filePath: h.file_path })
+            .catch((e) => console.error("verify failed:", e))
+            .finally(() => { wingmanUi[h.file_path] = null; });
+        }
+      }
+      const pendingFailed = allHistory.filter((h) => h.status === "On Hold" && (!h.wingman_status || h.wingman_status === "failed"));
+      for (const h of pendingFailed) {
+        if (!wingmanQueue.includes(h.file_path)) enqueueWingmanRetry(h.file_path);
+      }
+    }
+  });
   let isHistoryLoading = $state(false);
   let historyPage = $state(0);
   let historyLimit = $state(25);
@@ -2759,7 +2820,7 @@
   // Count of logs currently parked as On Hold (dps.report down) — drives the
   // "Retry on Hold" button + resume counter below the dps.report API status.
   let onHoldCount = $derived(
-    [...uploads, ...allHistory].filter((h) => h.status === "On Hold").length,
+    new Set([...uploads, ...allHistory].filter((h) => h.status === "On Hold").map((h) => h.file_path)).size,
   );
   let historyLogs = $derived(filteredHistory);             // alias for code that expected the full list
   let historyTotalCount = $derived(filteredHistory.length);// drives the pager
@@ -3249,9 +3310,14 @@
   function groupLogsForSession(sessionLogs: UploadRecord[]): FeedItem[] {
     const items: FeedItem[] = [];
     const resolvedLogs = sessionLogs.filter(l => l.boss_name);
+    const onHoldLogs = resolvedLogs.filter(l => l.status === "On Hold");
+    const otherLogs = resolvedLogs.filter(l => l.status !== "On Hold");
+    if (onHoldLogs.length > 0) {
+      items.push({ kind: "wing", wingIdx: -1, wingName: "On Hold uploads", bossBuckets: [{ bossKey: "on-hold", bossName: "On Hold", logs: onHoldLogs }] });
+    }
 
     const wingBuckets = new Map<number, Map<string, { bossName: string; logs: UploadRecord[] }>>();
-    for (const log of resolvedLogs) {
+    for (const log of otherLogs) {
       if (getEncounterType(log.boss_name, log.num_players, log.is_convergence) !== "raid") continue;
       const c = clean(log.boss_name);
       const wi = BOSS_TO_WING[c] ?? 999;
@@ -3273,7 +3339,7 @@
     }
 
     const catBuckets = new Map<string, Map<string, { bossName: string; logs: UploadRecord[] }>>();
-    for (const log of resolvedLogs) {
+    for (const log of otherLogs) {
       if (getEncounterType(log.boss_name, log.num_players, log.is_convergence) === "raid") continue;
       const c = clean(log.boss_name);
       const frac = getFractalName(log.boss_name, log.num_players);
@@ -3534,8 +3600,14 @@
     // Only resolved logs (with boss_name and non-Uploading status) go into the feed groups.
     // Uploading logs are rendered separately as floating stepper cards above the feed.
     const resolvedLogs = filteredUploads.filter(l => l.status !== "Uploading" && l.boss_name);
+    const onHoldLogs = resolvedLogs.filter(l => l.status === "On Hold");
+    const otherLogs = resolvedLogs.filter(l => l.status !== "On Hold");
+    // Create a dedicated "On Hold uploads" group
+    if (onHoldLogs.length > 0) {
+      items.push({ kind: "wing", wingIdx: -1, wingName: "On Hold uploads", bossBuckets: [{ bossKey: "on-hold", bossName: "On Hold", logs: onHoldLogs }] });
+    }
     const wingBuckets = new Map<number, Map<string, { bossName: string; logs: UploadRecord[] }>>();
-    for (const log of resolvedLogs) {
+    for (const log of otherLogs) {
       if (getEncounterType(log.boss_name, log.num_players, log.is_convergence) !== "raid") continue;
       const c = clean(log.boss_name);
       const wi = BOSS_TO_WING[c] ?? 999;
@@ -3558,7 +3630,7 @@
       items.push({ kind: "wing", wingIdx: wi, wingName, bossBuckets });
     }
     const catBuckets = new Map<string, Map<string, { bossName: string; logs: UploadRecord[] }>>();
-    for (const log of resolvedLogs) {
+    for (const log of otherLogs) {
       if (getEncounterType(log.boss_name, log.num_players, log.is_convergence) === "raid") continue;
       const c = clean(log.boss_name);
       const frac = getFractalName(log.boss_name, log.num_players);
@@ -3837,6 +3909,22 @@
       checkDpsReportStatus();
       checkBackupDpsStatus();
       checkWingmanStatus();
+      const pendingOnHold = allHistory.filter((h) => h.status === "On Hold" && !dpsQueue.includes(h.file_path));
+      for (const h of pendingOnHold) enqueueDpsRetry(h.file_path);
+      // Wingman safety net: verify orphaned in_progress logs (no EI re-run)
+      const pendingWingman = allHistory.filter((h) => (h.wingman_status === "in_progress") && !wingmanQueue.includes(h.file_path));
+      for (const h of pendingWingman) {
+        const now = Date.now();
+        if (verifyCooldown[h.file_path] && now - verifyCooldown[h.file_path] < 120000) continue;
+        verifyCooldown[h.file_path] = now;
+        wingmanUi[h.file_path] = "verifying";
+        invoke("verify_wingman_status", { filePath: h.file_path })
+          .catch((e) => console.error("verify failed:", e))
+          .finally(() => { wingmanUi[h.file_path] = null; });
+      }
+      // On Hold failed logs: re-enqueue
+      const pendingFailed = allHistory.filter((h) => h.status === "On Hold" && (!h.wingman_status || h.wingman_status === "failed") && !wingmanQueue.includes(h.file_path));
+      for (const h of pendingFailed) enqueueWingmanRetry(h.file_path);
     }, 20000);
     // Hourly update-poll handle (declared here so the onMount cleanup can clear it).
     let updatePollInterval: number | null = null;
@@ -3948,6 +4036,9 @@
           return;
         }
 
+        // Skipped records only belong in the queue drawer, not the uploads feed.
+        if (r.status === "Skipped") return;
+
         // ── Keep the History in sync with live uploads ──
         // Patching allHistory keeps the API Tracker tab in sync in real time.
         const hIdx = allHistory.findIndex((h) => h.file_path === r.file_path);
@@ -3963,6 +4054,11 @@
           r.status === "Duplicate" || r.status === "Processing"
         ) {
           allHistory = [r, ...allHistory];
+        }
+
+        // Auto-enqueue On Hold logs (no dps.report link) for Wingman raw upload
+        if (r.status === "On Hold" && (!r.wingman_status || r.wingman_status === "failed" || r.wingman_status === "in_progress")) {
+          enqueueWingmanRetry(r.file_path);
         }
 
         const idx = uploads.findIndex((u) => u.file_path === r.file_path);
@@ -5539,31 +5635,49 @@ async function testWebhook(wh: any) {
             <img src="/wingman_icon.png" alt="" class="wm-spin" style="width:14px;height:14px;vertical-align:middle;" /> Queued
           </span>
         {/if}
-        {#if wingman_enabled && (log.wingman_status === "failed" || log.wingman_status === "imported" || wingmanUi[log.file_path] === "sending" || log.wingman_status === "done" || log.wingman_status === "in_progress")}
-          {@const wmState = wingmanUi[log.file_path] === "sending" ? "sending" : (log.wingman_status === "in_progress" ? "sending" : (log.wingman_status ?? "failed"))}
+        {#if wingman_enabled && (log.wingman_status === "failed" || log.wingman_status === "imported" || wingmanUi[log.file_path] === "sending" || wingmanUi[log.file_path] === "verifying" || log.wingman_status === "done" || log.wingman_status === "in_progress")}
+          {@const isActive = wingmanUi[log.file_path] === "sending" || wingmanQueue.includes(log.file_path)}
+          {@const isVerifying = wingmanUi[log.file_path] === "verifying"}
+          {@const wmState = isVerifying ? "verifying" : (isActive ? "sending" : (log.wingman_status === "in_progress" ? "pending" : (log.wingman_status ?? "failed")))}
           {#if wmState === "imported"}
-            <span class="wm-chip wm-imported" title="This log was already imported into Wingman.">
+            <span class="wm-chip wm-imported custom-tooltip-container">
               <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Imported
+              <span class="custom-tooltip">Already in Wingman's database — no further action needed.</span>
             </span>
           {/if}
           {#if wmState === "failed"}
             {#if wingmanStatus === "offline"}
-              <span class="wm-chip wm-offline" title="GW2 Wingman is currently offline — this log will be retried once the service is reachable again.">
+              <span class="wm-chip wm-offline custom-tooltip-container">
                 <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Wingman offline
+                <span class="custom-tooltip">Wingman is offline — this log will retry automatically when the service recovers.</span>
               </span>
             {:else}
-              <button class="wm-chip wm-failed" title="Wingman was unreachable when this log uploaded — click to retry importing it into Wingman." onclick={(e) => { e.stopPropagation(); sendToWingman(log.file_path); }}>
+              <button class="wm-chip wm-failed custom-tooltip-container" onclick={(e) => { e.stopPropagation(); sendToWingman(log.file_path); }}>
                 <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Send to Wingman
+                <span class="custom-tooltip">Wingman import failed — click to retry sending this log.</span>
               </button>
               {#if likelyCause(log)}
                 <span class="wm-cause">{likelyCause(log)}</span>
               {/if}
             {/if}
           {:else if wmState === "sending"}
-            <span class="wm-chip wm-sending"><img src="/wingman_icon.png" alt="" class="wm-spin" style="width:14px;height:14px;vertical-align:middle;" /> Uploading…</span>
+            <span class="wm-chip wm-sending custom-tooltip-container"><img src="/wingman_icon.png" alt="" class="wm-spin" style="width:14px;height:14px;vertical-align:middle;" /> Uploading…<span class="custom-tooltip">Uploading to Wingman — Elite Insights is running and the bundle is being sent, or the import is still in progress.</span></span>
+          {:else if wmState === "verifying"}
+            <span class="wm-chip wm-verifying custom-tooltip-container">
+              <img src="/wingman_icon.png" alt="" class="wm-spin" style="width:14px;height:14px;vertical-align:middle;" /> Verifying…
+              <span class="custom-tooltip">Re-checking Wingman's database for this log.</span>
+            </span>
+          {:else if wmState === "pending"}
+            <button class="wm-chip wm-pending custom-tooltip-container" onclick={(e) => { e.stopPropagation(); sendToWingman(log.file_path); }}>
+              <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Pending
+              <span class="custom-tooltip">Upload started; waiting for Wingman. Click to re-check.</span>
+            </button>
           {:else if wmState === "done"}
-            <span class="wm-chip wm-done"><img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Completed</span>
-          {/if}
+            <span class="wm-chip wm-done custom-tooltip-container">
+              <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Completed
+              <span class="custom-tooltip">Successfully imported into Wingman.</span>
+            </span>
+        {/if}
         {/if}
         {#if discord_webhooks.length > 0 && log.discord_pending === true}
           <span class="wm-chip wm-offline" title="A Discord webhook post failed when this log uploaded. It will be retried automatically the next time this log uploads successfully (e.g. on a dps.report recovery sweep).">
@@ -5701,7 +5815,7 @@ async function testWebhook(wh: any) {
         </div>
       {/if}
       <div class="log-meta">
-        {#if log.status === "Parsing" || log.status === "Uploading" || log.status === "Reading" || log.status === "Queued" || log.status === "On Hold"}
+        {#if (log.status === "Parsing" || log.status === "Uploading" || log.status === "Reading" || log.status === "Queued") && log.status !== "On Hold"}
           <!-- Stage stepper: one honest indicator of pipeline position -->
           <div class="stage-stepper">
             {#each uploadStageList(log) as st, i}
@@ -5720,6 +5834,10 @@ async function testWebhook(wh: any) {
           </div>
         {/if}
         <div class="meta-line">
+          {#if log.status === "On Hold" && log.duration != null}
+            <span class="meta-item"><i class="fa-solid fa-stopwatch" style="margin-right: 4px; font-size: 11px;"></i> {formatDuration(log.duration)}</span>
+            <span class="meta-divider">|</span>
+          {/if}
           {#if log.boss_hp_left != null && shouldShowHpLeft(log) && !(log.twin_largos && log.success !== true) && !(log.eyes && log.success !== true) && !(log.voice_claw && log.success !== true) && !(log.aetherblade && log.success !== true) && !(log.old_lions_court && log.success !== true) && !isDragonvoid(log.boss_name)}
             {#if log.ura_health_regen === "AHR"}
               <span class="custom-tooltip-container">
@@ -6083,6 +6201,11 @@ async function testWebhook(wh: any) {
   {/if}
   <div class="file-name-bar">
     <span class="file-name">{basename(log.file_path)}</span>
+    {#if log.status === "On Hold"}
+      <div class="on-hold-footer-banner" style="margin-left: auto;">
+        <i class="fa-solid fa-pause"></i> On Hold — dps.report is down; uploading to Wingman via local EI
+      </div>
+    {/if}
   </div>
   {#if notesOpen[cardId(log)]}
     <div class="notes-section">
@@ -6114,7 +6237,7 @@ async function testWebhook(wh: any) {
     </div>
   {/if}
 
-  {#if log.error_msg && !retryingPaths.has(log.file_path) && log.status !== "Skipped"}
+  {#if log.error_msg && !retryingPaths.has(log.file_path) && log.status !== "Skipped" && log.status !== "On Hold"}
     <div class="error-msg-row">
       {#if log.status === "On Hold"}
         <span class="onhold-reason"><i class="fa-solid fa-pause" style="margin-right: 5px;"></i>{log.error_msg}</span>
@@ -6770,7 +6893,7 @@ async function testWebhook(wh: any) {
                             {@const isExpanded = !!expanded[id]}
                             {@const isSelected = selectedLogs.has(log.file_path)}
                             {@const isCaptured = !!captureSession && captureSession.logPaths.includes(log.file_path)}
-                            <div class="log-card card" class:is-favorite={log.is_favorite === true} class:menu-open={activeMenuCard === id} class:is-expanded={isExpanded} class:uploading={log.status === "Uploading"} class:is-selected={isSelected} class:deleting={deletingLogPaths.has(log.file_path)} class:session-captured={isCaptured} style="position: relative; cursor: context-menu;" oncontextmenu={(e) => handleLogContextMenu(e, log, false, undefined, () => deleteLogRecord(log.file_path))} role="button" tabindex="0">
+                            <div class="log-card card" class:is-favorite={log.is_favorite === true} class:menu-open={activeMenuCard === id} class:is-expanded={isExpanded} class:uploading={log.status === "Uploading"} class:is-selected={isSelected} class:deleting={deletingLogPaths.has(log.file_path)} class:session-captured={isCaptured} class:is-on-hold={log.status === "On Hold"} style="position: relative; cursor: context-menu;" oncontextmenu={(e) => handleLogContextMenu(e, log, false, undefined, () => deleteLogRecord(log.file_path))} role="button" tabindex="0">
                               {#if log.status === "Uploading"}
                                 <div class="upload-progress-top"></div>
                               {/if}
@@ -8164,7 +8287,7 @@ async function testWebhook(wh: any) {
               {#each uploadQueue as q (q.file_path)}
                 <div class="queue-row queue-{q.state}" transition:fly={{ x: -8, duration: prefersReducedMotion ? 0 : 150 }}>
                   <i class="fa-solid {q.state === 'active' ? 'fa-spinner fa-spin' : q.state === 'done' ? 'fa-check' : q.state === 'skipped' ? 'fa-ban' : 'fa-clock'} queue-row-icon"></i>
-                  <span class="queue-row-name" title={q.file_name}>{q.file_name}</span>
+                  <span class="queue-row-name" title={q.state === 'skipped' ? 'Already in History — no re-upload needed' : q.file_name}>{q.file_name}</span>
                   <span class="queue-row-state">{q.state === 'active' ? 'Uploading' : q.state === 'done' ? 'Done' : q.state === 'skipped' ? 'Skipped' : 'Queued'}</span>
                 </div>
               {/each}
@@ -8944,7 +9067,22 @@ async function testWebhook(wh: any) {
     font-size: 10px;
     font-weight: 700;
   }
-  .sb-chevron { font-size: 9px; transition: transform .2s ease; opacity: .7; }
+  .sb-chevron {
+    font-size: 11px;
+    transition: transform .2s ease, background .15s ease;
+    opacity: .85;
+    width: 20px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+  .sb-chevron:hover {
+    background: color-mix(in srgb, var(--accent) 25%, transparent);
+    opacity: 1;
+  }
   .sb-chevron.open { transform: rotate(180deg); }
 
   /* Paused state — amber pulse to signal uploads are held */
@@ -9048,6 +9186,9 @@ async function testWebhook(wh: any) {
   .file-name-bar {
     margin-top: 6px;
     padding: 2px 0 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
   .file-name {
     display: block;
