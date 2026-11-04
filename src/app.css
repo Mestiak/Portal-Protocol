@@ -3833,7 +3833,7 @@ html.reduce-motion .session-pill {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  width: calc(100% - 24px);
+  width: fit-content;
 }
 .is-on-hold {
   opacity: 0.85;
