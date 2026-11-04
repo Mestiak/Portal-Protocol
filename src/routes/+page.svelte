@@ -295,6 +295,9 @@
   // The persistent record.wingman_status drives 'failed'/'done'; this only adds the
   // transient 'sending'/'verifying' phase so the animation can play.
   let wingmanUi = $state<Record<string, "sending" | "verifying" | null>>({});
+  // Exponential backoff for failed Wingman retries: 20s → 40s → 80s → 160s → cap 5min.
+  let wingmanRetryAt = $state<Record<string, number>>({});
+  let wingmanRetryCount = $state<Record<string, number>>({});
   // Cooldown (ms) between verify calls per log to avoid tight verify→pending→verify loops.
   let verifyCooldown = $state<Record<string, number>>({});
 
@@ -403,20 +406,37 @@
     wingmanQueueRunning = true;
     try {
       while (wingmanQueue.length > 0) {
+        const fp = wingmanQueue[0];
+        // Respect exponential backoff: skip if not yet due.
+        const due = wingmanRetryAt[fp] ?? 0;
+        if (Date.now() < due) {
+          // Move to back of queue and wait briefly.
+          wingmanQueue = [...wingmanQueue.slice(1), fp];
+          await new Promise((r) => setTimeout(r, 1000));
+          continue;
+        }
         if ((wingmanStatus as string) === "offline") {
-          // Wingman is down: sleep briefly and re-check instead of abandoning
-          // the queue. When it recovers, draining resumes automatically with
-          // normal spacing. Without this, queued items would stall forever.
           await new Promise((r) => setTimeout(r, 2000));
           continue;
         }
-        const fp = wingmanQueue[0];
         wingmanUi[fp] = "sending";
         const hasUrl = allHistory.find((h) => h.file_path === fp)?.url;
         const cmd = (hasUrl && dpsReportStatus === "online") ? "retry_wingman_import" : "retry_wingman_raw_upload";
         await invoke(cmd, { filePath: fp })
           .catch((e) => console.error("Wingman retry failed:", e))
           .finally(() => { wingmanUi[fp] = null; });
+        // Apply exponential backoff if still failed.
+        const rec = allHistory.find((h) => h.file_path === fp);
+        if (rec?.wingman_status === "failed") {
+          const n = (wingmanRetryCount[fp] ?? 0) + 1;
+          wingmanRetryCount[fp] = n;
+          const delay = Math.min(20000 * Math.pow(2, n - 1), 300000);
+          wingmanRetryAt[fp] = Date.now() + delay;
+        } else {
+          // Success: clear backoff.
+          wingmanRetryCount[fp] = 0;
+          wingmanRetryAt[fp] = 0;
+        }
         wingmanQueueDone += 1;
         wingmanQueue = wingmanQueue.slice(1);
         await new Promise((r) => setTimeout(r, WM_SEND_GAP_MS)); // spacing + UI paint
