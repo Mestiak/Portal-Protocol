@@ -10,6 +10,8 @@ mod vl_ranks;
 mod watcher;
 
 use config::AppConfig;
+
+pub static EI_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -189,6 +191,19 @@ fn stop_watcher(state: State<'_, AppState>) -> Result<(), String> {
         w.stop();
     }
     Ok(())
+}
+
+#[tauri::command]
+fn update_log_status(app: AppHandle, file_path: String, status: String) -> Result<(), String> {
+    config::with_history_mut(&app, |history| {
+        if let Some(idx) = history.iter().position(|r| r.file_path == file_path) {
+            history[idx].status = status.clone();
+            let _ = app.emit("upload-status", history[idx].clone());
+            true
+        } else {
+            false
+        }
+    })
 }
 
 #[tauri::command]
@@ -694,7 +709,340 @@ async fn retry_wingman_import(app: AppHandle, file_path: String) -> Result<(), S
     Ok(())
 }
 
-// ─── Void Lounge (VL) ranks ─────────────────────────────────────────────────
+// Lightweight re-check of Wingman's DB/queue state for a log that is currently
+// stuck in "in_progress". Does NOT run Elite Insights or re-upload; it only
+// asks Wingman whether the log is already imported or queued and flips the
+// persisted status accordingly. Used by the 20s safety net and startup recovery.
+#[tauri::command]
+async fn verify_wingman_status(app: AppHandle, file_path: String) -> Result<(), String> {
+    let config = crate::config::load_config(&app);
+    if !config.wingman_enabled {
+        return Ok(());
+    }
+    let history = crate::config::load_history(&app);
+    let rec = history.iter().find(|r| r.file_path == file_path);
+    let permalink = rec.and_then(|r| r.url.clone());
+    let account = if !config.wingman_account.trim().is_empty() {
+        config.wingman_account.clone()
+    } else {
+        config.wingman_accounts.first().cloned().unwrap_or_default()
+    };
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+
+    let mut outcome: Option<String> = None;
+
+    if let Some(link) = permalink {
+        // Link import path: ask Wingman's queue/DB.
+        let precheck_url = format!(
+            "https://gw2wingman.nevermindcreations.de/api/checkLogQueuedOrDB?link={}",
+            link
+        );
+        if let Ok(resp) = client.get(&precheck_url).send().await {
+            if let Ok(text) = resp.text().await {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+                    if v.get("inDB").and_then(|b| b.as_bool()) == Some(true) {
+                        outcome = Some("imported".to_string());
+                    } else if v.get("inQueue").and_then(|b| b.as_bool()) == Some(true) {
+                        outcome = Some("in_progress".to_string());
+                    }
+                }
+            }
+        }
+        // If Wingman doesn't know, try importing by link (idempotent).
+        if outcome.is_none() {
+            let url = format!(
+                "https://gw2wingman.nevermindcreations.de/api/importLogQueued?link={}",
+                link
+            );
+            if let Ok(resp) = client.get(&url).send().await {
+                let status = resp.status();
+                let text = resp.text().await.unwrap_or_default();
+                if status.is_success() {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+                        let success = v.get("success").and_then(|s| s.as_i64());
+                        let note = v.get("note").and_then(|s| s.as_str()).unwrap_or("").to_lowercase();
+                        if success == Some(0) || note.contains("already") || note.contains("in wingman") {
+                            outcome = Some("imported".to_string());
+                        } else {
+                            outcome = Some("done".to_string());
+                        }
+                    } else {
+                        outcome = Some("done".to_string());
+                    }
+                } else {
+                    outcome = Some("failed".to_string());
+                }
+            } else {
+                outcome = Some("failed".to_string());
+            }
+        }
+    } else {
+        // Raw upload path: pre-check by file metadata.
+        let file_name = std::path::Path::new(&file_path)
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let (file_size, file_ts) = match std::fs::metadata(&file_path) {
+            Ok(m) => {
+                let size = m.len();
+                let ts = m
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                (size, ts)
+            }
+            Err(_) => (0, 0),
+        };
+        let precheck_url = format!(
+            "https://gw2wingman.nevermindcreations.de/api/checkUpload?file={}&timestamp={}&filesize={}&account={}",
+            file_name.replace(' ', "%20"),
+            file_ts,
+            file_size,
+            account.replace(' ', "%20")
+        );
+        if let Ok(resp) = client.get(&precheck_url).send().await {
+            if let Ok(text) = resp.text().await {
+                let ok = if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+                    v.as_bool().or_else(|| v.as_str().map(|s| s.eq_ignore_ascii_case("true")))
+                } else {
+                    let t = text.trim().to_lowercase();
+                    if t == "true" { Some(true) } else if t == "false" { Some(false) } else { None }
+                };
+                if ok == Some(false) {
+                    outcome = Some("imported".to_string());
+                }
+            }
+        }
+        // If Wingman doesn't have it, leave as in_progress (don't re-run EI here).
+        if outcome.is_none() {
+            outcome = Some("in_progress".to_string());
+        }
+    }
+
+    if let Some(o) = outcome {
+        let path = file_path.clone();
+        let _ = crate::config::with_history_mut(&app, |history| {
+            if let Some(idx) = history.iter().position(|r| r.file_path == path) {
+                history[idx].wingman_status = Some(o.clone());
+                let _ = app.emit("upload-status", history[idx].clone());
+                true
+            } else {
+                false
+            }
+        });
+    }
+    Ok(())
+}
+// local Elite Insights to produce the JSON+HTML bundle and upload that to
+// Wingman via /api/uploadProcessed instead of importing by dps.report link.
+#[tauri::command]
+async fn retry_wingman_raw_upload(app: AppHandle, file_path: String) -> Result<(), String> {
+    wingman_raw_upload(app, file_path).await
+}
+
+pub async fn wingman_raw_upload(app: AppHandle, file_path: String) -> Result<(), String> {
+    let config = crate::config::load_config(&app);
+    if !config.wingman_enabled {
+        return Err("Wingman is disabled in settings.".into());
+    }
+    let account = if !config.wingman_account.trim().is_empty() {
+        config.wingman_account.clone()
+    } else {
+        config.wingman_accounts.first().cloned().unwrap_or_default()
+    };
+
+    // Mark in-progress.
+    {
+        let fp = file_path.clone();
+        let _ = crate::config::with_history_mut(&app, |history| {
+            if let Some(idx) = history.iter().position(|r| r.file_path == fp) {
+                history[idx].wingman_status = Some("in_progress".to_string());
+                let _ = app.emit("upload-status", history[idx].clone());
+                true
+            } else {
+                false
+            }
+        });
+    }
+
+    // Run EI to produce JSON+HTML (blocking), with a 5-minute timeout.
+    let app_clone = app.clone();
+    let fp_clone = file_path.clone();
+    let bundle = tokio::time::timeout(
+        std::time::Duration::from_secs(300),
+        tauri::async_runtime::spawn_blocking(move || {
+            let _guard = crate::EI_LOCK.lock().unwrap();
+            crate::ei_runner::run_ei_wingman_bundle(&app_clone, std::path::Path::new(&fp_clone))
+        }),
+    )
+    .await;
+    let bundle = match bundle {
+        Ok(Ok(b)) => b,
+        Ok(Err(e)) => {
+            set_wingman_status(&app, &file_path, "failed");
+            return Err(format!("EI task panicked: {}", e));
+        }
+        Err(_) => {
+            set_wingman_status(&app, &file_path, "failed");
+            return Err("EI timed out after 5 minutes".into());
+        }
+    };
+
+    let (json_path, html_path) = match bundle {
+        Ok(b) => b,
+        Err(e) => {
+            set_wingman_status(&app, &file_path, "failed");
+            return Err(e);
+        }
+    };
+
+    // Decompress JSON if gzipped
+    let mut json_path = json_path;
+    if json_path.to_string_lossy().ends_with(".json.gz") {
+        let out = json_path.with_extension("").with_extension("json");
+        if let Ok(gz) = std::fs::read(&json_path) {
+            use std::io::Read;
+            let mut decoder = flate2::read::GzDecoder::new(&gz[..]);
+            let mut s = String::new();
+            if decoder.read_to_string(&mut s).is_ok() {
+                let _ = std::fs::write(&out, s);
+                json_path = out;
+            }
+        }
+    }
+
+    // File metadata for the pre-check.
+    let file_name = std::path::Path::new(&file_path)
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let (file_size, file_ts) = match std::fs::metadata(&file_path) {
+        Ok(m) => {
+            let size = m.len();
+            let ts = m
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            (size, ts)
+        }
+        Err(_) => (0, 0),
+    };
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+
+    // Pre-check duplicates.
+    let precheck_url = format!(
+        "https://gw2wingman.nevermindcreations.de/api/checkUpload?file={}&timestamp={}&filesize={}&account={}",
+        file_name.replace(' ', "%20"),
+        file_ts,
+        file_size,
+        account.replace(' ', "%20")
+    );
+    let mut known_outcome: Option<String> = None;
+    if let Ok(resp) = client.get(&precheck_url).send().await {
+        if let Ok(text) = resp.text().await {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+                // checkUpload returns "True"/"False"/"Error" as strings or booleans
+                let ok = v.as_bool().or_else(|| {
+                    v.as_str().map(|s| s.eq_ignore_ascii_case("true"))
+                });
+                if ok == Some(false) {
+                    // Already exists or not uploadable
+                    known_outcome = Some("imported".to_string());
+                }
+            } else {
+                let t = text.trim().to_lowercase();
+                if t == "false" {
+                    known_outcome = Some("imported".to_string());
+                }
+            }
+        }
+    }
+
+    let outcome = if let Some(o) = known_outcome {
+        o
+    } else {
+        // Upload
+        let raw_bytes = std::fs::read(&file_path).unwrap_or_default();
+        let json_bytes = std::fs::read(&json_path).unwrap_or_default();
+        let html_bytes = std::fs::read(&html_path).unwrap_or_default();
+
+        let part_file = reqwest::multipart::Part::bytes(raw_bytes)
+            .file_name(file_name.clone())
+            .mime_str("application/octet-stream")
+            .unwrap();
+        let part_json = reqwest::multipart::Part::bytes(json_bytes)
+            .file_name(json_path.file_name().unwrap_or_default().to_string_lossy().to_string())
+            .mime_str("application/json")
+            .unwrap();
+        let part_html = reqwest::multipart::Part::bytes(html_bytes)
+            .file_name(html_path.file_name().unwrap_or_default().to_string_lossy().to_string())
+            .mime_str("text/html")
+            .unwrap();
+
+        let form = reqwest::multipart::Form::new()
+            .part("file", part_file)
+            .part("jsonfile", part_json)
+            .part("htmlfile", part_html)
+            .text("account", account.clone());
+
+        match client
+            .post("https://gw2wingman.nevermindcreations.de/uploadProcessed")
+            .multipart(form)
+            .send()
+            .await
+        {
+            Ok(resp) => {
+                let status = resp.status();
+                let text = resp.text().await.unwrap_or_default();
+                eprintln!("[uploader] Wingman raw upload status: {}, body: {}", status, text);
+                if status.is_success() {
+                    "imported".to_string()
+                } else {
+                    "failed".to_string()
+                }
+            }
+            Err(e) => {
+                eprintln!("[uploader] Wingman raw upload error: {}", e);
+                "failed".to_string()
+            }
+        }
+    };
+
+    // Cleanup generated files.
+    let _ = std::fs::remove_file(&json_path);
+    let _ = std::fs::remove_file(&html_path);
+
+    set_wingman_status(&app, &file_path, &outcome);
+    Ok(())
+}
+
+fn set_wingman_status(app: &AppHandle, file_path: &str, status: &str) {
+    let outcome = status.to_string();
+    let path = file_path.to_string();
+    let _ = crate::config::with_history_mut(app, |history| {
+        if let Some(idx) = history.iter().position(|r| r.file_path == path) {
+            history[idx].wingman_status = Some(outcome.clone());
+            let _ = app.emit("upload-status", history[idx].clone());
+            true
+        } else {
+            false
+        }
+    });
+}
 
 #[tauri::command]
 fn get_vl_rank_catalog() -> &'static [crate::vl_ranks::VlEncounter] {
@@ -1053,6 +1401,7 @@ pub fn run() {
             get_watcher_status,
             stop_watcher,
             trigger_manual_upload,
+            update_log_status,
             save_error_report,
             pick_log_files,
             check_dps_report_status,
@@ -1081,6 +1430,8 @@ pub fn run() {
             add_log_note,
             delete_log_note,
             retry_wingman_import,
+            verify_wingman_status,
+            retry_wingman_raw_upload,
             toggle_favorite,
             get_vl_rank_catalog,
             set_vl_ranks,

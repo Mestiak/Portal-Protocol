@@ -2584,6 +2584,19 @@ html.reduce-motion .session-pill {
   color: #a5b4fc;
 }
 
+.wm-verifying {
+  background: color-mix(in srgb, #38bdf8 18%, transparent);
+  border-color: color-mix(in srgb, #38bdf8 40%, transparent);
+  color: #7dd3fc;
+}
+
+.wm-pending {
+  background: color-mix(in srgb, #fbbf24 16%, transparent);
+  border-color: color-mix(in srgb, #fbbf24 40%, transparent);
+  color: #fde68a;
+  cursor: pointer;
+}
+
 .wm-done {
   background: color-mix(in srgb, var(--ok) 18%, transparent);
   border-color: color-mix(in srgb, var(--ok) 40%, transparent);
@@ -3819,6 +3832,24 @@ html.reduce-motion .session-pill {
   line-height: 1;
   padding: 0 4px;
   opacity: .7;
+}
+.on-hold-footer-banner {
+  margin: 8px auto;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: fit-content;
+}
+.is-on-hold {
+  opacity: 0.85;
 }
 .toast-close-btn:hover { opacity: 1; }
 
