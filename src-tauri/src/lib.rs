@@ -742,15 +742,28 @@ pub async fn wingman_raw_upload(app: AppHandle, file_path: String) -> Result<(),
         });
     }
 
-    // Run EI to produce JSON+HTML (blocking).
+    // Run EI to produce JSON+HTML (blocking), with a 5-minute timeout.
     let app_clone = app.clone();
     let fp_clone = file_path.clone();
-    let bundle = tauri::async_runtime::spawn_blocking(move || {
-        let _guard = crate::EI_LOCK.lock().unwrap();
-        crate::ei_runner::run_ei_wingman_bundle(&app_clone, std::path::Path::new(&fp_clone))
-    })
-    .await
-    .map_err(|e| format!("EI task panicked: {}", e))?;
+    let bundle = tokio::time::timeout(
+        std::time::Duration::from_secs(300),
+        tauri::async_runtime::spawn_blocking(move || {
+            let _guard = crate::EI_LOCK.lock().unwrap();
+            crate::ei_runner::run_ei_wingman_bundle(&app_clone, std::path::Path::new(&fp_clone))
+        }),
+    )
+    .await;
+    let bundle = match bundle {
+        Ok(Ok(b)) => b,
+        Ok(Err(e)) => {
+            set_wingman_status(&app, &file_path, "failed");
+            return Err(format!("EI task panicked: {}", e));
+        }
+        Err(_) => {
+            set_wingman_status(&app, &file_path, "failed");
+            return Err("EI timed out after 5 minutes".into());
+        }
+    };
 
     let (json_path, html_path) = match bundle {
         Ok(b) => b,

@@ -2768,7 +2768,7 @@
   });
   $effect(() => {
     if (allHistory.length > 0) {
-      const pending = allHistory.filter((h) => h.status === "On Hold" && (!h.wingman_status || h.wingman_status === "failed"));
+      const pending = allHistory.filter((h) => h.status === "On Hold" && (!h.wingman_status || h.wingman_status === "failed" || h.wingman_status === "in_progress"));
       for (const h of pending) {
         if (!wingmanQueue.includes(h.file_path)) enqueueWingmanRetry(h.file_path);
       }
@@ -3876,6 +3876,9 @@
       checkWingmanStatus();
       const pendingOnHold = allHistory.filter((h) => h.status === "On Hold" && !dpsQueue.includes(h.file_path));
       for (const h of pendingOnHold) enqueueDpsRetry(h.file_path);
+      // Wingman safety net: re-enqueue orphaned in_progress/failed logs
+      const pendingWingman = allHistory.filter((h) => h.status === "On Hold" && (!h.wingman_status || h.wingman_status === "failed" || h.wingman_status === "in_progress") && !wingmanQueue.includes(h.file_path));
+      for (const h of pendingWingman) enqueueWingmanRetry(h.file_path);
     }, 20000);
     // Hourly update-poll handle (declared here so the onMount cleanup can clear it).
     let updatePollInterval: number | null = null;
@@ -4005,7 +4008,7 @@
         }
 
         // Auto-enqueue On Hold logs (no dps.report link) for Wingman raw upload
-        if (r.status === "On Hold" && !r.url && (!r.wingman_status || r.wingman_status === "failed")) {
+        if (r.status === "On Hold" && (!r.wingman_status || r.wingman_status === "failed" || r.wingman_status === "in_progress")) {
           enqueueWingmanRetry(r.file_path);
         }
 
