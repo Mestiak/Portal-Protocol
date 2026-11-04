@@ -305,6 +305,10 @@
   // so N clients recovering simultaneously don't stampede the server. Concurrency 1.
   const WM_SEND_GAP_MS = 2000;
   let wingmanQueue = $state<string[]>([]);
+  // Persist Wingman queue to localStorage so it survives app restarts.
+  $effect(() => {
+    try { localStorage.setItem("wingmanQueue", JSON.stringify(wingmanQueue)); } catch {}
+  });
   let wingmanQueueRunning = $state(false);
   let wingmanQueueDone = $state(0);
 
@@ -3934,6 +3938,10 @@
   });
 
   onMount(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("wingmanQueue") || "[]");
+      if (Array.isArray(saved) && saved.length) wingmanQueue = saved;
+    } catch {}
     invoke("check_bundled_ei").catch((e) => {
       console.error("Bundled EI check failed:", e);
     });
