@@ -239,6 +239,35 @@ pub fn ei_enabled() -> bool {
 /// under the user's dotnet root. We probe by resolving `dotnet` (cheap, and the
 /// app already runs under a .NET-capable host on dev machines). Returns an error
 /// string with the download URL when missing.
+/// Sanity-check the bundled Elite Insights resources. Returns Ok(()) when the
+/// required files are present; Err with a human-readable message otherwise.
+/// This catches installer/bundle drift (missing DLLs) before an upload fails.
+pub fn check_bundled_ei(app: &AppHandle) -> Result<(), String> {
+    let required = [
+        "resources/ei/GuildWars2EliteInsights-CLI.exe",
+        "resources/ei/GuildWars2EliteInsights-CLI.dll",
+        "resources/ei/GW2EIEvtcParser.dll",
+        "resources/ei/GW2EIParserCommons.dll",
+        "resources/ei/GW2EIWingman.dll",
+        "resources/ei/Settings/portal_protocol.conf",
+    ];
+    let mut missing = Vec::new();
+    for rel in required {
+        let found = ei_resource_candidates(app, rel).into_iter().any(|p| p.exists());
+        if !found {
+            missing.push(rel);
+        }
+    }
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Bundled Elite Insights is incomplete — missing: {}. Reinstall Portal Protocol.",
+            missing.join(", ")
+        ))
+    }
+}
+
 pub fn check_dotnet_runtime() -> Result<(), String> {
     let mut cmd = Command::new("dotnet");
     cmd.arg("--list-runtimes");

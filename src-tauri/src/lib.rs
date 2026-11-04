@@ -310,6 +310,11 @@ async fn check_dps_report_status() -> Result<String, String> {
 }
 
 #[tauri::command]
+fn check_bundled_ei(app: AppHandle) -> Result<(), String> {
+    crate::ei_runner::check_bundled_ei(&app)
+}
+
+#[tauri::command]
 async fn check_backup_dps_status() -> Result<String, String> {
     static FAILS: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
     let client = http_check_client();
@@ -1453,6 +1458,7 @@ pub fn run() {
             crate::uploader::read_webhook_log,
             crate::uploader::resend_failed_webhooks,
             crate::ei_runner::check_ei_runtime,
+            check_bundled_ei,
             crate::ei_runner::open_ei_html_report,
             crate::ei_runner::clear_ei_html_cache,
             crate::ei_runner::get_ei_html_cache_info,

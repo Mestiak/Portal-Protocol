@@ -436,9 +436,18 @@
   // On Wingman recovery, sweep all failed logs into the queue. Jitter spreads
   // client start times so recovery doesn't trigger a synchronized herd.
   function enqueueAllFailedOnRecovery() {
-    const failed = allHistory
-      .filter((h) => h.wingman_status === "failed")
-      .map((h) => h.file_path);
+    const collectFailed = (logs: UploadRecord[]) =>
+      logs.filter((h) => h.wingman_status === "failed").map((h) => h.file_path);
+    const failedSet = new Set<string>();
+    for (const fp of collectFailed(allHistory)) failedSet.add(fp);
+    for (const fp of collectFailed(uploads)) failedSet.add(fp);
+    for (const s of sessions) {
+      for (const fp of collectFailed(s.logs ?? [])) failedSet.add(fp);
+      for (const sf of s.subfolders ?? []) {
+        for (const fp of collectFailed(sf.logs ?? [])) failedSet.add(fp);
+      }
+    }
+    const failed = [...failedSet];
     if (failed.length === 0) return;
     const jitter = Math.floor(Math.random() * 15000);
     setTimeout(() => { for (const fp of failed) enqueueWingmanRetry(fp); }, jitter);
@@ -3905,6 +3914,9 @@
   });
 
   onMount(() => {
+    invoke("check_bundled_ei").catch((e) => {
+      console.error("Bundled EI check failed:", e);
+    });
     const statusInterval = setInterval(() => {
       checkDpsReportStatus();
       checkBackupDpsStatus();
