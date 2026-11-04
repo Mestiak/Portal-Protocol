@@ -5676,6 +5676,12 @@ async function testWebhook(wh: any) {
             <img src="/wingman_icon.png" alt="" class="wm-spin" style="width:14px;height:14px;vertical-align:middle;" /> Queued
           </span>
         {/if}
+        {#if uploadPaused && (wingmanQueue.includes(log.file_path) || dpsQueue.includes(log.file_path))}
+          <span class="wm-chip wm-paused custom-tooltip-container">
+            <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Paused
+            <span class="custom-tooltip">Uploads paused — resume in settings.</span>
+          </span>
+        {/if}
         {#if wingman_enabled && (log.wingman_status === "failed" || log.wingman_status === "imported" || wingmanUi[log.file_path] === "sending" || wingmanUi[log.file_path] === "verifying" || log.wingman_status === "done" || log.wingman_status === "in_progress")}
           {@const isActive = wingmanUi[log.file_path] === "sending" || wingmanQueue.includes(log.file_path)}
           {@const isVerifying = wingmanUi[log.file_path] === "verifying"}
