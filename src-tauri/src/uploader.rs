@@ -3824,6 +3824,7 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
     }
 
     // Raw-log Wingman fallback when dps.report is down / no permalink.
+    eprintln!("[uploader] wingman_enabled={}, url={:?}, status={}", config.wingman_enabled, record.url, record.status);
     if record.url.is_none() && config.wingman_enabled {
         let skip_wingman = (record.is_convergence == Some(true) && record.is_cm == Some(true))
             || record.is_wvw == Some(true);
