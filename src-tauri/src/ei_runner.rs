@@ -507,7 +507,64 @@ fn run_ei_html(app: &AppHandle, input: &Path) -> Result<PathBuf, String> {
     Ok(out)
 }
 
-/// Check if an HTML report is cached for `local_path`. Returns the cached
+/// Run EI with the HTML-generating config and return BOTH the generated JSON
+/// and HTML file paths without deleting them, so they can be uploaded to
+/// Wingman via `/api/uploadProcessed`. Caller is responsible for cleanup.
+pub fn run_ei_wingman_bundle(app: &AppHandle, input: &Path) -> Result<(PathBuf, PathBuf), String> {
+    let bin = ei_binary_path(app).ok_or_else(|| {
+        "Elite Insights binary not found in app resources (resources/ei).".to_string()
+    })?;
+    let cfg = ei_html_config_path(app).ok_or_else(|| {
+        "Elite Insights HTML config not found in app resources (resources/ei/Settings).".to_string()
+    })?;
+    if !input.exists() {
+        return Err(format!("local log file does not exist: {}", input.display()));
+    }
+    let input_win = path_to_windows(input);
+    let mut cmd = Command::new(&bin);
+    cmd.arg("-c").arg(path_to_windows(&cfg)).arg(&input_win);
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000);
+    const EI_TIMEOUT: Duration = Duration::from_secs(120);
+    let child: Child = cmd.spawn().map_err(|e| format!("failed to spawn Elite Insights: {}", e))?;
+    let child = std::sync::Arc::new(std::sync::Mutex::new(Some(child)));
+    let child_wait = child.clone();
+    let (tx, rx) = std::sync::mpsc::channel::<Option<std::process::ExitStatus>>();
+    let watch = std::thread::spawn(move || {
+        let st = child_wait.lock().ok().and_then(|mut g| g.take()).and_then(|mut c| c.wait().ok());
+        let _ = tx.send(st);
+    });
+    let status = match rx.recv_timeout(EI_TIMEOUT) {
+        Ok(Some(s)) => s,
+        _ => {
+            if let Ok(mut g) = child.lock() { if let Some(mut c) = g.take() { let _ = c.kill(); } }
+            return Err("Elite Insights timed out or failed.".to_string());
+        }
+    };
+    let _ = watch.join();
+    if !status.success() {
+        return Err(format!("Elite Insights exited with status {}", status));
+    }
+    let stem = input.file_stem().map(|s| s.to_string_lossy().to_string());
+    let parent = input.parent().unwrap_or_else(|| Path::new("."));
+    let mut html_found: Option<PathBuf> = None;
+    let mut json_found: Option<PathBuf> = None;
+    if let Ok(entries) = std::fs::read_dir(parent) {
+        for e in entries.flatten() {
+            let p = e.path();
+            let name_matches = stem.as_ref().map(|s| p.file_name().map(|n| n.to_string_lossy().contains(s.as_str())).unwrap_or(false)).unwrap_or(false);
+            if !name_matches { continue; }
+            if p.extension().and_then(|x| x.to_str()) == Some("html") && html_found.is_none() {
+                html_found = Some(p);
+            } else if p.extension().and_then(|x| x.to_str()) == Some("json") && json_found.is_none() {
+                json_found = Some(p);
+            }
+        }
+    }
+    let html = html_found.ok_or_else(|| "Elite Insights produced no HTML.".to_string())?;
+    let json = json_found.ok_or_else(|| "Elite Insights produced no JSON.".to_string())?;
+    Ok((json, html))
+}
 /// HTML file path if it exists. `None` means the report needs to be generated.
 pub fn cached_ei_html_report(app: &AppHandle, local_path: &str) -> Option<PathBuf> {
     let path = ei_html_cache_path(app, local_path);

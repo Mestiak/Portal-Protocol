@@ -3822,6 +3822,26 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
             let _ = crate::config::add_to_history(&app_clone, rec);
         });
     }
+
+    // Raw-log Wingman fallback when dps.report is down / no permalink.
+    if record.url.is_none() && config.wingman_enabled {
+        let skip_wingman = (record.is_convergence == Some(true) && record.is_cm == Some(true))
+            || record.is_wvw == Some(true);
+        if !skip_wingman && matches!(record.status.as_str(), "On Hold" | "Failed" | "Completed") {
+            let fp = record.file_path.clone();
+            let app_clone = app.clone();
+            let already = crate::config::load_history(&app).iter().any(|r| {
+                r.file_path == fp
+                    && (r.wingman_status.as_deref() == Some("imported")
+                        || r.wingman_status.as_deref() == Some("in_progress"))
+            });
+            if !already {
+                tauri::async_runtime::spawn(async move {
+                    let _ = crate::wingman_raw_upload(app_clone, fp).await;
+                });
+            }
+        }
+    }
 }
 
 // ─── Local EVTC parsing ───────────────────────────────────────────────────────

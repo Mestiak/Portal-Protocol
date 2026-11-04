@@ -403,7 +403,9 @@
         }
         const fp = wingmanQueue[0];
         wingmanUi[fp] = "sending";
-        await invoke("retry_wingman_import", { filePath: fp })
+        const hasUrl = allHistory.find((h) => h.file_path === fp)?.url;
+        const cmd = hasUrl ? "retry_wingman_import" : "retry_wingman_raw_upload";
+        await invoke(cmd, { filePath: fp })
           .catch((e) => console.error("Wingman retry failed:", e))
           .finally(() => { wingmanUi[fp] = null; });
         wingmanQueueDone += 1;
