@@ -194,6 +194,19 @@ fn stop_watcher(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn update_log_status(app: AppHandle, file_path: String, status: String) -> Result<(), String> {
+    config::with_history_mut(&app, |history| {
+        if let Some(idx) = history.iter().position(|r| r.file_path == file_path) {
+            history[idx].status = status.clone();
+            let _ = app.emit("upload-status", history[idx].clone());
+            true
+        } else {
+            false
+        }
+    })
+}
+
+#[tauri::command]
 fn trigger_manual_upload(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -1245,6 +1258,7 @@ pub fn run() {
             get_watcher_status,
             stop_watcher,
             trigger_manual_upload,
+            update_log_status,
             save_error_report,
             pick_log_files,
             check_dps_report_status,

@@ -306,7 +306,7 @@
   // Mirror of the Wingman queue, but for dps.report On Hold logs. Re-uploads parked
   // logs one at a time (gap spacing) so recovery doesn't stampede dps.report. The
   // x/total counter drives the "Re-uploading x/total" line below the dps.report API.
-  const DPS_RETRY_GAP_MS = 2000;
+  const DPS_RETRY_GAP_MS = 3000;
   let dpsQueue = $state<string[]>([]);
   let dpsQueueRunning = $state(false);
   let dpsQueueDone = $state(0);
@@ -360,6 +360,13 @@
         const dpsStatusNow = (dpsReportStatus as string);
         if (dpsStatusNow !== "online") break; // pause; remaining stays queued
         const fp = dpsQueue[0];
+        // Gap 6: skip if dps.report already succeeded for this log
+        const rec = uploads.find((u) => u.file_path === fp) ?? allHistory.find((h) => h.file_path === fp);
+        if (rec && rec.url && rec.status === "Completed") {
+          dpsQueueDone += 1;
+          dpsQueue = dpsQueue.slice(1);
+          continue;
+        }
         await invoke("trigger_manual_upload", { filePath: fp })
           .catch((e) => console.error("dps.report retry failed:", e));
         // After the upload attempt, inspect the live feed/history record for this path.
