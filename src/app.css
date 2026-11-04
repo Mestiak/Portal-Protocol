@@ -8918,3 +8918,5 @@ input:focus {
 
 .wm-cancel { background: transparent; border: none; color: var(--muted-foreground); cursor: pointer; font-size: 12px; padding: 0 4px; }
 .wm-cancel:hover { color: var(--accent); }
+
+.wm-retry-in { font-size: 11px; color: var(--muted-foreground); margin-left: 4px; }

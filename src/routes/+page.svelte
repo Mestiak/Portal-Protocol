@@ -427,7 +427,7 @@
         const hasUrl = allHistory.find((h) => h.file_path === fp)?.url;
         const cmd = (hasUrl && dpsReportStatus === "online") ? "retry_wingman_import" : "retry_wingman_raw_upload";
         await invoke(cmd, { filePath: fp })
-          .catch((e) => console.error("Wingman retry failed:", e))
+          .catch((e) => { console.error("Wingman retry failed:", e); showToast(`Wingman upload failed: ${e}`, "default"); })
           .finally(() => { wingmanUi[fp] = null; });
         // Apply exponential backoff if still failed.
         const rec = allHistory.find((h) => h.file_path === fp);
@@ -460,6 +460,7 @@
   // On Wingman recovery, sweep all failed logs into the queue. Jitter spreads
   // client start times so recovery doesn't trigger a synchronized herd.
   function enqueueAllFailedOnRecovery() {
+    if (wingmanStatus !== "online") return; // defer until online
     const collectFailed = (logs: UploadRecord[]) =>
       logs.filter((h) => h.wingman_status === "failed").map((h) => h.file_path);
     const failedSet = new Set<string>();
@@ -5696,6 +5697,9 @@ async function testWebhook(wh: any) {
                 <img src="/wingman_icon.png" alt="" style="width:14px;height:14px;vertical-align:middle;" /> Send to Wingman
                 <span class="custom-tooltip">Wingman import failed — click to retry sending this log.</span>
               </button>
+              {#if wingmanRetryAt[log.file_path] && wingmanRetryAt[log.file_path] > Date.now()}
+                <span class="wm-retry-in">Retrying in {Math.ceil((wingmanRetryAt[log.file_path] - Date.now()) / 1000)}s</span>
+              {/if}
               {#if likelyCause(log)}
                 <span class="wm-cause">{likelyCause(log)}</span>
               {/if}
