@@ -5341,6 +5341,7 @@ async function testWebhook(wh: any) {
           slots: (g.slots ?? []).map((s: any) => ({ id: s.id ?? crypto.randomUUID(), roles: s.roles ?? [], ...s }))
         }))
       })));
+      suppressDirty = true;
       squadPlansLoaded = true;
 
       gw2_accounts = config.gw2_accounts ?? [];
