@@ -2721,7 +2721,8 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
         let l = n.to_lowercase();
         l.contains("world vs world") || l.contains("wvw") || l.contains("enemy players") || l.contains("enemy player")
     }).unwrap_or(false)
-        || boss_id_opt.map(|id| matches!(id, 38 | 95 | 96 | 1099 | 968 | 899)).unwrap_or(false);
+        || boss_id_opt.map(|id| matches!(id, 38 | 95 | 96 | 1099 | 968 | 899)).unwrap_or(false)
+        || local_wvw_map_id.is_some();
     record.is_wvw = Some(is_wvw);
     if is_wvw {
         record.boss_name = Some("World vs World".to_string());
@@ -3227,6 +3228,18 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                             // above, so keep ours instead of clobbering it with the generic tag.
                             if api_boss.as_deref() != Some("DPS.Report") && api_boss.is_some() {
                                 record.boss_name = api_boss;
+                            }
+                            // WvW: if dps.report names it World vs World, mark is_wvw + map_id
+                            if let Some(ref name) = record.boss_name {
+                                let l = name.to_lowercase();
+                                if l.contains("world vs world") || l.contains("enemy players") {
+                                    record.is_wvw = Some(true);
+                                    if record.map_id.is_none() {
+                                        record.map_id = local_wvw_map_id;
+                                    }
+                                    record.boss_name = Some("World vs World".to_string());
+                                    record.boss_icon = Some("wvw".to_string());
+                                }
                             }
                             // dps.report runs Elite Insights, which judges kill/wipe from
                             // the actual boss-death statechange — authoritative. The local

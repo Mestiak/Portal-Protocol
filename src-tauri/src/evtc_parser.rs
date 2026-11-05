@@ -1797,6 +1797,7 @@ pub fn parse_wvw_map_id(bytes: &[u8]) -> Option<u16> {
     None
 }
 pub fn parse_boss_id(bytes: &[u8]) -> Option<(u16, Option<String>)> {
+    let data: Vec<u8> = if bytes.starts_with(b"PK\x03\x04") {
         extract_zip(bytes).ok()?
     } else {
         bytes.to_vec()
