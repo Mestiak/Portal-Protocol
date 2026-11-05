@@ -1931,6 +1931,16 @@
     return base;
   }
 
+  function wvwBadgeColor(mapId?: number | null): string {
+    switch (mapId) {
+      case 1102: return "#ef4444"; // Red Borderlands
+      case 1100: return "#22c55e"; // Green Borderlands
+      case 1101: return "#3b82f6"; // Blue Borderlands
+      case 1099: return "#a855f7"; // Eternal Battlegrounds
+      case 1103: return "#94a3b8"; // Edge of the Mists
+      default: return "var(--accent)";
+    }
+  }
   function wvwMapName(mapId: number): string {
     const names: Record<number, string> = {
       1099: "Eternal Battlegrounds",
@@ -5751,7 +5761,7 @@ async function testWebhook(wh: any) {
         {:else if isStoryBoss(log.boss_name, log)}
           <span class="cm-badge story-badge">Personal Story</span>
         {:else if log.is_wvw}
-          <span class="cm-badge wvw-badge">{log.map_id != null ? wvwMapName(log.map_id) : "World vs World"}</span>
+          <span class="cm-badge wvw-badge" style="color: {wvwBadgeColor(log.map_id)}; border-color: {wvwBadgeColor(log.map_id)};">{log.map_id != null ? wvwMapName(log.map_id) : "World vs World"}</span>
         {:else if log.boss_name}
           <span class="cm-badge nm-badge">Normal Mode</span>
         {:else if log.status === "Skipped"}
