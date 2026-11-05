@@ -234,7 +234,7 @@
   // half-hydrated config.
   let configLoaded = $state(false);
   let settingsDirty = $state(false);
-  let suppressDirty = $state(false);
+  let suppressDirty = false;
   // Debounce timer for the global settings autosave (persistConfig) so a burst
   // of setting changes (e.g. typing a numeric field) only writes disk once.
   let configSaveTimer: ReturnType<typeof setTimeout> | null = null;
