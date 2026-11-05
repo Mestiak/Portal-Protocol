@@ -5389,6 +5389,7 @@ async function testWebhook(wh: any) {
   });
 
   async function saveConfig() {
+    suppressDirty = true;
     isSaving = true;
     saveMessage = "";
     try {
