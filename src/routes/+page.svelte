@@ -6713,6 +6713,14 @@ async function testWebhook(wh: any) {
     </div>
   {/if}
 
+  {#if settingsDirty}
+    <div class="app-toast app-settings-save-banner">
+      <span class="app-toast-icon"><i class="fa-solid fa-floppy-disk"></i></span>
+      <span>Unsaved settings changes</span>
+      <button class="app-update-btn" onclick={() => saveConfig()}>Save Settings</button>
+    </div>
+  {/if}
+
   {#if dpsReportStatus === "offline" && !dpsBannerDismissed}
     <div class="app-toast app-dps-down-banner" role="status" aria-live="polite" transition:fade={{ duration: prefersReducedMotion ? 0 : 220 }}>
       <span class="app-toast-icon"><i class="fa-solid fa-triangle-exclamation"></i></span>
@@ -7444,12 +7452,7 @@ async function testWebhook(wh: any) {
         <p>Manage watch folder, tokens, and integrations</p>
       </div>
       <div class="settings-stack">
-        {#if settingsDirty}
-          <div class="settings-save-banner" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#a855f71f;border:1px solid #a855f759;border-radius:8px;margin-bottom:12px;">
-            <span style="font-size:12px;font-weight:600;color:#c084fc;">Unsaved settings changes</span>
-            <button class="action-btn" style="padding:0 14px;" onclick={() => saveConfig()}>Save Settings</button>
-          </div>
-        {/if}
+        <!-- keep empty -->
 
         <!-- ─── CARD: Logs & Sources ─── -->
         <section class="settings-card">
