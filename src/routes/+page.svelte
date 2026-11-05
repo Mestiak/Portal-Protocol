@@ -7545,10 +7545,20 @@ async function testWebhook(wh: any) {
                   <span class="help" style="display: block; margin-top: 4px;">Required by Wingman to link combat uploads directly to your account dashboard.</span>
                   <div style="margin-top: 8px;">
                     <span style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Alt accounts (primary on top)</span>
+                    {#if wingman_accounts.length > 0}
+                      {@const connectedCount = wingman_accounts.filter(a => gw2_accounts.some(g => g.name.toLowerCase().includes(a.toLowerCase()))).length}
+                      <div style="display: inline-flex; align-items: center; gap: 6px; margin-bottom: 6px; padding: 2px 8px; border-radius: 10px; background: rgba(255,255,255,0.06); border: 1px solid var(--border); font-size: 10px; color: var(--text-muted);">
+                        <i class="fa-solid fa-circle-check" style="color: #34d399;"></i>
+                        {connectedCount} of {wingman_accounts.length} connected to Clears
+                      </div>
+                    {/if}
                     <div style="display: flex; gap: 6px; margin-bottom: 6px;">
                       <input type="text" placeholder="e.g. Username.1234" bind:value={newWingmanAccount} style="flex: 1; max-width: 320px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); padding: 6px; border-radius: 4px; color: white; font-size: 11px; outline: none;"/>
                       <button onclick={() => { if (newWingmanAccount.trim()) { const v = newWingmanAccount.trim(); if (!wingman_accounts.includes(v)) { wingman_accounts = [...wingman_accounts, v]; newWingmanAccount = ""; } } }} style="padding: 6px 12px; font-size: 11px; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--foreground); cursor: pointer;">Add</button>
                     </div>
+                    {#if newWingmanAccount.trim() && !gw2_accounts.some(g => g.name.toLowerCase().includes(newWingmanAccount.trim().toLowerCase()))}
+                      <span style="display: block; font-size: 10px; color: #fbbf24; margin-bottom: 6px;">Not found in Clears tab — add it there to enable clear tracking.</span>
+                    {/if}
                     {#if wingman_accounts.length === 0}
                       <div style="display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: rgba(255,255,255,0.04); border: 1px dashed var(--border); border-radius: 6px; margin-bottom: 6px;">
                         <img src="/wingman_icon.png" alt="" style="width: 16px; height: 16px; opacity: 0.6;" />
@@ -7563,7 +7573,7 @@ async function testWebhook(wh: any) {
                         <span style="flex: 1; max-width: 260px; font-size: 11px; color: white; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{i === 0 ? "★ Primary: " : ""}{acc}</span>
                         <button onclick={() => { if (i > 0) { const a = [...wingman_accounts]; [a[i-1], a[i]] = [a[i], a[i-1]]; wingman_accounts = a; } }} disabled={i === 0} style="font-size: 10px; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--foreground); cursor: pointer; opacity: {i === 0 ? 0.4 : 1};">↑</button>
                         <button onclick={() => { if (i < wingman_accounts.length - 1) { const a = [...wingman_accounts]; [a[i], a[i+1]] = [a[i+1], a[i]]; wingman_accounts = a; } }} disabled={i === wingman_accounts.length - 1} style="font-size: 10px; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--foreground); cursor: pointer; opacity: {i === wingman_accounts.length - 1 ? 0.4 : 1};">↓</button>
-                        <button onclick={() => { wingman_accounts = wingman_accounts.filter((_, idx) => idx !== i); }} style="font-size: 10px; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--accent); cursor: pointer;">✕</button>
+                        <button onclick={() => { if (i > 0) { wingman_accounts = wingman_accounts.filter((_, idx) => idx !== i); } }} disabled={i === 0} style="font-size: 10px; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--accent); cursor: pointer; opacity: {i === 0 ? 0.4 : 1};">✕</button>
                       </div>
                     {/each}
                     <span class="help" style="display: block; margin-top: 4px;">First account is primary. Use arrows to reorder.</span>
