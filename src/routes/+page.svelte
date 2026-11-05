@@ -7547,11 +7547,20 @@ async function testWebhook(wh: any) {
                     <span style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Alt accounts (primary on top)</span>
                     <div style="display: flex; gap: 6px; margin-bottom: 6px;">
                       <input type="text" placeholder="e.g. Username.1234" bind:value={newWingmanAccount} style="flex: 1; max-width: 320px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); padding: 6px; border-radius: 4px; color: white; font-size: 11px; outline: none;"/>
-                      <button onclick={() => { if (newWingmanAccount.trim()) { wingman_accounts = [...wingman_accounts, newWingmanAccount.trim()]; newWingmanAccount = ""; } }} style="padding: 6px 12px; font-size: 11px; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--foreground); cursor: pointer;">Add</button>
+                      <button onclick={() => { if (newWingmanAccount.trim()) { const v = newWingmanAccount.trim(); if (!wingman_accounts.includes(v)) { wingman_accounts = [...wingman_accounts, v]; newWingmanAccount = ""; } } }} style="padding: 6px 12px; font-size: 11px; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--foreground); cursor: pointer;">Add</button>
                     </div>
+                    {#if wingman_accounts.length === 0}
+                      <div style="display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: rgba(255,255,255,0.04); border: 1px dashed var(--border); border-radius: 6px; margin-bottom: 6px;">
+                        <img src="/wingman_icon.png" alt="" style="width: 16px; height: 16px; opacity: 0.6;" />
+                        <span style="font-size: 11px; color: var(--text-muted);">Add your main GW2 account to enable Wingman uploads.</span>
+                      </div>
+                    {/if}
                     {#each wingman_accounts as acc, i}
                       <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
-                        <span style="flex: 1; max-width: 260px; font-size: 11px; color: white; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{i === 0 ? "★ " : ""}{acc}</span>
+                        <span style="display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; flex-shrink: 0;" title={gw2_accounts.some(a => a.name.toLowerCase().includes(acc.toLowerCase())) ? "Connected to Clears tab" : "Not in Clears tab"}>
+                          <i class="fa-solid {gw2_accounts.some(a => a.name.toLowerCase().includes(acc.toLowerCase())) ? 'fa-circle-check' : 'fa-circle-xmark'}" style="font-size: 12px; color: {gw2_accounts.some(a => a.name.toLowerCase().includes(acc.toLowerCase())) ? '#34d399' : '#f87171'};"></i>
+                        </span>
+                        <span style="flex: 1; max-width: 260px; font-size: 11px; color: white; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{i === 0 ? "★ Primary: " : ""}{acc}</span>
                         <button onclick={() => { if (i > 0) { const a = [...wingman_accounts]; [a[i-1], a[i]] = [a[i], a[i-1]]; wingman_accounts = a; } }} disabled={i === 0} style="font-size: 10px; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--foreground); cursor: pointer; opacity: {i === 0 ? 0.4 : 1};">↑</button>
                         <button onclick={() => { if (i < wingman_accounts.length - 1) { const a = [...wingman_accounts]; [a[i], a[i+1]] = [a[i+1], a[i]]; wingman_accounts = a; } }} disabled={i === wingman_accounts.length - 1} style="font-size: 10px; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--foreground); cursor: pointer; opacity: {i === wingman_accounts.length - 1 ? 0.4 : 1};">↓</button>
                         <button onclick={() => { wingman_accounts = wingman_accounts.filter((_, idx) => idx !== i); }} style="font-size: 10px; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--accent); cursor: pointer;">✕</button>
