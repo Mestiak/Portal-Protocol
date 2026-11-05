@@ -5748,6 +5748,8 @@ async function testWebhook(wh: any) {
           <span class="cm-badge">Challenge Mode</span>
         {:else if isStoryBoss(log.boss_name, log)}
           <span class="cm-badge story-badge">Personal Story</span>
+        {:else if log.is_wvw}
+          <span class="cm-badge wvw-badge">{log.map_id != null ? wvwMapName(log.map_id) : "World vs World"}</span>
         {:else if log.boss_name}
           <span class="cm-badge nm-badge">Normal Mode</span>
         {:else if log.status === "Skipped"}
@@ -5763,6 +5765,8 @@ async function testWebhook(wh: any) {
         {:else if log.status === "Completed"}
           {#if isStoryBoss(log.boss_name, log)}
             <span class="status-pill sp-done">✓ Completed</span>
+          {:else if log.is_wvw}
+            <!-- no success/fail badge for WvW logs -->
           {:else if log.success === true}
             <span class="status-pill sp-success">✓ Success</span>
           {:else if log.success === false}
