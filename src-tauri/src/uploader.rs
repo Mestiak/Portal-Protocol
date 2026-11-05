@@ -4048,6 +4048,16 @@ fn extract_api_roles(enc: &Value) -> Vec<PlayerInfo> {
         None => return vec![],
     };
 
+    // WvW: detect by presence of an "Enemy Players" target.
+    let is_wvw = enc
+        .get("targets")
+        .and_then(|t| t.as_array())
+        .map(|arr| {
+            arr.iter()
+                .any(|tgt| tgt.get("name").and_then(|n| n.as_str()) == Some("Enemy Players"))
+        })
+        .unwrap_or(false);
+
     let raws: Vec<&Value> = if let Some(arr) = players_val.as_array() {
         arr.iter().collect()
     } else if let Some(obj) = players_val.as_object() {
@@ -4086,7 +4096,11 @@ fn extract_api_roles(enc: &Value) -> Vec<PlayerInfo> {
                 }
             });
 
-            let dps = extract_dps_number(target_val).or(cleave);
+            let dps = if is_wvw {
+                cleave
+            } else {
+                extract_dps_number(target_val).or(cleave)
+            };
 
             Some(PlayerInfo {
                 display_name: vstr_val(p, "displayName")
