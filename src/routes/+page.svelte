@@ -408,6 +408,8 @@
   }
 
   function enqueueWingmanRetry(file_path: string) {
+    const rec = allHistory.find((h) => h.file_path === file_path) ?? uploads.find((u) => u.file_path === file_path);
+    if (rec?.is_wvw) return; // WvW logs are excluded from Wingman
     if (wingmanQueue.includes(file_path)) return;
     const freshBatch = wingmanQueue.length === 0 && !wingmanQueueRunning;
     wingmanQueue = [...wingmanQueue, file_path];
@@ -475,7 +477,7 @@
   function enqueueAllFailedOnRecovery() {
     if (wingmanStatus !== "online") return; // defer until online
     const collectFailed = (logs: UploadRecord[]) =>
-      logs.filter((h) => h.wingman_status === "failed").map((h) => h.file_path);
+      logs.filter((h) => h.wingman_status === "failed" && !h.is_wvw).map((h) => h.file_path);
     const failedSet = new Set<string>();
     for (const fp of collectFailed(allHistory)) failedSet.add(fp);
     for (const fp of collectFailed(uploads)) failedSet.add(fp);
@@ -497,7 +499,7 @@
   // is declared, further down — it can't live here (used-before-declaration).
   function retryAllFailedWingman() {
     for (const h of allHistory) {
-      if (h.wingman_status === "failed") enqueueWingmanRetry(h.file_path);
+      if (h.wingman_status === "failed" && !h.is_wvw) enqueueWingmanRetry(h.file_path);
     }
   }
 
@@ -5782,7 +5784,7 @@ async function testWebhook(wh: any) {
             Alt
           </span>
         {/if}
-        {#if wingman_enabled && wingmanQueue.includes(log.file_path)}
+        {#if wingman_enabled && wingmanQueue.includes(log.file_path) && !log.is_wvw}
           <span class="wm-chip wm-sending" title="Queued for Wingman import — will be processed shortly.">
             <img src="/wingman_icon.png" alt="" class="wm-spin" style="width:14px;height:14px;vertical-align:middle;" /> Queued
           </span>
@@ -5793,7 +5795,7 @@ async function testWebhook(wh: any) {
             <span class="custom-tooltip">Uploads paused — resume in settings.</span>
           </span>
         {/if}
-        {#if wingman_enabled && (log.wingman_status === "failed" || log.wingman_status === "imported" || wingmanUi[log.file_path] === "sending" || wingmanUi[log.file_path] === "verifying" || log.wingman_status === "done" || log.wingman_status === "in_progress")}
+        {#if wingman_enabled && (log.wingman_status === "failed" || log.wingman_status === "imported" || wingmanUi[log.file_path] === "sending" || wingmanUi[log.file_path] === "verifying" || log.wingman_status === "done" || log.wingman_status === "in_progress") && !log.is_wvw}
           {@const isActive = wingmanUi[log.file_path] === "sending" || wingmanQueue.includes(log.file_path)}
           {@const isVerifying = wingmanUi[log.file_path] === "verifying"}
           {@const wmState = isVerifying ? "verifying" : (isActive ? "sending" : (log.wingman_status === "in_progress" ? "pending" : (log.wingman_status ?? "failed")))}
