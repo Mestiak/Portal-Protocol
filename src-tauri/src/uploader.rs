@@ -2723,7 +2723,10 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
         record.map_id = boss_id_opt;
         if let Some(name) = boss_name_opt {
             record.boss_name = Some(name);
+        } else {
+            record.boss_name = Some("World vs World".to_string());
         }
+        record.boss_icon = Some("wvw".to_string());
     }
     if let Some((boss_id, boss_name)) = local_boss_id {
         // Prefer the real boss name read from the agent table (correctly
