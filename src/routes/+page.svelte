@@ -73,6 +73,7 @@
     is_story?: boolean; // true => story instance (Personal Story grouping)
     map_id?: number; // story instance map id (stable classification key)
     is_wvw?: boolean; // World vs World log
+    wvw_enemy_count?: number;
     notes?: LogNote[];
     wingman_status?: string | null;
     wingman_account?: string | null;
@@ -5858,6 +5859,9 @@ async function testWebhook(wh: any) {
           {/if}
           {#if log.is_wvw && log.map_id != null}
             <span class="meta-item"><i class="fa-solid fa-map" style="margin-right: 4px; font-size: 11px;"></i> {wvwMapName(log.map_id)}</span>
+          {/if}
+          {#if log.is_wvw && log.wvw_enemy_count != null}
+            <span class="meta-item"><i class="fa-solid fa-skull" style="margin-right: 4px; font-size: 11px;"></i> {log.wvw_enemy_count} Enemies</span>
           {/if}
           <span class="meta-item"><i class="fa-solid fa-calendar-days" style="margin-right: 4px; font-size: 11px;"></i> {log.timestamp}</span>
         </div>

@@ -245,6 +245,7 @@ fn emit_skipped(app: &AppHandle, file_path: &str, file_name: &str) {
         diagnostics: None,
         is_convergence: None,
         is_wvw: None,
+        wvw_enemy_count: None,
         boss_duration: None,
         group_dps: None,
         kaineng_phases: None,
@@ -1205,6 +1206,8 @@ pub struct UploadRecord {
     pub ura_health_regen: Option<String>,
     #[serde(default)]
     pub is_wvw: Option<bool>,
+    #[serde(default)]
+    pub wvw_enemy_count: Option<usize>,
     pub boss_duration: Option<f64>,
     /// Group DPS (sum of all players' all-targets DPS) fetched from dps.report's
     /// Elite Insights JSON. Used by the frontend to render a damage badge.
@@ -2551,6 +2554,7 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
         diagnostics: None,
         is_convergence: None,
         is_wvw: None,
+        wvw_enemy_count: None,
         boss_duration: None,
         group_dps: None,
         is_quick_play: None,
@@ -5179,6 +5183,9 @@ fn build_discord_embed(record: &UploadRecord) -> serde_json::Value {
         if let Some(mid) = record.map_id {
             fields.push(json!({ "name": "Map", "value": wvw_map_name(mid), "inline": true }));
         }
+        if let Some(ec) = record.wvw_enemy_count {
+            fields.push(json!({ "name": "Enemies", "value": ec.to_string(), "inline": true }));
+        }
     }
     if !log_link.is_empty() {
         fields.push(json!({ "name": "Log", "value": format!("[dps.report]({})", log_link), "inline": false }));
@@ -5297,6 +5304,7 @@ pub async fn test_webhook(webhook: DiscordWebhook) -> Result<String, String> {
         is_convergence: Some(false),
         kaineng_phases: None,
         is_wvw: None,
+        wvw_enemy_count: None,
         boss_duration: None,
         group_dps: None,
         is_story: Some(false),
@@ -6053,6 +6061,7 @@ mod discord_embed_tests {
             diagnostics: None,
             is_convergence: None,
             is_wvw: None,
+        wvw_enemy_count: None,
             boss_duration: None,
             group_dps: None,
             is_quick_play: None,
