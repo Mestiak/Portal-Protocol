@@ -233,6 +233,7 @@
   // during startup. Prevents a race where the first computed read re-saves a
   // half-hydrated config.
   let configLoaded = $state(false);
+  let settingsDirty = $state(false);
   // Debounce timer for the global settings autosave (persistConfig) so a burst
   // of setting changes (e.g. typing a numeric field) only writes disk once.
   let configSaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -5364,6 +5365,7 @@ async function testWebhook(wh: any) {
     if (!squadPlansLoaded) return;
 
     if (configSaveTimer) clearTimeout(configSaveTimer);
+    settingsDirty = true;
     configSaveTimer = setTimeout(() => { persistConfig(); }, 400);
   });
 
@@ -5405,6 +5407,7 @@ async function testWebhook(wh: any) {
         },
       });
       saveMessage = "Settings saved and watcher updated!";
+      settingsDirty = false;
       setTimeout(() => { saveMessage = ""; }, 3000);
     } catch (e: any) {
       saveMessage = `Error: ${e}`;
@@ -7441,6 +7444,12 @@ async function testWebhook(wh: any) {
         <p>Manage watch folder, tokens, and integrations</p>
       </div>
       <div class="settings-stack">
+        {#if settingsDirty}
+          <div class="settings-save-banner" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#a855f71f;border:1px solid #a855f759;border-radius:8px;margin-bottom:12px;">
+            <span style="font-size:12px;font-weight:600;color:#c084fc;">Unsaved settings changes</span>
+            <button class="action-btn" style="padding:0 14px;" onclick={() => saveConfig()}>Save Settings</button>
+          </div>
+        {/if}
 
         <!-- ─── CARD: Logs & Sources ─── -->
         <section class="settings-card">
