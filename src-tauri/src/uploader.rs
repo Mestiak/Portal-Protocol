@@ -698,12 +698,12 @@ const STORY_MAP_IDS: &[u16] = &[
 /// Falls back to the map id itself when unknown so the UI never shows a blank.
 fn wvw_map_name(map_id: u16) -> String {
     match map_id {
-        1099 => "Eternal Battlegrounds".to_string(),
-        1100 => "Green Borderlands".to_string(),
-        1101 => "Blue Borderlands".to_string(),
-        1102 => "Red Borderlands".to_string(),
-        1103 => "Edge of the Mists".to_string(),
-        1104 => "Obsidian Sanctum".to_string(),
+        38 => "Eternal Battlegrounds".to_string(),
+        95 => "Green Borderlands".to_string(),
+        96 => "Blue Borderlands".to_string(),
+        1099 => "Red Borderlands".to_string(),
+        968 => "Edge of the Mists".to_string(),
+        899 => "Obsidian Sanctum".to_string(),
         other => format!("WvW (map {})", other),
     }
 }
@@ -2717,7 +2717,7 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
     let boss_id_opt = local_boss_id.as_ref().map(|(id, _)| *id);
     let boss_name_opt = local_boss_id.as_ref().and_then(|(_, n)| n.clone());
     let is_wvw = boss_name_opt.as_deref().map(|n| n.to_lowercase().contains("world vs world") || n.to_lowercase().contains("wvw")).unwrap_or(false)
-        || boss_id_opt.map(|id| (1099..=1104).contains(&id)).unwrap_or(false);
+        || boss_id_opt.map(|id| matches!(id, 38 | 95 | 96 | 1099 | 968 | 899)).unwrap_or(false);
     record.is_wvw = Some(is_wvw);
     if is_wvw {
         record.map_id = boss_id_opt;

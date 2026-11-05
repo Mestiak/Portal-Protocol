@@ -1933,22 +1933,22 @@
 
   function wvwBadgeColor(mapId?: number | null): string {
     switch (mapId) {
-      case 1102: return "#ef4444"; // Red Borderlands
-      case 1100: return "#22c55e"; // Green Borderlands
-      case 1101: return "#3b82f6"; // Blue Borderlands
-      case 1099: return "#a855f7"; // Eternal Battlegrounds
-      case 1103: return "#94a3b8"; // Edge of the Mists
+      case 1099: return "#ef4444"; // Red Borderlands
+      case 95: return "#22c55e"; // Green Borderlands
+      case 96: return "#3b82f6"; // Blue Borderlands
+      case 38: return "#a855f7"; // Eternal Battlegrounds
+      case 968: return "#94a3b8"; // Edge of the Mists
       default: return "var(--accent)";
     }
   }
   function wvwMapName(mapId: number): string {
     const names: Record<number, string> = {
-      1099: "Eternal Battlegrounds",
-      1100: "Green Borderlands",
-      1101: "Blue Borderlands",
-      1102: "Red Borderlands",
-      1103: "Edge of the Mists",
-      1104: "Obsidian Sanctum"
+      38: "Eternal Battlegrounds",
+      95: "Green Borderlands",
+      96: "Blue Borderlands",
+      1099: "Red Borderlands",
+      968: "Edge of the Mists",
+      899: "Obsidian Sanctum"
     };
     return names[mapId] ?? `WvW (map ${mapId})`;
   }
