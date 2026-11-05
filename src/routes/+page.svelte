@@ -7624,7 +7624,7 @@ async function testWebhook(wh: any) {
                 </div>
               {/if}
 <div class="wh-presets">
-                  <button class="wh-preset" onclick={() => { wh.filters.kinds = ['raid', 'strike', 'fractal', 'convergence', 'golem']; wh.filters.outcomes = ['kill', 'wipe']; wh.filters.only_cm = null; wh.filters.only_lcm = null; discord_webhooks = [...discord_webhooks]; }}>All</button>
+                  <button class="wh-preset" onclick={() => { wh.filters.kinds = ['raid', 'strike', 'fractal', 'convergence', 'golem', 'wvw']; wh.filters.outcomes = ['kill', 'wipe']; wh.filters.only_cm = null; wh.filters.only_lcm = null; discord_webhooks = [...discord_webhooks]; }}>All</button>
                   <button class="wh-preset" onclick={() => { wh.filters.kinds = ['raid']; wh.filters.outcomes = ['kill', 'wipe']; wh.filters.only_cm = null; wh.filters.only_lcm = null; discord_webhooks = [...discord_webhooks]; }}>Raids</button>
                   <button class="wh-preset" onclick={() => { wh.filters.kinds = ['strike']; wh.filters.outcomes = ['kill', 'wipe']; wh.filters.only_cm = null; wh.filters.only_lcm = null; discord_webhooks = [...discord_webhooks]; }}>Strikes</button>
                   <button class="wh-preset" onclick={() => { wh.filters.kinds = ['raid', 'strike', 'fractal', 'convergence', 'golem']; wh.filters.outcomes = ['kill', 'wipe']; wh.filters.only_cm = true; wh.filters.only_lcm = null; discord_webhooks = [...discord_webhooks]; }}>CM</button>
@@ -7637,7 +7637,7 @@ async function testWebhook(wh: any) {
                   <div class="wh-filter-row wh-filter-row-type">
                     <span class="wh-filter-label">Type</span>
                     <div class="chip-group">
-                      {#each ["raid", "strike", "fractal", "convergence", "golem"] as k}
+                      {#each ["raid", "strike", "fractal", "convergence", "golem", "wvw"] as k}
                         <button class="chip chip-type" class:on={wh.filters.kinds.includes(k)} onclick={() => { toggleArr(wh.filters.kinds, k); discord_webhooks = [...discord_webhooks]; }}>{k}</button>
                       {/each}
                     </div>

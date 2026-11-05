@@ -355,6 +355,8 @@ pub enum EncounterKind {
     Convergence,
     /// Kitty Golem (Special Forces Training Area) — benchmark/dummy logs.
     Golem,
+    /// World vs World encounter.
+    Wvw,
 }
 
 /// Upload outcome for routing.

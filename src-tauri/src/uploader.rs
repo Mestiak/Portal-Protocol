@@ -4855,7 +4855,9 @@ pub(crate) fn webhook_matches(f: &crate::config::WebhookFilters, r: &UploadRecor
         .replace(|c: char| !c.is_ascii_alphanumeric(), "");
     let is_conv = r.is_convergence.unwrap_or(false) || is_convergence(&clean_boss, r.num_players);
     let (exp, _) = get_discord_headers(&clean_boss);
-    let kind = if is_conv {
+    let kind = if r.is_wvw == Some(true) {
+        crate::config::EncounterKind::Wvw
+    } else if is_conv {
         crate::config::EncounterKind::Convergence
     } else if is_fractal_boss(&clean_boss) {
         crate::config::EncounterKind::Fractal
