@@ -7503,6 +7503,28 @@ async function testWebhook(wh: any) {
               </div>
               <span class="help">Links uploads to your dps.report account for persistent storage.</span>
             </div>
+
+            <div class="form-checkbox" style="margin-top: 12px;">
+              <input id="wvw-watch" type="checkbox" bind:checked={wvw_enabled}/>
+              <label for="wvw-watch">Show World vs World (WvW) Logs</label>
+              <span class="help" style="display: block; margin-top: 2px;">When off (default), WvW logs are ignored entirely. When on, they appear as a separate "World vs World" group and are excluded from Wingman uploads.</span>
+            </div>
+
+          </div>
+        </section>
+
+
+
+        <!-- ─── CARD: Integrations ─── -->
+        <section class="settings-card">
+          <header class="settings-card-head">
+            <span class="settings-card-icon"><i class="fa-solid fa-plug"></i></span>
+            <div class="settings-card-titles">
+              <h3>Integrations</h3>
+              <p>Connect Portal Protocol to external services.</p>
+            </div>
+          </header>
+          <div class="settings-card-body">
             <div class="form-group wh-group">
               <span class="group-label">Discord Webhooks <span class="optional">(optional)</span></span>
               <div class="wh-top-actions">
@@ -7705,21 +7727,7 @@ async function testWebhook(wh: any) {
           </div>
           <span class="help">Posts a rich embed to each enabled channel on every upload. Legacy single URL (if any) was migrated into this list.</span>
           </div>
-          </div>
-        </section>
 
-
-
-        <!-- ─── CARD: Integrations ─── -->
-        <section class="settings-card">
-          <header class="settings-card-head">
-            <span class="settings-card-icon"><i class="fa-solid fa-plug"></i></span>
-            <div class="settings-card-titles">
-              <h3>Integrations</h3>
-              <p>Connect Portal Protocol to external services.</p>
-            </div>
-          </header>
-          <div class="settings-card-body">
             <div class="form-group" style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 16px; margin-top: 8px;">
               <div class="form-checkbox" style="margin-bottom: 8px;">
                 <input id="wingman-watch" type="checkbox" bind:checked={wingman_enabled}/>
@@ -7748,11 +7756,6 @@ async function testWebhook(wh: any) {
                   </div>
                 </div>
               {/if}
-            </div>
-            <div class="form-checkbox" style="margin-top: 12px;">
-              <input id="wvw-watch" type="checkbox" bind:checked={wvw_enabled}/>
-              <label for="wvw-watch">Show World vs World (WvW) Logs</label>
-              <span class="help" style="display: block; margin-top: 2px;">When off (default), WvW logs are ignored entirely. When on, they appear as a separate "World vs World" group and are excluded from Wingman uploads.</span>
             </div>
           </div>
         </section>
