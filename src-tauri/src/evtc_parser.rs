@@ -1753,8 +1753,50 @@ pub fn get_boss_name_from_id(boss_id: u16) -> String {
 }
 
 /// Parse the boss species ID and optional display name from an EVTC header.
-pub fn parse_boss_id(bytes: &[u8]) -> Option<(u16, Option<String>)> {
+pub fn parse_wvw_map_id(bytes: &[u8]) -> Option<u16> {
     let data: Vec<u8> = if bytes.starts_with(b"PK\x03\x04") {
+        extract_zip(bytes).ok()?
+    } else {
+        bytes.to_vec()
+    };
+    if data.len() < 15 || !data.starts_with(b"EVTC") {
+        return None;
+    }
+    let revision = data[12];
+    let header_end: usize = if revision == 0 { 15 } else { 16 };
+    let agent_count = ru32(&data, header_end).ok()? as usize;
+    let agents_base = header_end + 4;
+    const AGENT_SZ: usize = 96;
+    let skills_base = agents_base + agent_count * AGENT_SZ;
+    let skill_count = ru32(&data, skills_base).ok()? as usize;
+    let skill_sz = if revision == 0 { 64 } else { 68 };
+    let skills_end = skills_base + 4 + skill_count * skill_sz;
+    let events_base = skills_end;
+    if events_base >= data.len() {
+        return None;
+    }
+    let event_sz = 64;
+    let event_count = (data.len() - events_base) / event_sz;
+    let statechange_offset = if revision == 0 { 54 } else { 56 };
+    for i in 0..event_count {
+        let base = events_base + i * event_sz;
+        if base + 60 > data.len() {
+            break;
+        }
+        let is_statechange = data[base + statechange_offset];
+        if is_statechange == 25 {
+            // statechange MapID: src_agent = map id
+            if let Ok(src) = ru64(&data, base + 8) {
+                let map_id = (src & 0xFFFF) as u16;
+                if map_id != 0 {
+                    return Some(map_id);
+                }
+            }
+        }
+    }
+    None
+}
+pub fn parse_boss_id(bytes: &[u8]) -> Option<(u16, Option<String>)> {
         extract_zip(bytes).ok()?
     } else {
         bytes.to_vec()

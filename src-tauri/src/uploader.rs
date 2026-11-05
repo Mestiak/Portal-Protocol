@@ -2673,6 +2673,7 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
     let local_players_result = evtc_parser::parse_players(&file_bytes);
     let boss_hp_left_local = evtc_parser::parse_boss_hp(&file_bytes);
     let local_boss_id = evtc_parser::parse_boss_id(&file_bytes);
+    let local_wvw_map_id = evtc_parser::parse_wvw_map_id(&file_bytes);
     // Active boss-fight duration (from first combat engagement event to boss death).
     // Prioritized so that the provisional "while uploading" duration matches Elite
     // Insights' trimmed duration as closely as possible.
@@ -2725,6 +2726,9 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
     if is_wvw {
         record.boss_name = Some("World vs World".to_string());
         record.boss_icon = Some("wvw".to_string());
+        if let Some(mid) = local_wvw_map_id {
+            record.map_id = Some(mid);
+        }
     }
     if !is_wvw {
     if let Some((boss_id, boss_name)) = local_boss_id {
@@ -3103,6 +3107,12 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                                 // dps.report only returns "DPS.Report" for story logs, so our
                                 // canonical name must win unconditionally.
                                 record.boss_name = Some(story_map_name(sid));
+                            }
+                        }
+                        // WvW: capture map id from dps.report bossId if missing.
+                        if record.is_wvw == Some(true) && record.map_id.is_none() {
+                            if let Some(sid) = story_id {
+                                record.map_id = Some(sid);
                             }
                         }
                         // WvW: capture map id from dps.report bossId if missing.
