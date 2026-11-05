@@ -3586,8 +3586,9 @@
   }
 
   function retryOnHoldLogs() {
-    // Sweep On Hold logs from BOTH the live feed and full history (deduped by path),
-    // then drain them through the serial dps queue so the x/total counter is visible.
+    // Don't interfere with an in-flight recovery drain — the safety net will
+    // pick up any still-On-Hold logs on the next tick.
+    if (dpsQueueRunning) return;
     const paths = new Set<string>();
     for (const u of uploads) if (u.status === "On Hold") paths.add(u.file_path);
     for (const h of allHistory) if (h.status === "On Hold") paths.add(h.file_path);
