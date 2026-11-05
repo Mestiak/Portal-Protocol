@@ -188,6 +188,7 @@
   // ─── Settings State ────────────────────────────────────────────────
   let logs_directory = $state("");
   let dps_report_token = $state("");
+  let showDpsToken = $state(false);
   let discord_webhook = $state(""); // legacy single-url (kept for compat; UI uses discord_webhooks)
   let discord_webhooks = $state<Array<{ id: string; label: string; url: string; enabled: boolean; mention_roles: Array<{ label: string; token: string }>; mention?: string | null; thread_id: string | null; filters: { kinds: string[]; outcomes: string[]; only_cm: boolean | null; only_lcm: boolean | null; bosses: string[] }; _showFilters?: boolean; _collapsed?: boolean; _showAdvanced?: boolean; _roleFormOpen?: boolean }>>([]);
   // Tier 1 (2026-07-23): transient per-webhook UI state, kept OUT of persisted config.
@@ -7462,7 +7463,12 @@ async function testWebhook(wh: any) {
             </div>
             <div class="form-group">
               <label for="dps-token">dps.report User Token <span class="optional">(optional)</span></label>
-              <input id="dps-token" type="password" placeholder="Your dps.report token..." bind:value={dps_report_token}/>
+              <div style="display: flex; gap: 8px;">
+                <input id="dps-token" type={showDpsToken ? "text" : "password"} placeholder="Your dps.report token..." bind:value={dps_report_token} style="flex: 1;"/>
+                <button class="action-btn" type="button" onclick={() => (showDpsToken = !showDpsToken)} style="padding: 0 12px;" title={showDpsToken ? "Hide token" : "Show token"}>
+                  <i class="fa-solid {showDpsToken ? 'fa-eye-slash' : 'fa-eye'}"></i>
+                </button>
+              </div>
               <span class="help">Links uploads to your dps.report account for persistent storage.</span>
             </div>
             <div class="form-group wh-group">
