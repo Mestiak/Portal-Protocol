@@ -7503,9 +7503,89 @@ async function testWebhook(wh: any) {
               </div>
               <span class="help">Links uploads to your dps.report account for persistent storage.</span>
             </div>
+
+            <div class="form-checkbox" style="margin-top: 12px;">
+              <input id="wvw-watch" type="checkbox" bind:checked={wvw_enabled}/>
+              <label for="wvw-watch">Show World vs World (WvW) Logs</label>
+              <span class="help" style="display: block; margin-top: 2px;">When off (default), WvW logs are ignored entirely. When on, they appear as a separate "World vs World" group and are excluded from Wingman uploads.</span>
+            </div>
+
+          </div>
+        </section>
+
+
+
+        <!-- ─── CARD: Integrations ─── -->
+        <section class="settings-card">
+          <header class="settings-card-head">
+            <span class="settings-card-icon"><i class="fa-solid fa-plug"></i></span>
+            <div class="settings-card-titles">
+              <h3>Integrations</h3>
+              <p>Connect Portal Protocol to external services.</p>
+            </div>
+          </header>
+          <div class="settings-card-body">
+
+            <div class="form-group" style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 16px; margin-top: 8px;">
+              <div class="form-checkbox" style="margin-bottom: 8px;">
+                <button type="button" class="action-btn" title={wingman_enabled ? "Disable Wingman uploads" : "Enable Wingman uploads"} style="display: inline-flex; align-items: center; gap: 6px; min-width: 240px; justify-content: center; background: {wingman_enabled ? 'var(--accent)' : 'rgba(255,255,255,0.08)'}; color: {wingman_enabled ? '#fff' : 'var(--foreground)'}; border: 1px solid {wingman_enabled ? 'var(--accent)' : 'var(--border)'}; box-shadow: {wingman_enabled ? '0 0 12px color-mix(in srgb, var(--accent) 45%, transparent)' : 'none'}; transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease; border-radius: 8px;" onclick={() => (wingman_enabled = !wingman_enabled)}>
+                  <span style="position: relative; display: inline-flex; align-items: center;">
+                    <img src="/wingman_icon.png" alt="" style="width: 16px; height: 16px; vertical-align: middle;" />
+                  </span>
+                  {wingman_enabled ? "Disable" : "Enable"} Uploads to GW2 Wingman
+                </button>
+                {#if wingman_enabled && wingman_accounts.length > 1}
+                  <span style="display: block; margin-top: 4px; font-size: 11px; color: var(--text-muted);">Linked: {wingman_accounts[0]}</span>
+                {/if}
+              </div>
+              {#if wingman_enabled}
+                <div style="padding-left: 24px; margin-top: 8px; animation: slideDown 0.15s ease-out;">
+                  <label for="wingman-acc" style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">GW2 Account Name</label>
+                  <input id="wingman-acc" type="text" placeholder="e.g. Username.1234" bind:value={wingman_account} style="width: 100%; max-width: 320px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); padding: 6px; border-radius: 4px; color: white; font-size: 11px; outline: none;"/>
+                  <span class="help" style="display: block; margin-top: 4px;">Required by Wingman to link combat uploads directly to your account dashboard.</span>
+                  <div style="margin-top: 8px;">
+                    <span style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Alt accounts (primary on top)</span>
+                    {#if wingman_accounts.length > 0}
+                      {@const connectedCount = wingman_accounts.filter(a => gw2_accounts.some(g => g.name.toLowerCase().includes(a.toLowerCase()))).length}
+                      <div style="display: inline-flex; align-items: center; gap: 6px; margin-bottom: 6px; padding: 2px 8px; border-radius: 10px; background: rgba(255,255,255,0.06); border: 1px solid var(--border); font-size: 10px; color: var(--text-muted);">
+                        <i class="fa-solid fa-circle-check" style="color: #34d399;"></i>
+                        {connectedCount} of {wingman_accounts.length} connected to Clears
+                      </div>
+                    {/if}
+                    <div style="display: flex; gap: 6px; margin-bottom: 6px;">
+                      <input type="text" placeholder="e.g. Username.1234" bind:value={newWingmanAccount} style="flex: 1; max-width: 320px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); padding: 6px; border-radius: 4px; color: white; font-size: 11px; outline: none;"/>
+                      <button onclick={() => { if (newWingmanAccount.trim()) { const v = newWingmanAccount.trim(); if (!wingman_accounts.includes(v)) { wingman_accounts = [...wingman_accounts, v]; newWingmanAccount = ""; } } }} style="padding: 6px 12px; font-size: 11px; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--foreground); cursor: pointer;">Add</button>
+                    </div>
+                    {#if newWingmanAccount.trim() && !gw2_accounts.some(g => g.name.toLowerCase().includes(newWingmanAccount.trim().toLowerCase()))}
+                      <span style="display: block; font-size: 10px; color: #fbbf24; margin-bottom: 6px;">Not found in Clears tab — add it there to enable clear tracking.</span>
+                    {/if}
+                    {#if wingman_accounts.length === 0}
+                      <div style="display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: rgba(255,255,255,0.04); border: 1px dashed var(--border); border-radius: 6px; margin-bottom: 6px;">
+                        <img src="/wingman_icon.png" alt="" style="width: 16px; height: 16px; opacity: 0.6;" />
+                        <span style="font-size: 11px; color: var(--text-muted);">Add your main GW2 account to enable Wingman uploads.</span>
+                      </div>
+                    {/if}
+                    {#each wingman_accounts as acc, i}
+                      <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+                        <span style="display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; flex-shrink: 0;" title={gw2_accounts.some(a => a.name.toLowerCase().includes(acc.toLowerCase())) ? "Connected to Clears tab" : "Not in Clears tab"}>
+                          <i class="fa-solid {gw2_accounts.some(a => a.name.toLowerCase().includes(acc.toLowerCase())) ? 'fa-circle-check' : 'fa-circle-xmark'}" style="font-size: 12px; color: {gw2_accounts.some(a => a.name.toLowerCase().includes(acc.toLowerCase())) ? '#34d399' : '#f87171'};"></i>
+                        </span>
+                        <span style="flex: 1; max-width: 260px; font-size: 11px; color: white; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{i === 0 ? "★ Primary: " : ""}{acc}</span>
+                        <button onclick={() => { if (i > 0) { const a = [...wingman_accounts]; [a[i-1], a[i]] = [a[i], a[i-1]]; wingman_accounts = a; } }} disabled={i === 0} style="font-size: 10px; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--foreground); cursor: pointer; opacity: {i === 0 ? 0.4 : 1};">↑</button>
+                        <button onclick={() => { if (i < wingman_accounts.length - 1) { const a = [...wingman_accounts]; [a[i], a[i+1]] = [a[i+1], a[i]]; wingman_accounts = a; } }} disabled={i === wingman_accounts.length - 1} style="font-size: 10px; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--foreground); cursor: pointer; opacity: {i === wingman_accounts.length - 1 ? 0.4 : 1};">↓</button>
+                        <button onclick={() => { if (i > 0) { wingman_accounts = wingman_accounts.filter((_, idx) => idx !== i); } }} disabled={i === 0} style="font-size: 10px; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--accent); cursor: pointer; opacity: {i === 0 ? 0.4 : 1};">✕</button>
+                      </div>
+                    {/each}
+                    <span class="help" style="display: block; margin-top: 4px;">First account is primary. Use arrows to reorder.</span>
+                  </div>
+                </div>
+              {/if}
+            </div>
+          </div>
+
             <div class="form-group wh-group">
-              <span class="group-label">Discord Webhooks <span class="optional">(optional)</span></span>
-              <div class="wh-top-actions">
+              <span class="group-label" style="margin-left: 12px;">Discord Webhooks <span class="optional">(optional)</span></span>
+              <div class="wh-top-actions" style="margin-left: 12px;">
                 <button class="wh-add" onclick={() => { discord_webhooks = [...discord_webhooks, { id: `wh_${Date.now()}_${Math.random().toString(36).slice(2,7)}`, label: "", url: "", enabled: true, mention_roles: [], thread_id: null, filters: { kinds: [], outcomes: [], only_cm: null, only_lcm: null, bosses: [] }, _collapsed: false, _showAdvanced: false }]; }}>
                   <i class="fa-solid fa-plus"></i> Add Webhook
                 </button>
@@ -7703,57 +7783,7 @@ async function testWebhook(wh: any) {
             {/each}
             {/if}
           </div>
-          <span class="help">Posts a rich embed to each enabled channel on every upload. Legacy single URL (if any) was migrated into this list.</span>
-          </div>
-          </div>
-        </section>
-
-
-
-        <!-- ─── CARD: Integrations ─── -->
-        <section class="settings-card">
-          <header class="settings-card-head">
-            <span class="settings-card-icon"><i class="fa-solid fa-plug"></i></span>
-            <div class="settings-card-titles">
-              <h3>Integrations</h3>
-              <p>Connect Portal Protocol to external services.</p>
-            </div>
-          </header>
-          <div class="settings-card-body">
-            <div class="form-group" style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 16px; margin-top: 8px;">
-              <div class="form-checkbox" style="margin-bottom: 8px;">
-                <input id="wingman-watch" type="checkbox" bind:checked={wingman_enabled}/>
-                <label for="wingman-watch">Enable Uploads to GW2 Wingman</label>
-              </div>
-              {#if wingman_enabled}
-                <div style="padding-left: 24px; margin-top: 8px; animation: slideDown 0.15s ease-out;">
-                  <label for="wingman-acc" style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">GW2 Account Name</label>
-                  <input id="wingman-acc" type="text" placeholder="e.g. Username.1234" bind:value={wingman_account} style="width: 100%; max-width: 320px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); padding: 6px; border-radius: 4px; color: white; font-size: 11px; outline: none;"/>
-                  <span class="help" style="display: block; margin-top: 4px;">Required by Wingman to link combat uploads directly to your account dashboard.</span>
-                  <div style="margin-top: 8px;">
-                    <span style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Alt accounts (primary on top)</span>
-                    <div style="display: flex; gap: 6px; margin-bottom: 6px;">
-                      <input type="text" placeholder="e.g. Username.1234" bind:value={newWingmanAccount} style="flex: 1; max-width: 320px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); padding: 6px; border-radius: 4px; color: white; font-size: 11px; outline: none;"/>
-                      <button onclick={() => { if (newWingmanAccount.trim()) { wingman_accounts = [...wingman_accounts, newWingmanAccount.trim()]; newWingmanAccount = ""; } }} style="padding: 6px 12px; font-size: 11px; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--foreground); cursor: pointer;">Add</button>
-                    </div>
-                    {#each wingman_accounts as acc, i}
-                      <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
-                        <span style="flex: 1; max-width: 260px; font-size: 11px; color: white; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{i === 0 ? "★ " : ""}{acc}</span>
-                        <button onclick={() => { if (i > 0) { const a = [...wingman_accounts]; [a[i-1], a[i]] = [a[i], a[i-1]]; wingman_accounts = a; } }} disabled={i === 0} style="font-size: 10px; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--foreground); cursor: pointer; opacity: {i === 0 ? 0.4 : 1};">↑</button>
-                        <button onclick={() => { if (i < wingman_accounts.length - 1) { const a = [...wingman_accounts]; [a[i], a[i+1]] = [a[i+1], a[i]]; wingman_accounts = a; } }} disabled={i === wingman_accounts.length - 1} style="font-size: 10px; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--foreground); cursor: pointer; opacity: {i === wingman_accounts.length - 1 ? 0.4 : 1};">↓</button>
-                        <button onclick={() => { wingman_accounts = wingman_accounts.filter((_, idx) => idx !== i); }} style="font-size: 10px; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--accent); cursor: pointer;">✕</button>
-                      </div>
-                    {/each}
-                    <span class="help" style="display: block; margin-top: 4px;">First account is primary. Use arrows to reorder.</span>
-                  </div>
-                </div>
-              {/if}
-            </div>
-            <div class="form-checkbox" style="margin-top: 12px;">
-              <input id="wvw-watch" type="checkbox" bind:checked={wvw_enabled}/>
-              <label for="wvw-watch">Show World vs World (WvW) Logs</label>
-              <span class="help" style="display: block; margin-top: 2px;">When off (default), WvW logs are ignored entirely. When on, they appear as a separate "World vs World" group and are excluded from Wingman uploads.</span>
-            </div>
+          <span class="help" style="display: block; margin-top: 8px; margin-left: 12px;">Posts a rich embed to each enabled channel on every upload. Legacy single URL (if any) was migrated into this list.</span>
           </div>
         </section>
 
