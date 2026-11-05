@@ -326,11 +326,15 @@ async fn check_dps_report_status() -> Result<String, String> {
             crate::uploader::set_dps_report_down(false);
         }
     }
+    // Report offline to the frontend when uploads have been failing with 5xx,
+    // even if the lightweight health check still says "online".
+    if crate::uploader::consecutive_5xx() >= 2 {
+        return Ok("offline".to_string());
+    }
     status
 }
-
 #[tauri::command]
-fn check_bundled_ei(app: AppHandle) -> Result<(), String> {
+async fn check_bundled_ei(app: AppHandle) -> Result<(), String> {
     crate::ei_runner::check_bundled_ei(&app)
 }
 
