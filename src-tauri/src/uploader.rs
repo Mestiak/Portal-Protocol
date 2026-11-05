@@ -267,8 +267,14 @@ pub fn get_upload_queue() -> Result<serde_json::Value, String> {
 /// this is a lagging indicator, not a synchronization primitive.
 static DPS_REPORT_DOWN: OnceLock<AtomicBool> = OnceLock::new();
 static CONSECUTIVE_5XX: OnceLock<AtomicU32> = OnceLock::new();
-fn consecutive_5xx() -> &'static AtomicU32 {
-    CONSECUTIVE_5XX.get_or_init(|| AtomicU32::new(0))
+pub fn consecutive_5xx() -> u32 {
+    CONSECUTIVE_5XX.get_or_init(|| AtomicU32::new(0)).load(std::sync::atomic::Ordering::Relaxed)
+}
+pub fn incr_consecutive_5xx() -> u32 {
+    CONSECUTIVE_5XX.get_or_init(|| AtomicU32::new(0)).fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1
+}
+pub fn reset_consecutive_5xx() {
+    CONSECUTIVE_5XX.get_or_init(|| AtomicU32::new(0)).store(0, std::sync::atomic::Ordering::Relaxed);
 }
 fn dps_report_down() -> bool {
     DPS_REPORT_DOWN
@@ -2953,7 +2959,7 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                 match resp.json::<DpsUploadResponse>().await {
                     Ok(report) => {
                         record.status = "Completed".to_string();
-                        consecutive_5xx().store(0, Ordering::Relaxed);
+                        reset_consecutive_5xx();
                         crate::uploader::set_dps_report_down(false);
                         record.url = Some(report.permalink.clone());
                         record.error_msg = None;
@@ -3015,7 +3021,7 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                         // final save at the end of upload_file persists it with dragon data.
                         if record.is_convergence == Some(true) {
                             record.status = "Completed".to_string();
-                        consecutive_5xx().store(0, Ordering::Relaxed);
+                        reset_consecutive_5xx();
                         crate::uploader::set_dps_report_down(false);
                             // No early save / no break: fall through so Step 7e populates the
                             // Dragon Council and the end-of-function save captures it all.
@@ -3029,7 +3035,7 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                         // user can still open the finished report once EI completes server-side.
                         if record.is_story == Some(true) {
                             record.status = "Completed".to_string();
-                        consecutive_5xx().store(0, Ordering::Relaxed);
+                        reset_consecutive_5xx();
                         crate::uploader::set_dps_report_down(false);
                             record.success = Some(true);
                             // Local duration (parse_duration) and player count (parse_players)
@@ -3588,7 +3594,7 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                             || record.map_id.map(is_story_map_id).unwrap_or(false);
                         if is_story {
                             record.status = "Completed".to_string();
-                        consecutive_5xx().store(0, Ordering::Relaxed);
+                        reset_consecutive_5xx();
                         crate::uploader::set_dps_report_down(false);
                             record.success = Some(true);
                             // Keep local duration/players; story has no EI combat verdict.
@@ -3604,7 +3610,7 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                                 record.is_convergence == Some(true) && record.is_cm == Some(true);
                             if is_conv_cm {
                                 record.status = "Completed".to_string();
-                        consecutive_5xx().store(0, Ordering::Relaxed);
+                        reset_consecutive_5xx();
                         crate::uploader::set_dps_report_down(false);
                                 if record.success.is_none() {
                                     record.success = Some(
@@ -3652,7 +3658,7 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                     // health check still reports "online" (false positive). After 2
                     // consecutive 5xx responses, flip the offline flag so the UI
                     // and the queue react correctly.
-                    let n = consecutive_5xx().fetch_add(1, Ordering::Relaxed) + 1;
+                    let n = incr_consecutive_5xx();
                     if n >= 2 {
                         crate::uploader::set_dps_report_down(true);
                     }

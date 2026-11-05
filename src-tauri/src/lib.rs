@@ -320,7 +320,11 @@ async fn check_dps_report_status() -> Result<String, String> {
         }
     } else {
         FAILS.store(0, std::sync::atomic::Ordering::Relaxed);
-        crate::uploader::set_dps_report_down(false);
+        // Don't override a 5xx-driven outage with a false-positive "online"
+        // health check. Keep the flag down until uploads succeed again.
+        if crate::uploader::consecutive_5xx() == 0 {
+            crate::uploader::set_dps_report_down(false);
+        }
     }
     status
 }
