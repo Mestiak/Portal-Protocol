@@ -5363,6 +5363,7 @@ async function testWebhook(wh: any) {
     // persisted plans). squadPlansLoaded flips true only after loadConfig() has
     // hydrated squadPlans from disk.
     if (!squadPlansLoaded) return;
+    if (isSaving) return;
 
     if (configSaveTimer) clearTimeout(configSaveTimer);
     settingsDirty = true;
