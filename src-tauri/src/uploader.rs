@@ -59,6 +59,18 @@ pub fn manual_tx() -> Option<Sender<PathBuf>> {
     MANUAL_TX.get().cloned()
 }
 // log, not just the active ones. Bounded at 500 entries.
+// ─── Live concurrency gate ───────────────────────────────────────────────────
+// Re-readable at runtime so changing max_concurrent_uploads in Settings takes
+// effect without an app restart.
+static CONCURRENCY_SEM: OnceLock<Mutex<Option<Arc<tokio::sync::Semaphore>>>> = OnceLock::new();
+pub fn set_concurrency(max: usize) {
+    let sem = if max == 0 { None } else { Some(Arc::new(tokio::sync::Semaphore::new(max))) };
+    *CONCURRENCY_SEM.get_or_init(|| Mutex::new(None)).lock().unwrap() = sem;
+}
+fn concurrency_sem() -> Option<Arc<tokio::sync::Semaphore>> {
+    CONCURRENCY_SEM.get().and_then(|m| m.lock().ok()).and_then(|g| g.clone())
+}
+
 static UPLOAD_QUEUE: OnceLock<Mutex<Vec<QueueItem>>> = OnceLock::new();
 #[derive(Clone, serde::Serialize)]
 struct QueueItem {
@@ -2052,20 +2064,12 @@ pub async fn start_upload_loop(
     UPLOAD_PAUSED
         .get_or_init(|| AtomicBool::new(false))
         .store(cfg.upload_paused, Ordering::Relaxed);
+    set_concurrency(cfg.max_concurrent_uploads);
+
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(180))
         .build()
         .unwrap_or_default();
-
-    // Concurrency cap: 0 (or unset) = legacy unbounded; otherwise a semaphore
-    // bounds how many files upload to dps.report at once. Keeps the "queue" real
-    // and avoids hammering dps.report when many logs land simultaneously.
-    let max = crate::config::load_config(&app).max_concurrent_uploads;
-    let sem = if max == 0 {
-        None
-    } else {
-        Some(Arc::new(tokio::sync::Semaphore::new(max)))
-    };
 
     // Track queue: anything sitting in either channel is "pending". We seed the
     // live queue from what's buffered, then keep it updated as items promote.
@@ -2077,12 +2081,12 @@ pub async fn start_upload_loop(
             // Auto (watcher) path — subject to the min-time skip.
             maybe_path = rx.recv() => {
                 let path = match maybe_path { Some(p) => p, None => break };
-                spawn_upload(&app, &client, &sem, path, false).await;
+                spawn_upload(&app, &client, path, false).await;
             }
             // Manual path — never auto-skipped.
             maybe_path = manual_rx.recv() => {
                 let path = match maybe_path { Some(p) => p, None => continue };
-                spawn_upload(&app, &client, &sem, path, true).await;
+                spawn_upload(&app, &client, path, true).await;
             }
         }
     }
@@ -2092,7 +2096,6 @@ pub async fn start_upload_loop(
 async fn spawn_upload(
     app: &AppHandle,
     client: &reqwest::Client,
-    sem: &Option<Arc<tokio::sync::Semaphore>>,
     path: PathBuf,
     manual: bool,
 ) {
@@ -2141,6 +2144,7 @@ async fn spawn_upload(
     let emit_handle = app.clone(); // separate clone: upload_file consumes app_clone, emit needs its own handle
     let client_ref = client.clone();
     let fp_key = file_path.clone(); // keep an owned copy for the post-upload queue cleanup
+    let sem = concurrency_sem();
     if let Some(sem) = sem {
         let permit = sem.clone().acquire_owned().await;
         // Now we actually hold a slot -> flip to "active" so the pill reflects reality.

@@ -8448,6 +8448,7 @@ async function testWebhook(wh: any) {
           class="sb-queue-pill upload-queue-pill"
           class:queue-pulsing={queuePulse && !queueDrawerOpen}
           class:queue-paused={uploadPaused}
+          aria-expanded={queueDrawerOpen}
           title={uploadPaused ? 'Paused — click body to resume · click arrow to view queue' : 'Click body to pause · click arrow to view queue'}
           onclick={togglePauseUploads}
           oncontextmenu={(e) => { e.preventDefault(); queueDrawerOpen = !queueDrawerOpen; }}
@@ -8474,6 +8475,7 @@ async function testWebhook(wh: any) {
             <div class="queue-drawer-head">
               <span>Upload Queue</span>
               <span class="queue-drawer-meta">{activeCount} active · {queuedCount} queued · {doneCount} done · {skippedCount} skipped</span>
+              <div class="queue-progress" style="height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; margin-top: 4px; overflow: hidden;"><div class="queue-progress-bar" style="height: 100%; background: var(--accent); width: {uploadQueue.length ? (doneCount / uploadQueue.length * 100) : 0}%; transition: width 0.3s;"></div></div>
             </div>
             <div class="queue-drawer-list">
               {#each uploadQueue as q (q.file_path)}

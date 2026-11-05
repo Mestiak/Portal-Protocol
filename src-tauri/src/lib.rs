@@ -168,6 +168,9 @@ async fn save_config(
     // Save new configuration to disk
     config::save_config(&app, &new_config)?;
 
+    // Apply concurrency changes live (no restart needed)
+    crate::uploader::set_concurrency(new_config.max_concurrent_uploads);
+
     // Toggle Windows autostart Registry key
     let _ = set_autostart(new_config.autostart);
 
