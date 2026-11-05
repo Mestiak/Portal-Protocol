@@ -7528,8 +7528,10 @@ async function testWebhook(wh: any) {
 
             <div class="form-group" style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 16px; margin-top: 8px;">
               <div class="form-checkbox" style="margin-bottom: 8px;">
-                <input id="wingman-watch" type="checkbox" bind:checked={wingman_enabled}/>
-                <label for="wingman-watch">Enable Uploads to GW2 Wingman</label>
+                <button type="button" class="action-btn" style="display: inline-flex; align-items: center; gap: 6px; background: {wingman_enabled ? 'var(--accent)' : 'rgba(255,255,255,0.08)'}; color: {wingman_enabled ? '#fff' : 'var(--foreground)'}; border: 1px solid {wingman_enabled ? 'var(--accent)' : 'var(--border)'};" onclick={() => (wingman_enabled = !wingman_enabled)}>
+                  <img src="/wingman_icon.png" alt="" style="width: 16px; height: 16px; vertical-align: middle;" />
+                  {wingman_enabled ? "Disable" : "Enable"} Uploads to GW2 Wingman
+                </button>
               </div>
               {#if wingman_enabled}
                 <div style="padding-left: 24px; margin-top: 8px; animation: slideDown 0.15s ease-out;">
