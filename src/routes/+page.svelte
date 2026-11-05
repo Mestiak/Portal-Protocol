@@ -8484,7 +8484,7 @@ async function testWebhook(wh: any) {
                   <span class="queue-row-name" title={q.state === 'skipped' ? 'Already in History — no re-upload needed' : q.file_name}>{q.file_name}</span>
                   <span class="queue-row-state">{q.state === 'active' ? 'Uploading' : q.state === 'done' ? 'Done' : q.state === 'skipped' ? 'Skipped' : 'Queued'}</span>
                   {#if q.state !== 'done' && q.state !== 'skipped'}
-                    <button class="queue-row-cancel" onclick={() => invoke('cancel_upload', { filePath: q.file_path })} title="Cancel">✕</button>
+                    <button class="queue-row-cancel" style="border: none; background: transparent; color: var(--accent); cursor: pointer; font-size: 12px; padding: 0 4px;" onclick={() => invoke('cancel_upload', { filePath: q.file_path })} title="Cancel">✕</button>
                   {/if}
                 </div>
               {/each}
