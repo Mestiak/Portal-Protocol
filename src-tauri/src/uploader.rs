@@ -2713,6 +2713,18 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
             .collect::<Vec<PlayerInfo>>(),
     };
 
+    // WvW detection: boss name or local boss id in WvW map range.
+    let boss_id_opt = local_boss_id.as_ref().map(|(id, _)| *id);
+    let boss_name_opt = local_boss_id.as_ref().and_then(|(_, n)| n.clone());
+    let is_wvw = boss_name_opt.as_deref().map(|n| n.to_lowercase().contains("world vs world") || n.to_lowercase().contains("wvw")).unwrap_or(false)
+        || boss_id_opt.map(|id| (1099..=1104).contains(&id)).unwrap_or(false);
+    record.is_wvw = Some(is_wvw);
+    if is_wvw {
+        record.map_id = boss_id_opt;
+        if let Some(name) = boss_name_opt {
+            record.boss_name = Some(name);
+        }
+    }
     if let Some((boss_id, boss_name)) = local_boss_id {
         // Prefer the real boss name read from the agent table (correctly
         // disambiguates shared-strike ids like Icebrood Saga 22521 = Fraenir
