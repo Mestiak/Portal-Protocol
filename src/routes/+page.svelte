@@ -1933,12 +1933,22 @@
 
   function wvwBadgeColor(mapId?: number | null): string {
     switch (mapId) {
-      case 1099: return "#ef4444"; // Red Borderlands
-      case 95: return "#22c55e"; // Green Borderlands
-      case 96: return "#3b82f6"; // Blue Borderlands
-      case 38: return "#a855f7"; // Eternal Battlegrounds
-      case 968: return "#94a3b8"; // Edge of the Mists
-      default: return "var(--accent)";
+      case 1099: return "#fca59d"; // Red Borderlands
+      case 95: return "#69dcaf"; // Green Borderlands
+      case 96: return "#5fa3f8"; // Blue Borderlands
+      case 38: return "#aaaaaa"; // Eternal Battlegrounds
+      case 968: return "#aaaaaa"; // Edge of the Mists
+      default: return "#aaaaaa";
+    }
+  }
+  function wvwBadgeBg(mapId?: number | null): string {
+    switch (mapId) {
+      case 1099: return "#381e22"; // Red Borderlands
+      case 95: return "#1e3630"; // Green Borderlands
+      case 96: return "#1f2b43"; // Blue Borderlands
+      case 38: return "#515960"; // Eternal Battlegrounds
+      case 968: return "#515960"; // Edge of the Mists
+      default: return "#515960";
     }
   }
   function wvwMapName(mapId: number): string {
@@ -5761,7 +5771,7 @@ async function testWebhook(wh: any) {
         {:else if isStoryBoss(log.boss_name, log)}
           <span class="cm-badge story-badge">Personal Story</span>
         {:else if log.is_wvw || log.boss_icon === "wvw" || /enemy players|world vs world/i.test(log.boss_name ?? "")}
-          <span class="cm-badge wvw-badge" style="color: {wvwBadgeColor(log.map_id)}; border-color: {wvwBadgeColor(log.map_id)};">{log.map_id != null ? wvwMapName(log.map_id) : (log.boss_name ?? "World vs World")}</span>
+          <span class="cm-badge wvw-badge" style="background-color: {wvwBadgeBg(log.map_id)}; color: {wvwBadgeColor(log.map_id)}; border-color: {wvwBadgeBg(log.map_id)};">{log.map_id != null ? wvwMapName(log.map_id) : (log.boss_name ?? "World vs World")}</span>
         {:else if log.boss_name}
           <span class="cm-badge nm-badge">Normal Mode</span>
         {:else if log.status === "Skipped"}
