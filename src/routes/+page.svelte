@@ -7757,7 +7757,7 @@ async function testWebhook(wh: any) {
             {/each}
             {/if}
           </div>
-          <span class="help" style="display: block; margin-top: 8px;">Posts a rich embed to each enabled channel on every upload. Legacy single URL (if any) was migrated into this list.</span>
+          <span class="help" style="display: block; margin-top: 8px; margin-left: 12px;">Posts a rich embed to each enabled channel on every upload. Legacy single URL (if any) was migrated into this list.</span>
           </div>
         </section>
 
