@@ -1685,6 +1685,7 @@ pub fn get_boss_name_from_id(boss_id: u16) -> String {
         19450 => "Dhuum".to_string(),
         // W6
         21105 | 21085 => "Conjured Amalgamate".to_string(),
+        43974 => "Conjured Amalgamate".to_string(),
         21189 => "Nikare".to_string(),
         21100 => "Kenut".to_string(),
         20934 => "Qadim".to_string(),
