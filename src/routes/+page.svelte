@@ -2163,6 +2163,10 @@
     // Vermilion has its own asset; Indigo & Gold fall back to the court icon.
     prototypeindigo: "oldlionscourt",
     prototypegold: "oldlionscourt",
+    // Twin Largos: arcDPS may report individual boss names (Nikare/Kenut) instead
+    // of the encounter name; canonicalize to the twinlargos icon asset.
+    nikare: "twinlargos",
+    kenut: "twinlargos",
     // Harvest Temple: "The Dragonvoid" is the in-game NPC name from EVTC;
     // canonicalize to the "dragonvoid" local icon asset.
     thedragonvoid: "dragonvoid",
