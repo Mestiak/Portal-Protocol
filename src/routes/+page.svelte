@@ -7556,7 +7556,6 @@ async function testWebhook(wh: any) {
               {/if}
             </div>
           </div>
-        </section>
 
             <div class="form-group wh-group">
               <span class="group-label">Discord Webhooks <span class="optional">(optional)</span></span>
@@ -7760,6 +7759,7 @@ async function testWebhook(wh: any) {
           </div>
           <span class="help">Posts a rich embed to each enabled channel on every upload. Legacy single URL (if any) was migrated into this list.</span>
           </div>
+        </section>
 
         <!-- ─── CARD: Behavior ─── -->
         <section class="settings-card">
