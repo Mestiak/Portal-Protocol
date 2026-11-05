@@ -5760,7 +5760,7 @@ async function testWebhook(wh: any) {
           <span class="cm-badge">Challenge Mode</span>
         {:else if isStoryBoss(log.boss_name, log)}
           <span class="cm-badge story-badge">Personal Story</span>
-        {:else if log.is_wvw || log.boss_icon === "wvw"}
+        {:else if log.is_wvw || log.boss_icon === "wvw" || /enemy players|world vs world/i.test(log.boss_name ?? "")}
           <span class="cm-badge wvw-badge" style="color: {wvwBadgeColor(log.map_id)}; border-color: {wvwBadgeColor(log.map_id)};">{log.map_id != null ? wvwMapName(log.map_id) : (log.boss_name ?? "World vs World")}</span>
         {:else if log.boss_name}
           <span class="cm-badge nm-badge">Normal Mode</span>
@@ -5777,7 +5777,7 @@ async function testWebhook(wh: any) {
         {:else if log.status === "Completed"}
           {#if isStoryBoss(log.boss_name, log)}
             <span class="status-pill sp-done">✓ Completed</span>
-          {:else if log.is_wvw || log.boss_icon === "wvw"}
+          {:else if log.is_wvw || log.boss_icon === "wvw" || /enemy players|world vs world/i.test(log.boss_name ?? "")}
             <!-- no success/fail badge for WvW logs -->
           {:else if log.success === true}
             <span class="status-pill sp-success">✓ Success</span>
