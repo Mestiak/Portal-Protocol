@@ -315,7 +315,7 @@
   // Mirror of the Wingman queue, but for dps.report On Hold logs. Re-uploads parked
   // logs one at a time (gap spacing) so recovery doesn't stampede dps.report. The
   // x/total counter drives the "Re-uploading x/total" line below the dps.report API.
-  const DPS_RETRY_GAP_MS = 3000;
+  const DPS_RETRY_GAP_MS = 4000;
   let dpsQueue = $state<string[]>([]);
   let dpsQueueRunning = $state(false);
   let dpsQueueDone = $state(0);
@@ -4822,8 +4822,6 @@
         invoke("sweep_dps_processing").catch((e) =>
           console.error("dps.report recovery sweep failed:", e)
         );
-        retryOnHoldLogs();
-        processDpsQueue();
       }, jitter);
     }
   }

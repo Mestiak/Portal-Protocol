@@ -3642,6 +3642,16 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                         retry_reason =
                             "Duplicate (still processing on server, retrying)".to_string();
                     }
+                } else if code == 429 {
+                    // Rate limited (25 req/60s on /uploadContent). Park as On Hold
+                    // with a clear message instead of marking Failed; the safety net
+                    // retries after the backoff. Do NOT count against the offline flag.
+                    record.status = "On Hold".to_string();
+                    record.error_msg = Some(format!(
+                        "dps.report rate limit (HTTP 429) — retrying in 60s. {}",
+                        diag.likely_cause
+                    ));
+                    queue_webhooks_for_recovery(&app, &config, &record);
                 } else if code.is_server_error() {
                     // A dps.report 5xx (502/503/500/504) is a SERVER OUTAGE, not a bad
                     // file. Park the log as "On Hold" (amber, not red Error) so the card
