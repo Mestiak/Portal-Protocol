@@ -6138,7 +6138,7 @@ html.reduce-motion .session-pill {
   border-color: rgba(168, 85, 247, 0.5);
   color: #e9d5ff;
   overflow: hidden;
-  position: relative;
+  position: fixed;
   width: fit-content;
   max-width: 90vw;
 }
