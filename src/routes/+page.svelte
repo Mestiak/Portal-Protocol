@@ -382,12 +382,15 @@
         // A terminal/logless state means this queue slot is resolved—drain it so the
         // sidebar counter doesn't persist after success (including 422 duplicate).
         const record = uploads.find((u) => u.file_path === fp) ?? allHistory.find((h) => h.file_path === fp);
-        const terminal = !record || ["Completed","Duplicate","Failed","On Hold","Processing","Skipped"].includes(record.status);
+        const terminal = !record || ["Completed","Duplicate","Failed","Processing","Skipped"].includes(record.status);
         if (terminal) {
           dpsQueueDone += 1;
           dpsQueue = dpsQueue.slice(1);
-        } else {
-          // Leave it in place for a later recovery retry; avoid counting unfinished logs.
+        } else if (record.status === "On Hold") {
+          // Recovery didn't resolve it yet; pause this slot and let the 20s
+          // safety net retry later. Draining here caused an infinite loop +
+          // counter inflation (re-enqueue on every poll).
+          break;
         }
         await new Promise((r) => setTimeout(r, DPS_RETRY_GAP_MS)); // spacing + UI paint
       }
@@ -434,7 +437,9 @@
         if (rec?.wingman_status === "failed") {
           const n = (wingmanRetryCount[fp] ?? 0) + 1;
           wingmanRetryCount[fp] = n;
-          const delay = Math.min(20000 * Math.pow(2, n - 1), 300000);
+          const base = 20000 * Math.pow(2, n - 1);
+          const jitter = base * (0.8 + Math.random() * 0.4); // ±20%
+          const delay = Math.min(jitter, 300000);
           wingmanRetryAt[fp] = Date.now() + delay;
         } else {
           // Success: clear backoff.
@@ -567,6 +572,26 @@
   type PatchNoteCategory = { category: string; items: PatchNoteItem[] };
   type PatchNoteVersion = { version: string; date: string; image?: string; notes: PatchNoteCategory[] };
   const PATCH_NOTES_DATA: PatchNoteVersion[] = [
+    {
+      version: "0.7.7",
+      date: "November 2026",
+      notes: [
+        {
+          category: "🐛 Bug Fixes",
+          items: [
+            { title: "False \"Online\" Masking Outage", desc: "When dps.report's health check reported Online but uploads returned HTTP 500, the app now flips dps.report to Offline after 2 consecutive 5xx responses — stopping the retry loop and keeping On Hold logs parked until the service truly recovers." },
+            { title: "Conjured Amalgamate Name", desc: "No longer shows the raw encounter ID 43974 — the proper boss name and image now display on all log cards." },
+            { title: "Twin Largos Icon", desc: "Nikare/Kenut now resolve to the correct boss icon when dps.report reports individual boss names." }
+          ]
+        },
+        {
+          category: "🔧 Improvements",
+          items: [
+            { title: "On Hold Recovery", desc: "On Hold logs re-upload one at a time with spacing when dps.report comes back online; the counter only increments when a slot is truly resolved (no more infinite loop)." }
+          ]
+        }
+      ]
+    },
     {
       version: "0.7.6",
       date: "November 2026",
@@ -2158,6 +2183,10 @@
     // Vermilion has its own asset; Indigo & Gold fall back to the court icon.
     prototypeindigo: "oldlionscourt",
     prototypegold: "oldlionscourt",
+    // Twin Largos: arcDPS may report individual boss names (Nikare/Kenut) instead
+    // of the encounter name; canonicalize to the twinlargos icon asset.
+    nikare: "twinlargos",
+    kenut: "twinlargos",
     // Harvest Temple: "The Dragonvoid" is the in-game NPC name from EVTC;
     // canonicalize to the "dragonvoid" local icon asset.
     thedragonvoid: "dragonvoid",
@@ -3979,6 +4008,7 @@
       checkWingmanStatus();
       const pendingOnHold = allHistory.filter((h) => h.status === "On Hold" && !dpsQueue.includes(h.file_path));
       for (const h of pendingOnHold) enqueueDpsRetry(h.file_path);
+      if (dpsQueue.length > 0) processDpsQueue();
       // Wingman safety net: verify orphaned in_progress logs (no EI re-run)
       const pendingWingman = allHistory.filter((h) => (h.wingman_status === "in_progress") && !wingmanQueue.includes(h.file_path));
       for (const h of pendingWingman) {

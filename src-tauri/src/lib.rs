@@ -15,6 +15,10 @@ pub static EI_LOCKS: OnceLock<Mutex<std::collections::HashMap<std::path::PathBuf
 pub fn ei_locks() -> &'static Mutex<std::collections::HashMap<std::path::PathBuf, Arc<Mutex<()>>>> {
     EI_LOCKS.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
 }
+pub static EI_SEMAPHORE: OnceLock<tokio::sync::Semaphore> = OnceLock::new();
+pub fn ei_semaphore() -> &'static tokio::sync::Semaphore {
+    EI_SEMAPHORE.get_or_init(|| tokio::sync::Semaphore::new(2))
+}
 pub fn ei_lock_for(path: &std::path::Path) -> Arc<Mutex<()>> {
     let lock = ei_locks();
     {
@@ -316,13 +320,21 @@ async fn check_dps_report_status() -> Result<String, String> {
         }
     } else {
         FAILS.store(0, std::sync::atomic::Ordering::Relaxed);
-        crate::uploader::set_dps_report_down(false);
+        // Don't override a 5xx-driven outage with a false-positive "online"
+        // health check. Keep the flag down until uploads succeed again.
+        if crate::uploader::consecutive_5xx() == 0 {
+            crate::uploader::set_dps_report_down(false);
+        }
+    }
+    // Report offline to the frontend when uploads have been failing with 5xx,
+    // even if the lightweight health check still says "online".
+    if crate::uploader::consecutive_5xx() >= 2 {
+        return Ok("offline".to_string());
     }
     status
 }
-
 #[tauri::command]
-fn check_bundled_ei(app: AppHandle) -> Result<(), String> {
+async fn check_bundled_ei(app: AppHandle) -> Result<(), String> {
     crate::ei_runner::check_bundled_ei(&app)
 }
 
@@ -890,6 +902,9 @@ pub async fn wingman_raw_upload(app: AppHandle, file_path: String) -> Result<(),
     }
 
     // Run EI to produce JSON+HTML (blocking), with a 5-minute timeout.
+    // Acquire a global parse permit so bulk uploads don't spawn unbounded
+    // concurrent Elite Insights processes (each is a heavy .NET process).
+    let _permit = crate::ei_semaphore().acquire().await.map_err(|e| e.to_string())?;
     let app_clone = app.clone();
     let fp_clone = file_path.clone();
     let bundle = tokio::time::timeout(
