@@ -1298,6 +1298,7 @@ pub fn run() {
             // Capture a global handle so sync code (e.g. the dps.report outage flag
             // flip) can spawn async recovery work without threading an AppHandle through.
             crate::uploader::set_app_handle(app_handle.clone());
+            crate::uploader::set_manual_tx(manual_tx.clone());
 
             // Spawn the tokio background loop for uploads. `rx` is the auto (watcher)
             // channel; `manual_rx` is the user-initiated (drag/picker) channel. Both
@@ -1472,6 +1473,8 @@ pub fn run() {
             crate::uploader::get_backfill_status,
             crate::uploader::pause_uploads,
             crate::uploader::resume_uploads,
+            crate::uploader::cancel_upload,
+            crate::uploader::retry_upload,
             crate::uploader::get_upload_queue,
             delete_history_log,
             get_feed,

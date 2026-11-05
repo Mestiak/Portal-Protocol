@@ -11,6 +11,7 @@ use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::OnceLock;
@@ -18,6 +19,7 @@ use std::time::Duration;
 use tauri::Manager;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc::Receiver;
+use tokio::sync::mpsc::Sender;
 
 use crate::evtc_parser;
 
@@ -31,7 +33,31 @@ fn upload_paused() -> bool {
         .load(Ordering::Relaxed)
 }
 
-// Live queue snapshot so the frontend can render every pending (queued+active)
+// ─── Per-upload cancellation ─────────────────────────────────────────────────
+// File paths the user has asked to cancel. Checked by `upload_file` at phase
+// boundaries so a cancelled upload bails out instead of finishing.
+static CANCELLED_UPLOADS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+fn cancelled_set() -> &'static Mutex<HashSet<String>> {
+    CANCELLED_UPLOADS.get_or_init(|| Mutex::new(HashSet::new()))
+}
+pub fn mark_cancelled(file_path: String) {
+    cancelled_set().lock().unwrap().insert(file_path);
+}
+pub fn is_cancelled(file_path: &str) -> bool {
+    cancelled_set().lock().unwrap().contains(file_path)
+}
+pub fn clear_cancelled(file_path: &str) {
+    cancelled_set().lock().unwrap().remove(file_path);
+}
+
+// ─── Global manual upload sender (for retry_upload) ──────────────────────────
+static MANUAL_TX: OnceLock<Sender<PathBuf>> = OnceLock::new();
+pub fn set_manual_tx(tx: Sender<PathBuf>) {
+    let _ = MANUAL_TX.set(tx);
+}
+pub fn manual_tx() -> Option<Sender<PathBuf>> {
+    MANUAL_TX.get().cloned()
+}
 // log, not just the active ones. Bounded at 500 entries.
 static UPLOAD_QUEUE: OnceLock<Mutex<Vec<QueueItem>>> = OnceLock::new();
 #[derive(Clone, serde::Serialize)]
@@ -240,6 +266,15 @@ pub fn pause_uploads(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+/// Cancel a queued/active upload by file path.
+pub fn cancel_upload(app: AppHandle, file_path: String) -> Result<(), String> {
+    mark_cancelled(file_path.clone());
+    queue_remove(&file_path);
+    emit_queue(&app);
+    Ok(())
+}
+
+#[tauri::command]
 /// Resume paused uploads.
 pub fn resume_uploads(app: AppHandle) -> Result<(), String> {
     UPLOAD_PAUSED
@@ -247,6 +282,18 @@ pub fn resume_uploads(app: AppHandle) -> Result<(), String> {
         .store(false, Ordering::Relaxed);
     emit_queue(&app);
     Ok(())
+}
+
+#[tauri::command]
+/// Re-enqueue a previously cancelled/failed upload.
+pub fn retry_upload(file_path: String) -> Result<(), String> {
+    if let Some(tx) = manual_tx() {
+        let path = PathBuf::from(&file_path);
+        tx.try_send(path).map_err(|e| e.to_string())?;
+        Ok(())
+    } else {
+        Err("upload loop not ready".into())
+    }
 }
 
 #[tauri::command]
@@ -2402,11 +2449,16 @@ async fn wait_for_file_stability(path: &std::path::Path) {
 // ─── Per-file upload logic ────────────────────────────────────────────────────
 
 async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, manual: bool) {
+    let file_path = path.to_string_lossy().to_string();
     let file_name = path
         .file_name()
         .map(|f| f.to_string_lossy().to_string())
         .unwrap_or_default();
-    let file_path = path.to_string_lossy().to_string();
+    if is_cancelled(&file_path) {
+        clear_cancelled(&file_path);
+        queue_remove(&file_path);
+        return;
+    }
 
     let file_mod_time = std::fs::metadata(&path)
         .and_then(|m| m.modified())
