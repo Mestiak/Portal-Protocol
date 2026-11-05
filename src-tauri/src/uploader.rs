@@ -2723,7 +2723,6 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
         || boss_id_opt.map(|id| matches!(id, 38 | 95 | 96 | 1099 | 968 | 899)).unwrap_or(false);
     record.is_wvw = Some(is_wvw);
     if is_wvw {
-        record.map_id = boss_id_opt;
         record.boss_name = Some("World vs World".to_string());
         record.boss_icon = Some("wvw".to_string());
     }
