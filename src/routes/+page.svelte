@@ -7533,7 +7533,7 @@ async function testWebhook(wh: any) {
                 {#each discord_webhooks as wh, i (wh.id)}
                   <div class="wh-card" class:collapsed={wh._collapsed}>
                     <div class="wh-card-head">
-                      <button class="wh-chev" class:collapsed={wh._collapsed} title={wh._collapsed ? "Expand" : "Collapse"} onclick={() => { wh._collapsed = !wh._collapsed; discord_webhooks = [...discord_webhooks]; }} aria-label="Collapse or expand">
+                      <button class="wh-chev" class:collapsed={wh._collapsed} title={wh._collapsed ? "Expand" : "Collapse"} onclick={() => { suppressDirty = true; wh._collapsed = !wh._collapsed; discord_webhooks = [...discord_webhooks]; }} aria-label="Collapse or expand">
                         <i class="fa-solid fa-chevron-down"></i>
                       </button>
                       <button class="wh-toggle" class:on={wh.enabled} title={wh.enabled ? "Enabled" : "Disabled"} onclick={(e) => { e.stopPropagation(); wh.enabled = !wh.enabled; discord_webhooks = [...discord_webhooks]; }} aria-label="Toggle webhook">
@@ -7660,7 +7660,7 @@ async function testWebhook(wh: any) {
                   <button class="wh-preset" onclick={() => { wh.filters.kinds = ['strike']; wh.filters.outcomes = ['kill', 'wipe']; wh.filters.only_cm = null; wh.filters.only_lcm = null; discord_webhooks = [...discord_webhooks]; }}>Strikes</button>
                   <button class="wh-preset" onclick={() => { wh.filters.kinds = ['raid', 'strike', 'fractal', 'convergence', 'golem']; wh.filters.outcomes = ['kill', 'wipe']; wh.filters.only_cm = true; wh.filters.only_lcm = null; discord_webhooks = [...discord_webhooks]; }}>CM</button>
                 </div>
-                <button class="wh-filters-header" onclick={() => { wh._showFilters = !wh._showFilters; discord_webhooks = [...discord_webhooks]; }}>
+                <button class="wh-filters-header" onclick={() => { suppressDirty = true; wh._showFilters = !wh._showFilters; discord_webhooks = [...discord_webhooks]; }}>
                   <i class="fa-solid fa-filter"></i> More filters
                 </button>
                 {#if wh._showFilters}
