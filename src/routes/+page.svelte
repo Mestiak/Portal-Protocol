@@ -573,6 +573,26 @@
   type PatchNoteVersion = { version: string; date: string; image?: string; notes: PatchNoteCategory[] };
   const PATCH_NOTES_DATA: PatchNoteVersion[] = [
     {
+      version: "0.7.7",
+      date: "November 2026",
+      notes: [
+        {
+          category: "🐛 Bug Fixes",
+          items: [
+            { title: "False \"Online\" Masking Outage", desc: "When dps.report's health check reported Online but uploads returned HTTP 500, the app now flips dps.report to Offline after 2 consecutive 5xx responses — stopping the retry loop and keeping On Hold logs parked until the service truly recovers." },
+            { title: "Conjured Amalgamate Name", desc: "No longer shows the raw encounter ID 43974 — the proper boss name and image now display on all log cards." },
+            { title: "Twin Largos Icon", desc: "Nikare/Kenut now resolve to the correct boss icon when dps.report reports individual boss names." }
+          ]
+        },
+        {
+          category: "🔧 Improvements",
+          items: [
+            { title: "On Hold Recovery", desc: "On Hold logs re-upload one at a time with spacing when dps.report comes back online; the counter only increments when a slot is truly resolved (no more infinite loop)." }
+          ]
+        }
+      ]
+    },
+    {
       version: "0.7.6",
       date: "November 2026",
       notes: [
