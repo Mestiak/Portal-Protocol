@@ -3106,6 +3106,12 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                                 record.boss_name = Some(story_map_name(sid));
                             }
                         }
+                        // WvW: capture map id from dps.report bossId if missing.
+                        if record.is_wvw == Some(true) && record.map_id.is_none() {
+                            if let Some(sid) = story_id {
+                                record.map_id = Some(sid);
+                            }
+                        }
                         // ── Convergences: finalize locally, skip the Elite Insights wait ──
                         // dps.report does NOT run Elite Insights on convergences, so the upload
                         // response always reports `jsonAvailable:false`. The block below would
