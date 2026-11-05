@@ -234,6 +234,7 @@
   // half-hydrated config.
   let configLoaded = $state(false);
   let settingsDirty = $state(false);
+  let suppressDirty = $state(false);
   // Debounce timer for the global settings autosave (persistConfig) so a burst
   // of setting changes (e.g. typing a numeric field) only writes disk once.
   let configSaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -4951,6 +4952,7 @@
           squad_plans: $state.snapshot(squadPlans),
         }
       });
+      suppressDirty = true;
       sessions = [...sessions];
     } catch (err) {
       console.error("Failed to save config:", err);
@@ -5364,6 +5366,7 @@ async function testWebhook(wh: any) {
     // hydrated squadPlans from disk.
     if (!squadPlansLoaded) return;
     if (isSaving) return;
+    if (suppressDirty) { suppressDirty = false; return; }
 
     if (configSaveTimer) clearTimeout(configSaveTimer);
     settingsDirty = true;
@@ -6715,7 +6718,7 @@ async function testWebhook(wh: any) {
   {/if}
 
   {#if settingsDirty}
-    <div class="app-toast app-settings-save-banner">
+    <div class="app-toast app-settings-save-banner" transition:fade={{ duration: prefersReducedMotion ? 0 : 220 }}>
       <span class="app-toast-icon"><i class="fa-solid fa-floppy-disk"></i></span>
       <span>Unsaved settings changes</span>
       <button class="app-update-btn" onclick={() => { settingsDirty = false; if (configSaveTimer) { clearTimeout(configSaveTimer); configSaveTimer = null; } saveConfig(); }}>Save Settings</button>
