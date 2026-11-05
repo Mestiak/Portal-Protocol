@@ -8487,6 +8487,9 @@ async function testWebhook(wh: any) {
             <button class="queue-drawer-pause" onclick={togglePauseUploads}>
               {uploadPaused ? '▶ Resume Uploads' : '⏸ Pause Uploads'}
             </button>
+            <button class="queue-drawer-pause" onclick={() => { uploadQueue = uploadQueue.filter(q => q.state !== 'done' && q.state !== 'skipped'); }} style="margin-left: 6px;">
+              Clear finished
+            </button>
           </div>
         {/if}
       {/if}
