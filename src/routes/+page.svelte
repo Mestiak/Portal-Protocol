@@ -2267,6 +2267,10 @@
   function resolveBossIconSrc(log: any): string {
     const story = getStoryIcon(log.boss_name, log);
     if (story) return story;
+    // WvW logs use the dedicated borderland icon.
+    if (log.is_wvw || log.boss_icon === "wvw" || /world vs world|enemy players/i.test(log.boss_name ?? "")) {
+      return "/wvw/eternal_battlegrounds.jpg";
+    }
     const local = getBossIcon(log.boss_name, log.num_players);
     if (local !== "/bosses/unknown.png") return local;
     if (log.boss_icon) return iconForExternal(log.boss_icon);
