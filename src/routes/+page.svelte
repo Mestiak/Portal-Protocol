@@ -382,12 +382,15 @@
         // A terminal/logless state means this queue slot is resolved—drain it so the
         // sidebar counter doesn't persist after success (including 422 duplicate).
         const record = uploads.find((u) => u.file_path === fp) ?? allHistory.find((h) => h.file_path === fp);
-        const terminal = !record || ["Completed","Duplicate","Failed","On Hold","Processing","Skipped"].includes(record.status);
+        const terminal = !record || ["Completed","Duplicate","Failed","Processing","Skipped"].includes(record.status);
         if (terminal) {
           dpsQueueDone += 1;
           dpsQueue = dpsQueue.slice(1);
-        } else {
-          // Leave it in place for a later recovery retry; avoid counting unfinished logs.
+        } else if (record.status === "On Hold") {
+          // Recovery didn't resolve it yet; pause this slot and let the 20s
+          // safety net retry later. Draining here caused an infinite loop +
+          // counter inflation (re-enqueue on every poll).
+          break;
         }
         await new Promise((r) => setTimeout(r, DPS_RETRY_GAP_MS)); // spacing + UI paint
       }
@@ -3981,6 +3984,7 @@
       checkWingmanStatus();
       const pendingOnHold = allHistory.filter((h) => h.status === "On Hold" && !dpsQueue.includes(h.file_path));
       for (const h of pendingOnHold) enqueueDpsRetry(h.file_path);
+      if (dpsQueue.length > 0) processDpsQueue();
       // Wingman safety net: verify orphaned in_progress logs (no EI re-run)
       const pendingWingman = allHistory.filter((h) => (h.wingman_status === "in_progress") && !wingmanQueue.includes(h.file_path));
       for (const h of pendingWingman) {
