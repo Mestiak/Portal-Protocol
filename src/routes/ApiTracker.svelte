@@ -778,6 +778,16 @@
     }
   }
 
+  async function openExternalUrl(url: string) {
+    try {
+      const { openUrl } = await import("@tauri-apps/plugin-opener");
+      await openUrl(url);
+    } catch (err) {
+      console.error(err);
+      window.open(url, "_blank");
+    }
+  }
+
   async function addNewAccount() {
     if (!newAccName.trim() || !newApiKey.trim()) {
       keyError = "Both nickname and API key are required.";
@@ -1258,7 +1268,6 @@
           Configure your API Key. Key must have <strong>progression</strong> permissions
           enabled.
         </p>
-
         <div
           class="modal-form-fields"
           style="display: flex; flex-direction: column; gap: 14px; width: 100%;"
@@ -1293,6 +1302,15 @@
             />
           </label>
         </div>
+        <button
+          class="modal-action-btn cancel custom-tooltip-container"
+          style="margin-top: 4px; width: auto; font-size: 12px; display: flex; flex-direction: column; line-height: 1.2;"
+          onclick={() => openExternalUrl("https://account.arena.net/applications")}
+        >
+          <span><i class="fa-solid fa-arrow-up-right-from-square" style="margin-right: 6px;"></i>Need to find or create your API?</span>
+          <span>Go to your account</span>
+          <span class="custom-tooltip">https://account.arena.net/applications</span>
+        </button>
 
         {#if keyError}
           <div
