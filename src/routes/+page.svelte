@@ -6717,7 +6717,7 @@ async function testWebhook(wh: any) {
     <div class="app-toast app-settings-save-banner">
       <span class="app-toast-icon"><i class="fa-solid fa-floppy-disk"></i></span>
       <span>Unsaved settings changes</span>
-      <button class="app-update-btn" onclick={() => saveConfig()}>Save Settings</button>
+      <button class="app-update-btn" onclick={() => { settingsDirty = false; if (configSaveTimer) { clearTimeout(configSaveTimer); configSaveTimer = null; } saveConfig(); }}>Save Settings</button>
     </div>
   {/if}
 

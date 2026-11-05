@@ -6139,6 +6139,8 @@ html.reduce-motion .session-pill {
   color: #e9d5ff;
   overflow: hidden;
   position: relative;
+  width: fit-content;
+  max-width: 90vw;
 }
 .app-settings-save-banner::after {
   content: "";
