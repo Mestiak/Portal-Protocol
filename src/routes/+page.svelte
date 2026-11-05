@@ -576,6 +576,21 @@
   type PatchNoteVersion = { version: string; date: string; image?: string; notes: PatchNoteCategory[] };
   const PATCH_NOTES_DATA: PatchNoteVersion[] = [
     {
+      version: "0.7.8",
+      date: "November 2026",
+      notes: [
+        {
+          category: "🎨 UI & Integrations",
+          items: [
+            { title: "dps.report Token Visibility", desc: "Added a show/hide (eye) toggle next to the dps.report User Token field." },
+            { title: "WvW Webhook Filter", desc: "Added a 'wvw' encounter type filter to webhooks (included in the All preset)." },
+            { title: "Clears Tab API", desc: "API keys now auto-save when added/removed; added a Refresh clears button and a link to the ArenaNet applications page in the Add API modal." },
+            { title: "Settings Save Notification", desc: "Added a floating, shiny 'Unsaved settings changes' toast with a Save Settings button that applies settings without restarting." }
+          ]
+        }
+      ]
+    },
+    {
       version: "0.7.7",
       date: "November 2026",
       notes: [
