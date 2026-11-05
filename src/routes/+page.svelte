@@ -5356,15 +5356,14 @@ async function testWebhook(wh: any) {
     sidebarOpen;
     JSON.stringify(sessions);
     JSON.stringify(gw2_accounts);
-    const currentWebhooksHash = JSON.stringify(discord_webhooks);
-    if (currentWebhooksHash === lastWebhooksHash) return;
-    lastWebhooksHash = currentWebhooksHash;
+    JSON.stringify(discord_webhooks);
     if (!configLoaded) return;
     // Don't autosave the empty pre-load state back over real disk data (would wipe
     // persisted plans). squadPlansLoaded flips true only after loadConfig() has
     // hydrated squadPlans from disk.
     if (!squadPlansLoaded) return;
 
+    if (configSaveTimer) clearTimeout(configSaveTimer);
     configSaveTimer = setTimeout(() => { persistConfig(); }, 400);
   });
 
