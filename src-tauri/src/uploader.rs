@@ -11,6 +11,7 @@ use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::OnceLock;
@@ -18,6 +19,7 @@ use std::time::Duration;
 use tauri::Manager;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc::Receiver;
+use tokio::sync::mpsc::Sender;
 
 use crate::evtc_parser;
 
@@ -31,8 +33,44 @@ fn upload_paused() -> bool {
         .load(Ordering::Relaxed)
 }
 
-// Live queue snapshot so the frontend can render every pending (queued+active)
+// ─── Per-upload cancellation ─────────────────────────────────────────────────
+// File paths the user has asked to cancel. Checked by `upload_file` at phase
+// boundaries so a cancelled upload bails out instead of finishing.
+static CANCELLED_UPLOADS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+fn cancelled_set() -> &'static Mutex<HashSet<String>> {
+    CANCELLED_UPLOADS.get_or_init(|| Mutex::new(HashSet::new()))
+}
+pub fn mark_cancelled(file_path: String) {
+    cancelled_set().lock().unwrap().insert(file_path);
+}
+pub fn is_cancelled(file_path: &str) -> bool {
+    cancelled_set().lock().unwrap().contains(file_path)
+}
+pub fn clear_cancelled(file_path: &str) {
+    cancelled_set().lock().unwrap().remove(file_path);
+}
+
+// ─── Global manual upload sender (for retry_upload) ──────────────────────────
+static MANUAL_TX: OnceLock<Sender<PathBuf>> = OnceLock::new();
+pub fn set_manual_tx(tx: Sender<PathBuf>) {
+    let _ = MANUAL_TX.set(tx);
+}
+pub fn manual_tx() -> Option<Sender<PathBuf>> {
+    MANUAL_TX.get().cloned()
+}
 // log, not just the active ones. Bounded at 500 entries.
+// ─── Live concurrency gate ───────────────────────────────────────────────────
+// Re-readable at runtime so changing max_concurrent_uploads in Settings takes
+// effect without an app restart.
+static CONCURRENCY_SEM: OnceLock<Mutex<Option<Arc<tokio::sync::Semaphore>>>> = OnceLock::new();
+pub fn set_concurrency(max: usize) {
+    let sem = if max == 0 { None } else { Some(Arc::new(tokio::sync::Semaphore::new(max))) };
+    *CONCURRENCY_SEM.get_or_init(|| Mutex::new(None)).lock().unwrap() = sem;
+}
+fn concurrency_sem() -> Option<Arc<tokio::sync::Semaphore>> {
+    CONCURRENCY_SEM.get().and_then(|m| m.lock().ok()).and_then(|g| g.clone())
+}
+
 static UPLOAD_QUEUE: OnceLock<Mutex<Vec<QueueItem>>> = OnceLock::new();
 #[derive(Clone, serde::Serialize)]
 struct QueueItem {
@@ -235,6 +273,18 @@ pub fn pause_uploads(app: AppHandle) -> Result<(), String> {
     UPLOAD_PAUSED
         .get_or_init(|| AtomicBool::new(false))
         .store(true, Ordering::Relaxed);
+    let mut cfg = crate::config::load_config(&app);
+    cfg.upload_paused = true;
+    let _ = crate::config::save_config(&app, &cfg);
+    emit_queue(&app);
+    Ok(())
+}
+
+#[tauri::command]
+/// Cancel a queued/active upload by file path.
+pub fn cancel_upload(app: AppHandle, file_path: String) -> Result<(), String> {
+    mark_cancelled(file_path.clone());
+    queue_remove(&file_path);
     emit_queue(&app);
     Ok(())
 }
@@ -245,8 +295,23 @@ pub fn resume_uploads(app: AppHandle) -> Result<(), String> {
     UPLOAD_PAUSED
         .get_or_init(|| AtomicBool::new(false))
         .store(false, Ordering::Relaxed);
+    let mut cfg = crate::config::load_config(&app);
+    cfg.upload_paused = false;
+    let _ = crate::config::save_config(&app, &cfg);
     emit_queue(&app);
     Ok(())
+}
+
+#[tauri::command]
+/// Re-enqueue a previously cancelled/failed upload.
+pub fn retry_upload(file_path: String) -> Result<(), String> {
+    if let Some(tx) = manual_tx() {
+        let path = PathBuf::from(&file_path);
+        tx.try_send(path).map_err(|e| e.to_string())?;
+        Ok(())
+    } else {
+        Err("upload loop not ready".into())
+    }
 }
 
 #[tauri::command]
@@ -1995,20 +2060,16 @@ pub async fn start_upload_loop(
     mut rx: Receiver<PathBuf>,
     mut manual_rx: Receiver<PathBuf>,
 ) {
+    let cfg = crate::config::load_config(&app);
+    UPLOAD_PAUSED
+        .get_or_init(|| AtomicBool::new(false))
+        .store(cfg.upload_paused, Ordering::Relaxed);
+    set_concurrency(cfg.max_concurrent_uploads);
+
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(180))
         .build()
         .unwrap_or_default();
-
-    // Concurrency cap: 0 (or unset) = legacy unbounded; otherwise a semaphore
-    // bounds how many files upload to dps.report at once. Keeps the "queue" real
-    // and avoids hammering dps.report when many logs land simultaneously.
-    let max = crate::config::load_config(&app).max_concurrent_uploads;
-    let sem = if max == 0 {
-        None
-    } else {
-        Some(Arc::new(tokio::sync::Semaphore::new(max)))
-    };
 
     // Track queue: anything sitting in either channel is "pending". We seed the
     // live queue from what's buffered, then keep it updated as items promote.
@@ -2020,12 +2081,12 @@ pub async fn start_upload_loop(
             // Auto (watcher) path — subject to the min-time skip.
             maybe_path = rx.recv() => {
                 let path = match maybe_path { Some(p) => p, None => break };
-                spawn_upload(&app, &client, &sem, path, false).await;
+                spawn_upload(&app, &client, path, false).await;
             }
             // Manual path — never auto-skipped.
             maybe_path = manual_rx.recv() => {
                 let path = match maybe_path { Some(p) => p, None => continue };
-                spawn_upload(&app, &client, &sem, path, true).await;
+                spawn_upload(&app, &client, path, true).await;
             }
         }
     }
@@ -2035,7 +2096,6 @@ pub async fn start_upload_loop(
 async fn spawn_upload(
     app: &AppHandle,
     client: &reqwest::Client,
-    sem: &Option<Arc<tokio::sync::Semaphore>>,
     path: PathBuf,
     manual: bool,
 ) {
@@ -2058,6 +2118,14 @@ async fn spawn_upload(
     });
     emit_queue(app);
 
+    // 3) Paused? Park as "queued" and wait for resume (Approach A: in-flight
+    //    uploads are unaffected). The entry above already marked us "queued".
+    if upload_paused() {
+        while upload_paused() {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+        }
+    }
+
     // 1) Already in History? Skip the re-upload, but keep it visible in the
     //    drawer (state "skipped") for a short window so the user sees the full batch.
     //    Exception: On Hold records are allowed through so recovery can re-process
@@ -2070,20 +2138,13 @@ async fn spawn_upload(
         return;
     }
 
-    // 3) Paused? Park as "queued" and wait for resume (Approach A: in-flight
-    //    uploads are unaffected). The entry above already marked us "queued".
-    if upload_paused() {
-        while upload_paused() {
-            tokio::time::sleep(Duration::from_millis(300)).await;
-        }
-    }
-
     // 4) Grab a concurrency slot. For logs past the cap this blocks here, so
     //    they stay "queued" in the pill until a slot frees — that's the point.
     let app_clone = app.clone();
     let emit_handle = app.clone(); // separate clone: upload_file consumes app_clone, emit needs its own handle
     let client_ref = client.clone();
     let fp_key = file_path.clone(); // keep an owned copy for the post-upload queue cleanup
+    let sem = concurrency_sem();
     if let Some(sem) = sem {
         let permit = sem.clone().acquire_owned().await;
         // Now we actually hold a slot -> flip to "active" so the pill reflects reality.
@@ -2402,11 +2463,16 @@ async fn wait_for_file_stability(path: &std::path::Path) {
 // ─── Per-file upload logic ────────────────────────────────────────────────────
 
 async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, manual: bool) {
+    let file_path = path.to_string_lossy().to_string();
     let file_name = path
         .file_name()
         .map(|f| f.to_string_lossy().to_string())
         .unwrap_or_default();
-    let file_path = path.to_string_lossy().to_string();
+    if is_cancelled(&file_path) {
+        clear_cancelled(&file_path);
+        queue_remove(&file_path);
+        return;
+    }
 
     let file_mod_time = std::fs::metadata(&path)
         .and_then(|m| m.modified())

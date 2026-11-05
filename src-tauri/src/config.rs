@@ -189,6 +189,9 @@ pub struct AppConfig {
     /// Max uploads processed concurrently. 0 = unbounded.
     #[serde(default)]
     pub max_concurrent_uploads: usize,
+    /// Whether the upload queue is paused (persisted across restarts).
+    #[serde(default)]
+    pub upload_paused: bool,
     /// Wait this many ms after a .evtc/.zevtc write settles before reading it,
     /// debouncing against ArcDPS partial writes. Default 500 (legacy behaviour).
     #[serde(default = "default_stability_delay")]
@@ -428,6 +431,7 @@ impl Default for AppConfig {
             vloxx_lcm_repair_done: false,
             wvw_enabled: false,
             max_concurrent_uploads: 2,
+            upload_paused: false,
             watch_stability_delay_ms: default_stability_delay(),
             watch_poll_interval_ms: default_watch_poll_interval_ms(),
             max_upload_retries: default_upload_retries(),

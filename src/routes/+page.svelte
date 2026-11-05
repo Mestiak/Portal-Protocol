@@ -329,6 +329,8 @@
   // live without polling. `uploadPaused` reflects the Rust pause gate.
   type QueueEntry = { file_path: string; file_name: string; state: "queued" | "active" | "done" | "skipped" };
   let uploadQueue = $state<QueueEntry[]>([]);
+  let queuedToastCount = $state(0);
+  let queueToastTimer: ReturnType<typeof setTimeout> | null = null;
   let uploadPaused = $state(false);
   let queueDrawerOpen = $state(false);
   // Drag-in cascade: set true briefly when logs land so the queue bar animates.
@@ -345,10 +347,12 @@
   let skippedCount = $derived(uploadQueue.filter((q) => q.state === "skipped").length);
 
   async function togglePauseUploads() {
+    const wasPaused = uploadPaused;
+    uploadPaused = !wasPaused; // optimistic
     try {
-      if (uploadPaused) await invoke("resume_uploads");
+      if (wasPaused) await invoke("resume_uploads");
       else await invoke("pause_uploads");
-    } catch (e) { console.error("pause/resume uploads failed", e); }
+    } catch (e) { console.error("pause/resume uploads failed", e); uploadPaused = wasPaused; }
   }
 
   function enqueueDpsRetry(file_path: string) {
@@ -4262,7 +4266,17 @@
 
       // Live upload-queue snapshot from Rust (queued + active logs).
       unlistenQueue = await listen<{ paused: boolean; items: QueueEntry[] }>("queue-status", (event) => {
-        uploadQueue = event.payload.items ?? [];
+        const newItems = event.payload.items ?? [];
+        if (newItems.length > uploadQueue.length) {
+          const added = newItems.length - uploadQueue.length;
+          queuedToastCount += added;
+          if (queueToastTimer) clearTimeout(queueToastTimer);
+          queueToastTimer = setTimeout(() => {
+            showToast(`Queued ${queuedToastCount} log${queuedToastCount > 1 ? "s" : ""}`, "success");
+            queuedToastCount = 0;
+          }, 500);
+        }
+        uploadQueue = newItems;
         uploadPaused = event.payload.paused ?? false;
       });
 
@@ -8434,6 +8448,7 @@ async function testWebhook(wh: any) {
           class="sb-queue-pill upload-queue-pill"
           class:queue-pulsing={queuePulse && !queueDrawerOpen}
           class:queue-paused={uploadPaused}
+          aria-expanded={queueDrawerOpen}
           title={uploadPaused ? 'Paused — click body to resume · click arrow to view queue' : 'Click body to pause · click arrow to view queue'}
           onclick={togglePauseUploads}
           oncontextmenu={(e) => { e.preventDefault(); queueDrawerOpen = !queueDrawerOpen; }}
@@ -8460,6 +8475,7 @@ async function testWebhook(wh: any) {
             <div class="queue-drawer-head">
               <span>Upload Queue</span>
               <span class="queue-drawer-meta">{activeCount} active · {queuedCount} queued · {doneCount} done · {skippedCount} skipped</span>
+              <div class="queue-progress" style="height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; margin-top: 4px; overflow: hidden;"><div class="queue-progress-bar" style="height: 100%; background: var(--accent); width: {uploadQueue.length ? (doneCount / uploadQueue.length * 100) : 0}%; transition: width 0.3s;"></div></div>
             </div>
             <div class="queue-drawer-list">
               {#each uploadQueue as q (q.file_path)}
@@ -8467,11 +8483,17 @@ async function testWebhook(wh: any) {
                   <i class="fa-solid {q.state === 'active' ? 'fa-spinner fa-spin' : q.state === 'done' ? 'fa-check' : q.state === 'skipped' ? 'fa-ban' : 'fa-clock'} queue-row-icon"></i>
                   <span class="queue-row-name" title={q.state === 'skipped' ? 'Already in History — no re-upload needed' : q.file_name}>{q.file_name}</span>
                   <span class="queue-row-state">{q.state === 'active' ? 'Uploading' : q.state === 'done' ? 'Done' : q.state === 'skipped' ? 'Skipped' : 'Queued'}</span>
+                  {#if q.state !== 'done' && q.state !== 'skipped'}
+                    <button class="queue-row-cancel" style="border: none; background: transparent; color: var(--accent); cursor: pointer; font-size: 12px; padding: 0 4px;" onclick={() => invoke('cancel_upload', { filePath: q.file_path })} title="Cancel">✕</button>
+                  {/if}
                 </div>
               {/each}
             </div>
             <button class="queue-drawer-pause" onclick={togglePauseUploads}>
               {uploadPaused ? '▶ Resume Uploads' : '⏸ Pause Uploads'}
+            </button>
+            <button class="queue-drawer-pause" onclick={() => { uploadQueue = uploadQueue.filter(q => q.state !== 'done' && q.state !== 'skipped'); }} style="margin-left: 6px;">
+              Clear finished
             </button>
           </div>
         {/if}

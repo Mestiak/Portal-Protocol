@@ -168,6 +168,9 @@ async fn save_config(
     // Save new configuration to disk
     config::save_config(&app, &new_config)?;
 
+    // Apply concurrency changes live (no restart needed)
+    crate::uploader::set_concurrency(new_config.max_concurrent_uploads);
+
     // Toggle Windows autostart Registry key
     let _ = set_autostart(new_config.autostart);
 
@@ -1298,6 +1301,7 @@ pub fn run() {
             // Capture a global handle so sync code (e.g. the dps.report outage flag
             // flip) can spawn async recovery work without threading an AppHandle through.
             crate::uploader::set_app_handle(app_handle.clone());
+            crate::uploader::set_manual_tx(manual_tx.clone());
 
             // Spawn the tokio background loop for uploads. `rx` is the auto (watcher)
             // channel; `manual_rx` is the user-initiated (drag/picker) channel. Both
@@ -1472,6 +1476,8 @@ pub fn run() {
             crate::uploader::get_backfill_status,
             crate::uploader::pause_uploads,
             crate::uploader::resume_uploads,
+            crate::uploader::cancel_upload,
+            crate::uploader::retry_upload,
             crate::uploader::get_upload_queue,
             delete_history_log,
             get_feed,
