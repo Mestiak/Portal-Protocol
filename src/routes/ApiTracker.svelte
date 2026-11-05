@@ -941,6 +941,13 @@
       <button class="add-api-key-btn" onclick={() => (showAddModal = true)}>
         <i class="fa-solid fa-plus"></i> Add API Key
       </button>
+      <button
+        class="add-api-key-btn"
+        disabled={loadingClears}
+        onclick={() => accounts.length > 0 && fetchClears(accounts[activeAccountIdx].api_key)}
+      >
+        <i class="fa-solid fa-rotate-right" class:fa-spin={loadingClears}></i> Refresh
+      </button>
     </div>
 
     <!-- Apple Design: Real-time ticking countdown headers -->
