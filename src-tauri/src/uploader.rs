@@ -261,6 +261,9 @@ pub fn pause_uploads(app: AppHandle) -> Result<(), String> {
     UPLOAD_PAUSED
         .get_or_init(|| AtomicBool::new(false))
         .store(true, Ordering::Relaxed);
+    let mut cfg = crate::config::load_config(&app);
+    cfg.upload_paused = true;
+    let _ = crate::config::save_config(&app, &cfg);
     emit_queue(&app);
     Ok(())
 }
@@ -280,6 +283,9 @@ pub fn resume_uploads(app: AppHandle) -> Result<(), String> {
     UPLOAD_PAUSED
         .get_or_init(|| AtomicBool::new(false))
         .store(false, Ordering::Relaxed);
+    let mut cfg = crate::config::load_config(&app);
+    cfg.upload_paused = false;
+    let _ = crate::config::save_config(&app, &cfg);
     emit_queue(&app);
     Ok(())
 }
@@ -2042,6 +2048,10 @@ pub async fn start_upload_loop(
     mut rx: Receiver<PathBuf>,
     mut manual_rx: Receiver<PathBuf>,
 ) {
+    let cfg = crate::config::load_config(&app);
+    UPLOAD_PAUSED
+        .get_or_init(|| AtomicBool::new(false))
+        .store(cfg.upload_paused, Ordering::Relaxed);
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(180))
         .build()
