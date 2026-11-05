@@ -1928,6 +1928,17 @@
     return base;
   }
 
+  function wvwMapName(mapId: number): string {
+    const names: Record<number, string> = {
+      1099: "Eternal Battlegrounds",
+      1100: "Green Borderlands",
+      1101: "Blue Borderlands",
+      1102: "Red Borderlands",
+      1103: "Edge of the Mists",
+      1104: "Obsidian Sanctum"
+    };
+    return names[mapId] ?? `WvW (map ${mapId})`;
+  }
   function formatDuration(seconds?: number | null): string {
     if (seconds == null || Number.isNaN(seconds)) return "0:00";
     const total = Math.max(0, Math.floor(seconds));
@@ -5844,6 +5855,9 @@ async function testWebhook(wh: any) {
           {/if}
           {#if log.num_players != null}
             <span class="meta-item"><i class="fa-solid fa-users" style="margin-right: 4px; font-size: 11px;"></i> {log.num_players} Players</span>
+          {/if}
+          {#if log.is_wvw && log.map_id != null}
+            <span class="meta-item"><i class="fa-solid fa-map" style="margin-right: 4px; font-size: 11px;"></i> {wvwMapName(log.map_id)}</span>
           {/if}
           <span class="meta-item"><i class="fa-solid fa-calendar-days" style="margin-right: 4px; font-size: 11px;"></i> {log.timestamp}</span>
         </div>

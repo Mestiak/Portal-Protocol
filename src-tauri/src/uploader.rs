@@ -695,6 +695,17 @@ const STORY_MAP_IDS: &[u16] = &[
 
 /// Human-readable instance name for a story map id (display + grouping bucket).
 /// Falls back to the map id itself when unknown so the UI never shows a blank.
+fn wvw_map_name(map_id: u16) -> String {
+    match map_id {
+        1099 => "Eternal Battlegrounds".to_string(),
+        1100 => "Green Borderlands".to_string(),
+        1101 => "Blue Borderlands".to_string(),
+        1102 => "Red Borderlands".to_string(),
+        1103 => "Edge of the Mists".to_string(),
+        1104 => "Obsidian Sanctum".to_string(),
+        other => format!("WvW (map {})", other),
+    }
+}
 fn story_map_name(map_id: u16) -> String {
     match map_id {
         579 => "The Snaff Prize".to_string(),
@@ -5163,6 +5174,11 @@ fn build_discord_embed(record: &UploadRecord) -> serde_json::Value {
     }
     if let Some(n) = record.num_players {
         fields.push(json!({ "name": "Players", "value": n.to_string(), "inline": true }));
+    }
+    if record.is_wvw == Some(true) {
+        if let Some(mid) = record.map_id {
+            fields.push(json!({ "name": "Map", "value": wvw_map_name(mid), "inline": true }));
+        }
     }
     if !log_link.is_empty() {
         fields.push(json!({ "name": "Log", "value": format!("[dps.report]({})", log_link), "inline": false }));
