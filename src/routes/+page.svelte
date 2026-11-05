@@ -7558,8 +7558,8 @@ async function testWebhook(wh: any) {
           </div>
 
             <div class="form-group wh-group">
-              <span class="group-label">Discord Webhooks <span class="optional">(optional)</span></span>
-              <div class="wh-top-actions">
+              <span class="group-label" style="margin-left: 12px;">Discord Webhooks <span class="optional">(optional)</span></span>
+              <div class="wh-top-actions" style="margin-left: 12px;">
                 <button class="wh-add" onclick={() => { discord_webhooks = [...discord_webhooks, { id: `wh_${Date.now()}_${Math.random().toString(36).slice(2,7)}`, label: "", url: "", enabled: true, mention_roles: [], thread_id: null, filters: { kinds: [], outcomes: [], only_cm: null, only_lcm: null, bosses: [] }, _collapsed: false, _showAdvanced: false }]; }}>
                   <i class="fa-solid fa-plus"></i> Add Webhook
                 </button>
