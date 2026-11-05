@@ -329,6 +329,8 @@
   // live without polling. `uploadPaused` reflects the Rust pause gate.
   type QueueEntry = { file_path: string; file_name: string; state: "queued" | "active" | "done" | "skipped" };
   let uploadQueue = $state<QueueEntry[]>([]);
+  let queuedToastCount = $state(0);
+  let queueToastTimer: ReturnType<typeof setTimeout> | null = null;
   let uploadPaused = $state(false);
   let queueDrawerOpen = $state(false);
   // Drag-in cascade: set true briefly when logs land so the queue bar animates.
@@ -345,10 +347,12 @@
   let skippedCount = $derived(uploadQueue.filter((q) => q.state === "skipped").length);
 
   async function togglePauseUploads() {
+    const wasPaused = uploadPaused;
+    uploadPaused = !wasPaused; // optimistic
     try {
-      if (uploadPaused) await invoke("resume_uploads");
+      if (wasPaused) await invoke("resume_uploads");
       else await invoke("pause_uploads");
-    } catch (e) { console.error("pause/resume uploads failed", e); }
+    } catch (e) { console.error("pause/resume uploads failed", e); uploadPaused = wasPaused; }
   }
 
   function enqueueDpsRetry(file_path: string) {
@@ -4262,7 +4266,17 @@
 
       // Live upload-queue snapshot from Rust (queued + active logs).
       unlistenQueue = await listen<{ paused: boolean; items: QueueEntry[] }>("queue-status", (event) => {
-        uploadQueue = event.payload.items ?? [];
+        const newItems = event.payload.items ?? [];
+        if (newItems.length > uploadQueue.length) {
+          const added = newItems.length - uploadQueue.length;
+          queuedToastCount += added;
+          if (queueToastTimer) clearTimeout(queueToastTimer);
+          queueToastTimer = setTimeout(() => {
+            showToast(`Queued ${queuedToastCount} log${queuedToastCount > 1 ? "s" : ""}`, "success");
+            queuedToastCount = 0;
+          }, 500);
+        }
+        uploadQueue = newItems;
         uploadPaused = event.payload.paused ?? false;
       });
 
