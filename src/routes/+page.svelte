@@ -434,7 +434,9 @@
         if (rec?.wingman_status === "failed") {
           const n = (wingmanRetryCount[fp] ?? 0) + 1;
           wingmanRetryCount[fp] = n;
-          const delay = Math.min(20000 * Math.pow(2, n - 1), 300000);
+          const base = 20000 * Math.pow(2, n - 1);
+          const jitter = base * (0.8 + Math.random() * 0.4); // ±20%
+          const delay = Math.min(jitter, 300000);
           wingmanRetryAt[fp] = Date.now() + delay;
         } else {
           // Success: clear backoff.
