@@ -2058,6 +2058,14 @@ async fn spawn_upload(
     });
     emit_queue(app);
 
+    // 3) Paused? Park as "queued" and wait for resume (Approach A: in-flight
+    //    uploads are unaffected). The entry above already marked us "queued".
+    if upload_paused() {
+        while upload_paused() {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+        }
+    }
+
     // 1) Already in History? Skip the re-upload, but keep it visible in the
     //    drawer (state "skipped") for a short window so the user sees the full batch.
     //    Exception: On Hold records are allowed through so recovery can re-process
@@ -2068,14 +2076,6 @@ async fn spawn_upload(
     if already_in_history(&file_path) && !is_on_hold_recovery {
         emit_skipped(app, &file_path, &file_name);
         return;
-    }
-
-    // 3) Paused? Park as "queued" and wait for resume (Approach A: in-flight
-    //    uploads are unaffected). The entry above already marked us "queued".
-    if upload_paused() {
-        while upload_paused() {
-            tokio::time::sleep(Duration::from_millis(300)).await;
-        }
     }
 
     // 4) Grab a concurrency slot. For logs past the cap this blocks here, so
