@@ -593,6 +593,36 @@
   type PatchNoteVersion = { version: string; date: string; image?: string; notes: PatchNoteCategory[] };
   const PATCH_NOTES_DATA: PatchNoteVersion[] = [
     {
+      version: "0.7.10",
+      date: "November 2026",
+      notes: [
+        {
+          category: "⚔️ WvW Support",
+          items: [
+            { title: "Stats Damage", desc: "WvW Stats modal now shows total damage (Target/All) instead of DPS, matching dps.report." }
+          ]
+        },
+        {
+          category: "🐉 Harvest Temple",
+          items: [
+            { title: "Wipe Fallback", desc: "Cleared dragons before an unlisted wipe point are now marked correctly on wipe logs." }
+          ]
+        },
+        {
+          category: "🔧 Wingman",
+          items: [
+            { title: "Retry Panel", desc: "Wingman retries now have a bottom-right panel with per-item cancel and Cancel all; auto-clears when Wingman is disabled." }
+          ]
+        },
+        {
+          category: "🎨 UI",
+          items: [
+            { title: "Favorite Star", desc: "Favorite star hidden on uploading (stepper) cards only." }
+          ]
+        }
+      ]
+    },
+    {
       version: "0.7.9",
       date: "November 2026",
       notes: [
