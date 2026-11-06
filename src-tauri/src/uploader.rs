@@ -246,6 +246,8 @@ fn emit_skipped(app: &AppHandle, file_path: &str, file_name: &str) {
         is_convergence: None,
         is_wvw: None,
         wvw_enemy_count: None,
+        recorded_account: None,
+        recorded_at: None,
         boss_duration: None,
         group_dps: None,
         kaineng_phases: None,
@@ -1208,6 +1210,13 @@ pub struct UploadRecord {
     pub is_wvw: Option<bool>,
     #[serde(default)]
     pub wvw_enemy_count: Option<usize>,
+    /// dps.report `recordedAccountBy` (e.g. "Name.1234") for the uploader. Used in
+    /// WvW webhook embeds ("Recorded By").
+    #[serde(default)]
+    pub recorded_account: Option<String>,
+    /// dps.report `timeStartStd` (log recording start). Used in WvW webhook embeds ("Date").
+    #[serde(default)]
+    pub recorded_at: Option<String>,
     pub boss_duration: Option<f64>,
     /// Group DPS (sum of all players' all-targets DPS) fetched from dps.report's
     /// Elite Insights JSON. Used by the frontend to render a damage badge.
@@ -2001,6 +2010,16 @@ pub async fn repair_history_story_classification(app: AppHandle) {
                             // EI finished on the server; the log is no longer processing.
                             rec.status = "Completed".to_string();
                         }
+                        if rec.recorded_account.is_none() {
+                            if let Some(a) = json.get("recordedAccountBy").and_then(|v| v.as_str()) {
+                                rec.recorded_account = Some(a.to_string());
+                            }
+                        }
+                        if rec.recorded_at.is_none() {
+                            if let Some(t) = json.get("timeStartStd").and_then(|v| v.as_str()) {
+                                rec.recorded_at = Some(t.to_string());
+                            }
+                        }
                         if rec.is_cm.is_none() {
                             rec.is_cm = json.get("isCM").and_then(|v| v.as_bool());
                         }
@@ -2555,6 +2574,8 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
         is_convergence: None,
         is_wvw: None,
         wvw_enemy_count: None,
+        recorded_account: None,
+        recorded_at: None,
         boss_duration: None,
         group_dps: None,
         is_quick_play: None,
@@ -5238,19 +5259,23 @@ fn build_discord_embed(record: &UploadRecord) -> serde_json::Value {
         fields.push(json!({ "name": "Players", "value": n.to_string(), "inline": true }));
     }
     if record.is_wvw == Some(true) {
-        if let Some(mid) = record.map_id {
-            fields.push(json!({ "name": "Map", "value": wvw_map_name(mid), "inline": true }));
+        if let Some(acc) = &record.recorded_account {
+            fields.push(json!({ "name": "Recorded By", "value": acc, "inline": true }));
+        }
+        if let Some(t) = &record.recorded_at {
+            fields.push(json!({ "name": "Date", "value": t, "inline": true }));
         }
         if let Some(ec) = record.wvw_enemy_count {
             fields.push(json!({ "name": "Enemies", "value": ec.to_string(), "inline": true }));
         }
     }
     if !log_link.is_empty() {
-        fields.push(json!({ "name": "Log", "value": format!("[dps.report]({})", log_link), "inline": false }));
+        let link_name = if record.is_wvw == Some(true) { "Full Report" } else { "Log" };
+        fields.push(json!({ "name": link_name, "value": format!("[dps.report]({})", log_link), "inline": false }));
     }
 
     json!({
-        "title": title,
+        "title": if record.is_wvw == Some(true) { record.map_id.map(wvw_map_name).unwrap_or_else(|| "World vs World".to_string()) } else { title },
         "color": color,
         "fields": fields,
         "footer": { "text": "Portal Protocol" }
@@ -5363,6 +5388,8 @@ pub async fn test_webhook(webhook: DiscordWebhook) -> Result<String, String> {
         kaineng_phases: None,
         is_wvw: None,
         wvw_enemy_count: None,
+        recorded_account: None,
+        recorded_at: None,
         boss_duration: None,
         group_dps: None,
         is_story: Some(false),
@@ -6157,6 +6184,8 @@ mod discord_embed_tests {
             is_convergence: None,
             is_wvw: None,
         wvw_enemy_count: None,
+        recorded_account: None,
+        recorded_at: None,
             boss_duration: None,
             group_dps: None,
             is_quick_play: None,
