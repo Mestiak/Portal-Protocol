@@ -80,3 +80,6 @@ src-tauri/testlog.zevtc
 *.broken
 /scratch/
 src-tauri/resources/ei_v3.30.0-backup/
+
+# Archify generated artifacts
+.archify/
