@@ -4,6 +4,7 @@
 
 mod config;
 mod db;
+mod history_filter;
 mod ei_runner;
 mod evtc_parser;
 mod uploader;
@@ -517,6 +518,11 @@ async fn get_history_count(app: AppHandle) -> usize {
 #[tauri::command]
 async fn get_migration_count() -> usize {
     crate::db::last_migration_count()
+}
+
+#[tauri::command]
+async fn get_history_page_filtered(app: AppHandle, filters: history_filter::HistoryFilters, page: usize, limit: usize) -> Result<history_filter::FilteredPage, String> {
+    history_filter::query_filtered(&app, &filters, page, limit)
 }
 
 #[tauri::command]
@@ -1497,6 +1503,7 @@ pub fn run() {
             sweep_dps_processing,
             get_history_count,
             get_migration_count,
+            get_history_page_filtered,
             get_history_page,
             clear_history,
             crate::uploader::backfill_dps_history,

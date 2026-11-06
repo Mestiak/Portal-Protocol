@@ -2989,7 +2989,8 @@
   let migrationToast = $state("");
   let historyPage = $state(0);
   let historyLimit = $state(25);
-  let filteredHistory = $derived(filterLogs(allHistory)); // full filtered list
+  let filteredHistory = $state<UploadRecord[]>([]); // server-filtered page
+  let historyFilteredTotal = $state(0);
   // Count of logs whose Wingman import failed — drives the sidebar "Retry all failed" button.
   let failedWingmanCount = $derived(
     allHistory.filter((h) => h.wingman_status === "failed").length,
@@ -3000,7 +3001,42 @@
     new Set([...uploads, ...allHistory].filter((h) => h.status === "On Hold").map((h) => h.file_path)).size,
   );
   let historyLogs = $derived(filteredHistory);             // alias for code that expected the full list
-  let historyTotalCount = $derived(filteredHistory.length);// drives the pager
+  let historyTotalCount = $derived(historyFilteredTotal); // drives the pager
+  // Server-side filtered + paginated history for the History tab.
+  $effect(() => {
+    const f = filters;
+    const page = historyPage;
+    const limit = historyLimit;
+    (async () => {
+      try {
+        const range = f.datePreset !== "all" ? dateRange(f) : null;
+        const res = await invoke<{ rows: UploadRecord[]; total: number }>("get_history_page_filtered", {
+          filters: {
+            result: f.result,
+            cm_mode: f.cmMode,
+            boss: f.boss,
+            profession: f.profession === "all" ? null : Number(f.profession),
+            profession_kind: f.professionKind,
+            has_notes: f.hasNotes || null,
+            is_favorite: f.isFavorite || null,
+            vl_rank: f.vlRank,
+            date_from: range?.from ?? null,
+            date_to: range?.to ?? null,
+            time_from: f.timeFrom || null,
+            time_to: f.timeTo || null,
+            search: f.search || null,
+            encounter_type: null,
+          },
+          page,
+          limit,
+        });
+        filteredHistory = res.rows;
+        historyFilteredTotal = res.total;
+      } catch (e) {
+        console.error("filtered history failed:", e);
+      }
+    })();
+  });
   // Launch-time CM/LCM Mode-flag self-heal progress (Rust emits `repair_progress`).
   // repairProgress removed - repair badge feature deprecated
   // repairHideTimer removed - repair badge feature deprecated
