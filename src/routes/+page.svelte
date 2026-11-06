@@ -3049,8 +3049,7 @@
   let eiRuntimeNotice = $state<{ url: string } | null>(null);
   let vloxxLcmNotice = $state(false);
   let pagedHistory = $derived.by(() => {
-    const start = historyPage * historyLimit;
-    return filteredHistory.slice(start, start + historyLimit);
+    return filteredHistory;
   });
   // Reset to page 1 whenever any filter changes so a now-shorter list never
   // leaves the user stranded on a blank page 3.
