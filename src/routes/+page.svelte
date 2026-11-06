@@ -5371,6 +5371,7 @@ async function testWebhook(wh: any) {
       sound_notifications = config.sound_notifications ?? true;
       desktop_notifications = config.desktop_notifications ?? true;
       wingman_enabled = config.wingman_enabled ?? false;
+      if (!wingman_enabled) { wingmanQueue = []; wingmanQueueRunning = false; wingmanDrawerOpen = false; }
       wingman_account = config.wingman_account ?? "";
       wingman_accounts = config.wingman_accounts ?? [];
       if (wingman_accounts.length === 0 && wingman_account) {
