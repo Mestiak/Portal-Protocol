@@ -1986,7 +1986,7 @@ pub async fn repair_history_story_classification(app: AppHandle) {
         // run Elite Insights for the 422 case, so we can resolve the verdict + duration
         // and flip a stale "Processing" record to "Completed" (it's no longer processing).
         if let Some(permalink) = rec.url.clone() {
-            if rec.success.is_none() || rec.duration.is_none() || rec.status == "Processing" {
+            if rec.success.is_none() || rec.duration.is_none() || rec.status == "Processing" || rec.recorded_account.is_none() {
                 let url = format!("https://dps.report/getJson?permalink={}", permalink);
                 if let Ok(r) = client.get(&url).send().await {
                     if let Ok(json) = r.json::<Value>().await {
@@ -5251,7 +5251,9 @@ fn build_discord_embed(record: &UploadRecord) -> serde_json::Value {
             fields.push(json!({ "name": "Mode", "value": if record.is_lcm == Some(true) { "Legendary CM" } else if record.is_cm.unwrap_or(false) { "Challenge Mode" } else { "Normal" }, "inline": true }));
         }
     }
-    fields.push(json!({ "name": "Result", "value": outcome, "inline": true }));
+    if record.is_wvw != Some(true) {
+        fields.push(json!({ "name": "Result", "value": outcome, "inline": true }));
+    }
     if let Some(d) = record.duration {
         fields.push(json!({ "name": "Duration", "value": format_duration(d), "inline": true }));
     }
