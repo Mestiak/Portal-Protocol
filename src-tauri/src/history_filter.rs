@@ -1,5 +1,4 @@
 use crate::uploader::UploadRecord;
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
@@ -27,89 +26,6 @@ pub struct FilteredPage {
     pub rows: Vec<UploadRecord>,
     pub total: usize,
 }
-
-/// Build a WHERE clause + params for the given filters.
-/// Returns (where_sql, params_vec). `where_sql` excludes the leading "WHERE".
-pub fn build_where(f: &HistoryFilters) -> (String, Vec<Box<dyn rusqlite::ToSql>>) {
-    let mut clauses: Vec<String> = Vec::new();
-    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-
-    if let Some(r) = f.result.as_deref() {
-        if r == "success" {
-            clauses.push("success = 1".to_string());
-        } else if r == "failure" {
-            clauses.push("success = 0".to_string());
-        }
-    }
-
-    if let Some(m) = f.cm_mode.as_deref() {
-        match m {
-            "cm" => clauses.push("is_cm = 1".to_string()),
-            "lcm" => clauses.push("is_lcm = 1".to_string()),
-            "normal" => {
-                clauses.push("(is_cm IS NULL OR is_cm = 0)".to_string());
-                clauses.push("(is_lcm IS NULL OR is_lcm = 0)".to_string());
-                clauses.push("(is_quick_play IS NULL OR is_quick_play = 0)".to_string());
-            }
-            "quickplay" => clauses.push("is_quick_play = 1".to_string()),
-            _ => {}
-        }
-    }
-
-    if let Some(b) = f.boss.as_deref() {
-        if b != "all" && !b.is_empty() {
-            // Compare lowercased boss_name. We store the raw value; do a lower() compare.
-            clauses.push("LOWER(COALESCE(boss_name,'')) = ?".to_string());
-            params.push(Box::new(b.to_lowercase()));
-        }
-    }
-
-    if f.has_notes == Some(true) {
-        clauses.push("notes IS NOT NULL AND notes != '[]' AND notes != ''".to_string());
-    }
-    if f.is_favorite == Some(true) {
-        clauses.push("is_favorite = 1".to_string());
-    }
-
-    if let Some(df) = f.date_from.as_deref() {
-        if !df.is_empty() {
-            clauses.push("substr(timestamp,1,10) >= ?".to_string());
-            params.push(Box::new(df.to_string()));
-        }
-    }
-    if let Some(dt) = f.date_to.as_deref() {
-        if !dt.is_empty() {
-            clauses.push("substr(timestamp,1,10) <= ?".to_string());
-            params.push(Box::new(dt.to_string()));
-        }
-    }
-    if let Some(tf) = f.time_from.as_deref() {
-        if !tf.is_empty() {
-            clauses.push("substr(timestamp,12,5) >= ?".to_string());
-            params.push(Box::new(tf.to_string()));
-        }
-    }
-    if let Some(tt) = f.time_to.as_deref() {
-        if !tt.is_empty() {
-            clauses.push("substr(timestamp,12,5) <= ?".to_string());
-            params.push(Box::new(tt.to_string()));
-        }
-    }
-
-    if let Some(q) = f.search.as_deref() {
-        let q = q.trim();
-        if !q.is_empty() {
-            let like = format!("%{}%", q.to_lowercase());
-            clauses.push("(LOWER(COALESCE(boss_name,'')) LIKE ? OR LOWER(COALESCE(players,'')) LIKE ?)".to_string());
-            params.push(Box::new(like.clone()));
-            params.push(Box::new(like));
-        }
-    }
-
-    let where_sql = clauses.join(" AND ");
-    (where_sql, params)
-}
-
 pub fn query_filtered(app: &AppHandle, f: &HistoryFilters, page: usize, limit: usize) -> Result<FilteredPage, String> {
     // Load all rows via the existing parsing path (single source of truth).
     let all = crate::config::load_history(app);
