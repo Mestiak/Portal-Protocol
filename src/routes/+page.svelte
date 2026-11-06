@@ -583,6 +583,28 @@
   type PatchNoteVersion = { version: string; date: string; image?: string; notes: PatchNoteCategory[] };
   const PATCH_NOTES_DATA: PatchNoteVersion[] = [
     {
+      version: "0.7.9",
+      date: "November 2026",
+      notes: [
+        {
+          category: "⚔️ WvW Support",
+          items: [
+            { title: "WvW Log Detection", desc: "WvW logs are now detected via the EVTC MapID statechange event and dps.report boss name, with a restricted set of known WvW map IDs to avoid false positives." },
+            { title: "Borderland Badges", desc: "WvW log cards and the stepper show a color-coded borderland badge (EBG, Red/Green/Blue Borderlands, EoTM) instead of 'Normal Mode'; Success/Failed badge is hidden for WvW." },
+            { title: "WvW Map & Enemies", desc: "WvW webhooks and log cards display the borderland map name and enemy count." },
+            { title: "WvW Stats", desc: "Stats modal DPS uses the 'Enemy Players' target only; DPS column uses total (cleave) damage for WvW." },
+            { title: "WvW Excluded from Wingman", desc: "WvW logs are excluded from Wingman raw uploads and badges." }
+          ]
+        },
+        {
+          category: "🐉 Harvest Temple",
+          items: [
+            { title: "Wipe Fallback Fix", desc: "On wipe logs where dps.report truncates the phase list before the actual wipe dragon, earlier cleared dragons are now marked correctly instead of showing as not killed." }
+          ]
+        }
+      ]
+    },
+    {
       version: "0.7.8",
       date: "November 2026",
       notes: [

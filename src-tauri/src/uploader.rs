@@ -5956,7 +5956,20 @@ pub fn shape_log_stats(json: &Value) -> LogStats {
         let is_wvw = json
             .get("targets")
             .and_then(|t| t.as_array())
-            .map(|arr| arr.iter().any(|tgt| tgt.get("name").and_then(|n| n.as_str()) == Some("Enemy Players")))
+            .map(|arr| {
+                arr.len() == 1
+                    && arr[0]
+                        .get("name")
+                        .and_then(|n| n.as_str())
+                        .map(|s| s.to_lowercase().contains("enemy"))
+                        .unwrap_or(false)
+                    || arr.iter().any(|tgt| {
+                        tgt.get("name")
+                            .and_then(|n| n.as_str())
+                            .map(|s| s.eq_ignore_ascii_case("Enemy Players"))
+                            .unwrap_or(false)
+                    })
+            })
             .unwrap_or(false);
 
         let mut boss_dps = 0.0;
