@@ -1,8 +1,8 @@
-// Portal Protocol - SQLite history storage (Phase 0: scaffolding only).
+// Portal Protocol - SQLite history storage.
 //
-// This module will own all SQLite access for upload history. For now it only
-// opens the database file and creates the schema. No call sites use it yet;
-// Phases 1-5 of docs/History-Revamp-Plan.md will migrate readers/writers here.
+// Owns all SQLite access for upload history. Provides open_db() and init_schema()
+// used at startup. Reader/writer call sites migrate here over time; until then
+// the legacy JSON path remains the source of truth.
 
 use rusqlite::{Connection, Result};
 use std::path::PathBuf;
