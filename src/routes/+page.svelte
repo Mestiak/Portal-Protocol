@@ -395,6 +395,9 @@
         }
         await invoke("trigger_manual_upload", { filePath: fp })
           .catch((e) => console.error("dps.report retry failed:", e));
+        // Let the upload-status event land so `uploads`/`allHistory` reflect the
+        // new status before we decide whether this slot is resolved.
+        await new Promise((r) => setTimeout(r, 50));
         // After the upload attempt, inspect the live feed/history record for this path.
         // A terminal/logless state means this queue slot is resolved—drain it so the
         // sidebar counter doesn't persist after success (including 422 duplicate).
@@ -4014,6 +4017,10 @@
 
   function handleOnline() {
     isOnline = true;
+    // Guard: don't re-trigger recovery while a drain is already in flight —
+    // overlapping triggers re-enqueue logs that were just resolved, causing a
+    // resolve→stepper→resolve loop (both for service outages and internet drops).
+    if (dpsQueueRunning) return;
     retryOnHoldLogs();
     processDpsQueue();
     showToast("Back online — uploads resumed", "online");
