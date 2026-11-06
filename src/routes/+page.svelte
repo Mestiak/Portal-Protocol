@@ -3025,7 +3025,7 @@
             time_from: f.timeFrom || null,
             time_to: f.timeTo || null,
             search: f.search || null,
-            encounter_type: null,
+            encounter_type: f.type === "all" ? null : f.type,
           },
           page,
           limit,
