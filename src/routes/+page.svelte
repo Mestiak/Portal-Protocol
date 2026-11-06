@@ -2986,6 +2986,7 @@
     }
   });
   let isHistoryLoading = $state(false);
+  let migrationToast = $state("");
   let historyPage = $state(0);
   let historyLimit = $state(25);
   let filteredHistory = $derived(filterLogs(allHistory)); // full filtered list
@@ -3707,17 +3708,17 @@
   // load everything. Only when history exceeds the cap do we keep the most
   // recent HISTORY_CAP records and surface a "+" indicator. Filtering/paging
   // stay client-side (FilterBar needs the full filtered set + distinct bosses).
-  const HISTORY_CAP = 5000;
+  const HISTORY_CAP = 100000; // DB-backed loads are fast; no artificial cap.
   let historyHasMore = $state(false);
-  // Loads history into memory (bounded by HISTORY_CAP). Filtering + pagination
-  // stay client-side via `filteredHistory` / `pagedHistory`.
+  // Loads history into memory. Filtering + pagination stay client-side via
+  // `filteredHistory` / `pagedHistory`. Data now comes from SQLite (fast).
   async function loadFullHistory() {
     isHistoryLoading = true;
     try {
       const count = await invoke("get_history_count") as number;
       if (count === 0) { allHistory = []; historyHasMore = false; return; }
-      const limit = Math.min(count, HISTORY_CAP);
-      historyHasMore = count > limit;
+      const limit = count; // load all; DB reads are fast
+      historyHasMore = false;
       allHistory = await invoke("get_history_page", { page: 0, limit }) as UploadRecord[];
     } catch (err) {
       console.error("Failed to load full history:", err);
@@ -4093,6 +4094,13 @@
     invoke("check_bundled_ei").catch((e) => {
       console.error("Bundled EI check failed:", e);
     });
+    // Show migration toast if a history.json → SQLite migration ran this launch.
+    invoke<number>("get_migration_count").then((n) => {
+      if (n > 0) {
+        migrationToast = `Migrated ${n} logs into the new database`;
+        setTimeout(() => (migrationToast = ""), 4000);
+      }
+    }).catch(() => {});
     const statusInterval = setInterval(() => {
       checkDpsReportStatus();
       checkBackupDpsStatus();
@@ -6748,6 +6756,9 @@ async function testWebhook(wh: any) {
   </div>
 {/snippet}
 
+{#if migrationToast}
+  <div class="migration-toast">{migrationToast}</div>
+{/if}
 <main class="app-container" class:sidebar-collapsed={!sidebarOpen}>
   {#if vloxxLcmNotice}
     <div style="position: sticky; top: 0; z-index: 50; background: var(--card); border-bottom: 1px solid var(--border); padding: 8px 12px; display: flex; align-items: center; gap: 8px;">

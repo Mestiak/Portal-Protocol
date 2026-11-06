@@ -581,13 +581,80 @@ pub fn get_history_path(app: &AppHandle) -> PathBuf {
 }
 
 /// Load the full upload history from disk. Returns an empty Vec if missing or corrupt.
+/// Reads from SQLite (history.db) when it exists, otherwise falls back to the
+/// legacy history.json so pre-migration installs keep working.
 pub fn load_history(app: &AppHandle) -> Vec<crate::uploader::UploadRecord> {
+    // Prefer the SQLite store once migration has happened.
+    if crate::db::db_exists(app) {
+        if let Ok(conn) = crate::db::open_db(app) {
+            if let Ok(mut stmt) = conn.prepare("SELECT file_path, file_name, timestamp, status, stage, url, boss_name, success, duration, is_cm, cm_verified, is_lcm, is_quick_play, num_players, players, error_msg, boss_hp_left, ca_arms, twin_largos, eyes, voice_claw, aetherblade, old_lions_court, diagnostics, is_convergence, kaineng_phases, ura_health_regen, is_wvw, wvw_enemy_count, recorded_account, recorded_at, boss_duration, group_dps, is_story, map_id, notes, wingman_status, wingman_account, discord_pending, ei_done, upload_done, vl_rank, boss_icon, instance_name, bosses_hp, bosses_phases, local_fallback, dragonvoid_add_evidence, cerus_empowered_stacks, is_favorite FROM history") {
+                let rows = stmt.query_map([], |row| {
+                    Ok(crate::uploader::UploadRecord {
+                        file_path: row.get(0)?,
+                        file_name: row.get(1)?,
+                        timestamp: row.get(2).unwrap_or_default(),
+                        status: row.get(3).unwrap_or_default(),
+                        stage: row.get(4).ok(),
+                        url: row.get(5).ok(),
+                        boss_name: row.get(6).ok(),
+                        success: row.get::<_, Option<i64>>(7).ok().flatten().map(|v| v != 0),
+                        duration: row.get(8).ok(),
+                        is_cm: row.get::<_, Option<i64>>(9).ok().flatten().map(|v| v != 0),
+                        cm_verified: row.get::<_, Option<i64>>(10).ok().flatten().map(|v| v != 0),
+                        is_lcm: row.get::<_, Option<i64>>(11).ok().flatten().map(|v| v != 0),
+                        is_quick_play: row.get::<_, Option<i64>>(12).ok().flatten().map(|v| v != 0),
+                        num_players: row.get::<_, Option<i64>>(13).ok().flatten().map(|v| v as u32),
+                        players: row.get::<_, Option<String>>(14).ok().flatten().and_then(|s| serde_json::from_str(&s).ok()),
+                        error_msg: row.get(15).ok(),
+                        boss_hp_left: row.get(16).ok(),
+                        ca_arms: row.get::<_, Option<String>>(17).ok().flatten().and_then(|s| serde_json::from_str(&s).ok()),
+                        twin_largos: row.get::<_, Option<String>>(18).ok().flatten().and_then(|s| serde_json::from_str(&s).ok()),
+                        eyes: row.get::<_, Option<String>>(19).ok().flatten().and_then(|s| serde_json::from_str(&s).ok()),
+                        voice_claw: row.get::<_, Option<String>>(20).ok().flatten().and_then(|s| serde_json::from_str(&s).ok()),
+                        aetherblade: row.get::<_, Option<String>>(21).ok().flatten().and_then(|s| serde_json::from_str(&s).ok()),
+                        old_lions_court: row.get::<_, Option<String>>(22).ok().flatten().and_then(|s| serde_json::from_str(&s).ok()),
+                        diagnostics: row.get::<_, Option<String>>(23).ok().flatten().and_then(|s| serde_json::from_str(&s).ok()),
+                        is_convergence: row.get::<_, Option<i64>>(24).ok().flatten().map(|v| v != 0),
+                        kaineng_phases: row.get::<_, Option<String>>(25).ok().flatten().and_then(|s| serde_json::from_str(&s).ok()),
+                        ura_health_regen: row.get(26).ok(),
+                        is_wvw: row.get::<_, Option<i64>>(27).ok().flatten().map(|v| v != 0),
+                        wvw_enemy_count: row.get::<_, Option<i64>>(28).ok().flatten().map(|v| v as usize),
+                        recorded_account: row.get(29).ok(),
+                        recorded_at: row.get(30).ok(),
+                        boss_duration: row.get(31).ok(),
+                        group_dps: row.get(32).ok(),
+                        is_story: row.get::<_, Option<i64>>(33).ok().flatten().map(|v| v != 0),
+                        map_id: row.get::<_, Option<i64>>(34).ok().flatten().map(|v| v as u16),
+                        notes: row.get::<_, Option<String>>(35).ok().flatten().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
+                        wingman_status: row.get(36).ok(),
+                        wingman_account: row.get(37).ok(),
+                        discord_pending: row.get::<_, Option<i64>>(38).ok().flatten().map(|v| v != 0),
+                        ei_done: row.get::<_, Option<i64>>(39).ok().flatten().map(|v| v != 0),
+                        upload_done: row.get::<_, Option<i64>>(40).ok().flatten().map(|v| v != 0),
+                        vl_rank: row.get::<_, Option<String>>(41).ok().flatten().and_then(|s| serde_json::from_str(&s).ok()),
+                        boss_icon: row.get(42).ok(),
+                        instance_name: row.get(43).ok(),
+                        bosses_hp: row.get::<_, Option<String>>(44).ok().flatten().and_then(|s| serde_json::from_str(&s).ok()),
+                        bosses_phases: row.get::<_, Option<String>>(45).ok().flatten().and_then(|s| serde_json::from_str(&s).ok()),
+                        local_fallback: row.get::<_, Option<i64>>(46).ok().flatten().map(|v| v != 0).unwrap_or(false),
+                        dragonvoid_add_evidence: row.get::<_, Option<String>>(47).ok().flatten().and_then(|s| serde_json::from_str(&s).ok()),
+                        cerus_empowered_stacks: row.get::<_, Option<i64>>(48).ok().flatten().map(|v| v as u32),
+                        is_favorite: row.get::<_, Option<i64>>(49).ok().flatten().map(|v| v != 0),
+                    })
+                });
+                if let Ok(mapped) = rows {
+                    let out: Vec<_> = mapped.filter_map(|r| r.ok()).collect();
+                    if !out.is_empty() || true {
+                        return out;
+                    }
+                }
+            }
+        }
+    }
     let path = get_history_path(app);
     if path.exists() {
-        if let Ok(content) = fs::read_to_string(path) {
-            if let Ok(history) =
-                serde_json::from_str::<Vec<crate::uploader::UploadRecord>>(&content)
-            {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            if let Ok(history) = serde_json::from_str::<Vec<crate::uploader::UploadRecord>>(&content) {
                 return history;
             }
         }
@@ -596,10 +663,23 @@ pub fn load_history(app: &AppHandle) -> Vec<crate::uploader::UploadRecord> {
 }
 
 /// Persist the upload history slice to history.json atomically.
+/// Writes to SQLite when the DB exists (post-migration), otherwise falls back
+/// to the legacy JSON file.
 pub fn save_history(
     app: &AppHandle,
     history: &[crate::uploader::UploadRecord],
 ) -> Result<(), String> {
+    if crate::db::db_exists(app) {
+        let conn = crate::db::open_db(app)?;
+        let mut conn = conn;
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        tx.execute("DELETE FROM history", []).map_err(|e| e.to_string())?;
+        for rec in history {
+            crate::db::insert_record_pub(&tx, rec).map_err(|e| e.to_string())?;
+        }
+        tx.commit().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
     let path = get_history_path(app);
     let json = serde_json::to_string(history).map_err(|e| e.to_string())?;
     write_atomic(&path, json.as_bytes())
