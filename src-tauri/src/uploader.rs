@@ -5241,34 +5241,34 @@ fn build_discord_embed(record: &UploadRecord) -> serde_json::Value {
 
     let mut fields = Vec::new();
     if let Some(exp) = exp_header {
-        fields.push(json!({ "name": "Expansion", "value": exp, "inline": true }));
+        fields.push(json!({ "name": "Expansion", "value": exp, "inline": false }));
     }
     if let Some(wing) = wing_title {
-        fields.push(json!({ "name": "Wing", "value": wing, "inline": true }));
+        fields.push(json!({ "name": "Wing", "value": wing, "inline": false }));
     }
     if is_conv {
         if record.is_wvw != Some(true) {
-            fields.push(json!({ "name": "Mode", "value": if record.is_lcm == Some(true) { "Legendary CM" } else if record.is_cm.unwrap_or(false) { "Challenge Mode" } else { "Normal" }, "inline": true }));
+            fields.push(json!({ "name": "Mode", "value": if record.is_lcm == Some(true) { "Legendary CM" } else if record.is_cm.unwrap_or(false) { "Challenge Mode" } else { "Normal" }, "inline": false }));
         }
     }
     if record.is_wvw != Some(true) {
         fields.push(json!({ "name": "Result", "value": outcome, "inline": true }));
     }
     if let Some(d) = record.duration {
-        fields.push(json!({ "name": "Duration", "value": format_duration(d), "inline": true }));
+        fields.push(json!({ "name": "Duration", "value": format_duration(d), "inline": false }));
     }
     if let Some(n) = record.num_players {
-        fields.push(json!({ "name": "Players", "value": n.to_string(), "inline": true }));
+        fields.push(json!({ "name": "Players", "value": n.to_string(), "inline": false }));
     }
     if record.is_wvw == Some(true) {
         if let Some(acc) = &record.recorded_account {
-            fields.push(json!({ "name": "Recorded By", "value": acc, "inline": true }));
+            fields.push(json!({ "name": "Recorded By", "value": acc, "inline": false }));
         }
         if let Some(t) = &record.recorded_at {
-            fields.push(json!({ "name": "Date", "value": t, "inline": true }));
+            fields.push(json!({ "name": "Date", "value": t, "inline": false }));
         }
         if let Some(ec) = record.wvw_enemy_count {
-            fields.push(json!({ "name": "Enemies", "value": ec.to_string(), "inline": true }));
+            fields.push(json!({ "name": "Enemies", "value": ec.to_string(), "inline": false }));
         }
     }
     if !log_link.is_empty() {
