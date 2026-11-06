@@ -8604,12 +8604,7 @@ async function testWebhook(wh: any) {
           <i class="fa-solid fa-rotate-right"></i> Retry On Hold ({onHoldCount})
         </button>
       {/if}
-      {#if wingmanQueue.length > 0 || wingmanQueueRunning}
-        <span class="sb-queue-pill">
-          <i class="fa-solid fa-rotate sb-spin"></i>
-          Wingman retry {wingmanQueueRunning ? `${wingmanQueueDone}/${wingmanQueueDone + wingmanQueue.length}` : wingmanQueue.length}
-        </span>
-      {:else if failedWingmanCount > 0 && !wingmanQueueRunning && wingmanQueue.length === 0}
+      {#if failedWingmanCount > 0 && !wingmanQueueRunning && wingmanQueue.length === 0}
         <button class="sb-retry-btn" onclick={retryAllFailedWingman} disabled={wingmanStatus === 'offline'}
           title={wingmanStatus === 'offline' ? 'Wingman down — retry will resume when it recovers.' : 'Re-send all failed Wingman imports now.'}>
           <i class="fa-solid fa-rotate-right"></i> Retry Wingman ({failedWingmanCount})
