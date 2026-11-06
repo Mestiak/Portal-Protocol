@@ -2722,7 +2722,7 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
         l.contains("world vs world") || l.contains("wvw") || l.contains("enemy players") || l.contains("enemy player")
     }).unwrap_or(false)
         || boss_id_opt.map(|id| matches!(id, 38 | 95 | 96 | 1099 | 968 | 899)).unwrap_or(false)
-        || local_wvw_map_id.is_some();
+        || local_wvw_map_id.map(|id| matches!(id, 38 | 95 | 96 | 1099 | 968 | 899)).unwrap_or(false);
     record.is_wvw = Some(is_wvw);
     if is_wvw {
         record.boss_name = Some("World vs World".to_string());
