@@ -6575,18 +6575,6 @@ async function testWebhook(wh: any) {
                 {@const isSelected = selectedLogs.has(log.file_path)}
                 <div class="log-card card {isExpanded ? 'is-expanded' : ''}" class:is-favorite={log.is_favorite === true} class:menu-open={activeMenuCard === id} style="margin-bottom: 12px; position: relative; cursor: context-menu;" role="button" tabindex="0" oncontextmenu={(e) => handleLogContextMenu(e, log, true, sessionParam.id, () => { if (subFolderIdParam != null) fadeRemoveFromSubFolder(sessionParam.id, subFolderIdParam, log.file_path); else fadeRemoveFromSession(sessionParam.id, log.file_path); })}>
                   <button class="log-header" onclick={() => toggleExpand(id)}>
-                    <div
-                    class="favorite-btn"
-                    class:favorited={log.is_favorite === true}
-                    role="button"
-                    tabindex="0"
-                    onclick={(e) => { e.stopPropagation(); toggleFavorite(log.file_path); }}
-                    onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); toggleFavorite(log.file_path); } }}
-                    title={log.is_favorite === true ? "Remove from favorites" : "Add to favorites"}
-                    aria-label={log.is_favorite === true ? "Remove from favorites" : "Add to favorites"}
-                    >
-                    <i class={log.is_favorite === true ? "fa-solid fa-star" : "fa-regular fa-star"}></i>
-                    </div>
                     <input type="checkbox" class="log-select-check" checked={isSelected} onclick={(e) => { e.stopPropagation(); toggleSelectLog(log.file_path); }} />
                     {@render logHeaderLeft(log)}
                     <div class="log-right">
@@ -6676,18 +6664,6 @@ async function testWebhook(wh: any) {
                 {@const isSelected = selectedLogs.has(log.file_path)}
                 <div class="log-card card {isExpanded ? 'is-expanded' : ''}" class:is-favorite={log.is_favorite === true} class:menu-open={activeMenuCard === id} style="margin-bottom: 12px; position: relative; cursor: context-menu;" role="button" tabindex="0" oncontextmenu={(e) => handleLogContextMenu(e, log, true, sessionParam.id, () => { if (subFolderIdParam != null) fadeRemoveFromSubFolder(sessionParam.id, subFolderIdParam, log.file_path); else fadeRemoveFromSession(sessionParam.id, log.file_path); })}>
                   <button class="log-header" onclick={() => toggleExpand(id)}>
-                    <div
-                    class="favorite-btn"
-                    class:favorited={log.is_favorite === true}
-                    role="button"
-                    tabindex="0"
-                    onclick={(e) => { e.stopPropagation(); toggleFavorite(log.file_path); }}
-                    onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); toggleFavorite(log.file_path); } }}
-                    title={log.is_favorite === true ? "Remove from favorites" : "Add to favorites"}
-                    aria-label={log.is_favorite === true ? "Remove from favorites" : "Add to favorites"}
-                    >
-                    <i class={log.is_favorite === true ? "fa-solid fa-star" : "fa-regular fa-star"}></i>
-                    </div>
                     <input type="checkbox" class="log-select-check" checked={isSelected} onclick={(e) => { e.stopPropagation(); toggleSelectLog(log.file_path); }} />
                     {@render logHeaderLeft(log)}
                     <div class="log-right">
@@ -7043,18 +7019,6 @@ async function testWebhook(wh: any) {
                 <div class="float-card card uploading" class:float-card-resolving={wasResolving.has(log.file_path)} style="position: relative;" in:fade={{ duration: prefersReducedMotion ? 0 : 200 }} out:resolveVanish={{ duration: prefersReducedMotion ? 0 : 350 }}>
                   <div class="upload-progress-top"></div>
                   <button class="log-header" onclick={() => toggleExpand(id)}>
-                    <div
-                      class="favorite-btn"
-                      class:favorited={log.is_favorite === true}
-                      role="button"
-                      tabindex="0"
-                      onclick={(e) => { e.stopPropagation(); toggleFavorite(log.file_path); }}
-                      onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); toggleFavorite(log.file_path); } }}
-                      title={log.is_favorite === true ? "Remove from favorites" : "Add to favorites"}
-                      aria-label={log.is_favorite === true ? "Remove from favorites" : "Add to favorites"}
-                    >
-                      <i class={log.is_favorite === true ? "fa-solid fa-star" : "fa-regular fa-star"}></i>
-                    </div>
                     {@render logHeaderLeft(log)}
                     <div class="log-right">
                       <span class="chevron" class:open={isExpanded}>›</span>
@@ -7125,18 +7089,7 @@ async function testWebhook(wh: any) {
                                 <div class="upload-progress-top"></div>
                               {/if}
                               <button class="log-header" onclick={() => toggleExpand(id)}>
-                                <div
-                                class="favorite-btn"
-                                class:favorited={log.is_favorite === true}
-                                role="button"
-                                tabindex="0"
-                                onclick={(e) => { e.stopPropagation(); toggleFavorite(log.file_path); }}
-                                onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); toggleFavorite(log.file_path); } }}
-                                title={log.is_favorite === true ? "Remove from favorites" : "Add to favorites"}
-                                aria-label={log.is_favorite === true ? "Remove from favorites" : "Add to favorites"}
-                    >
-                                <i class={log.is_favorite === true ? "fa-solid fa-star" : "fa-regular fa-star"}></i>
-                    </div>
+
                     <input type="checkbox" class="log-select-check" checked={isSelected} onclick={(e) => { e.stopPropagation(); toggleSelectLog(log.file_path); }} />
                                 {@render logHeaderLeft(log)}
                                 <div class="log-right">
@@ -7408,18 +7361,6 @@ async function testWebhook(wh: any) {
               <div class="upload-progress-top"></div>
             {/if}
               <button class="log-header" onclick={() => toggleExpand(id)}>
-                <div
-                class="favorite-btn"
-                class:favorited={log.is_favorite === true}
-                role="button"
-                tabindex="0"
-                onclick={(e) => { e.stopPropagation(); toggleFavorite(log.file_path); }}
-                onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); toggleFavorite(log.file_path); } }}
-                title={log.is_favorite === true ? "Remove from favorites" : "Add to favorites"}
-                aria-label={log.is_favorite === true ? "Remove from favorites" : "Add to favorites"}
-                    >
-                <i class={log.is_favorite === true ? "fa-solid fa-star" : "fa-regular fa-star"}></i>
-                    </div>
                     <input type="checkbox" class="log-select-check" checked={isSelected} onclick={(e) => { e.stopPropagation(); toggleSelectLog(log.file_path); }} />
                 {@render logHeaderLeft(log)}
                 <div class="log-right">
