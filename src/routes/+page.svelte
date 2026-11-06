@@ -311,6 +311,14 @@
   let wingmanQueue = $state<string[]>([]);
   // Persist Wingman queue to localStorage so it survives app restarts.
   $effect(() => {
+    if (!wingman_enabled) {
+      wingmanQueue = [];
+      wingmanQueueRunning = false;
+      wingmanDrawerOpen = false;
+    }
+  });
+  // Persist Wingman queue to localStorage so it survives app restarts.
+  $effect(() => {
     try { localStorage.setItem("wingmanQueue", JSON.stringify(wingmanQueue)); } catch {}
   });
   let wingmanQueueRunning = $state(false);
@@ -334,6 +342,7 @@
   let queueToastTimer: ReturnType<typeof setTimeout> | null = null;
   let uploadPaused = $state(false);
   let queueDrawerOpen = $state(false);
+  let wingmanDrawerOpen = $state(false);
   // Drag-in cascade: set true briefly when logs land so the queue bar animates.
   let queuePulse = $state(false);
   let queuePulseTimer: ReturnType<typeof setTimeout> | null = null;
@@ -408,6 +417,7 @@
   }
 
   function enqueueWingmanRetry(file_path: string) {
+    if (!wingman_enabled) return; // Wingman disabled — no retries
     const rec = allHistory.find((h) => h.file_path === file_path) ?? uploads.find((u) => u.file_path === file_path);
     if (rec?.is_wvw) return; // WvW logs are excluded from Wingman
     if (wingmanQueue.includes(file_path)) return;
@@ -8565,6 +8575,38 @@ async function testWebhook(wh: any) {
             </button>
             <button class="queue-drawer-pause" onclick={() => { uploadQueue = uploadQueue.filter(q => q.state !== 'done' && q.state !== 'skipped'); }} style="margin-left: 6px;">
               Clear finished
+            </button>
+          </div>
+        {/if}
+      {/if}
+
+      {#if wingmanQueue.length > 0}
+        <button
+          class="sb-queue-pill"
+          aria-expanded={wingmanDrawerOpen}
+          onclick={() => { wingmanDrawerOpen = !wingmanDrawerOpen; }}
+        >
+          <i class="fa-solid fa-rotate sb-spin"></i>
+          Wingman retry {wingmanQueue.length}
+          <i class="fa-solid fa-chevron-up sb-chevron" class:open={wingmanDrawerOpen}></i>
+        </button>
+        {#if wingmanDrawerOpen}
+          <div class="queue-drawer" transition:fly={{ y: 8, duration: prefersReducedMotion ? 0 : 180 }}>
+            <div class="queue-drawer-head">
+              <span>Wingman Retries</span>
+              <span class="queue-drawer-meta">{wingmanQueue.length} queued</span>
+            </div>
+            <div class="queue-drawer-list">
+              {#each wingmanQueue as fp (fp)}
+                <div class="queue-row">
+                  <i class="fa-solid fa-clock queue-row-icon"></i>
+                  <span class="queue-row-name" title={fp}>{fp.split('/').pop()}</span>
+                  <button class="queue-row-cancel" onclick={() => { wingmanQueue = wingmanQueue.filter(x => x !== fp); }} title="Cancel">✕</button>
+                </div>
+              {/each}
+            </div>
+            <button class="queue-drawer-pause" onclick={() => { wingmanQueue = []; wingmanQueueRunning = false; wingmanDrawerOpen = false; }}>
+              Cancel all
             </button>
           </div>
         {/if}

@@ -8901,6 +8901,7 @@ input:focus {
 }
 
 /* ── Favorite Button ───────────────────────────────────────────────────── */
+.log-card.uploading .favorite-btn { display: none; }
 .favorite-btn {
   background: none;
   border: none;
