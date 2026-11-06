@@ -3,6 +3,7 @@
 // Licensed under MIT License
 
 mod config;
+mod db;
 mod ei_runner;
 mod evtc_parser;
 mod uploader;

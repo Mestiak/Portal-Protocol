@@ -83,3 +83,9 @@ src-tauri/resources/ei_v3.30.0-backup/
 
 # Archify generated artifacts
 .archify/
+
+# SQLite history database (runtime-generated, per-user)
+history.db
+history.db-wal
+history.db-shm
+history.json.bak
