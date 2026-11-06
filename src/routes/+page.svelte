@@ -625,7 +625,11 @@
             { title: "WvW Webhook Filter", desc: "Added a 'wvw' encounter type filter to webhooks (included in the All preset)." },
             { title: "Clears Tab API", desc: "API keys now auto-save when added/removed; added a Refresh clears button and a link to the ArenaNet applications page in the Add API modal." },
             { title: "Settings Save Notification", desc: "Added a floating, shiny 'Unsaved settings changes' toast with a Save Settings button that applies settings without restarting." },
-            { title: "Upload Queue Revamp", desc: "Optimistic pause/resume, batch 'Queued N logs' toast, per-row cancel, clear-finished, persisted pause, live concurrency, progress bar, aria-expanded." }
+            { title: "Upload Queue Revamp", desc: "Optimistic pause/resume, batch 'Queued N logs' toast, per-row cancel, clear-finished, persisted pause, live concurrency, progress bar, aria-expanded." },
+            { title: "WvW Stats Damage", desc: "WvW Stats modal now shows total damage (Target/All) instead of DPS, matching dps.report." },
+            { title: "Harvest Temple Wipe Fallback", desc: "Cleared dragons before an unlisted wipe point are now marked correctly on wipe logs." },
+            { title: "Wingman Retry Panel", desc: "Wingman retries now have a bottom-right panel with per-item cancel and Cancel all; auto-clears when Wingman is disabled." },
+            { title: "Favorite Star", desc: "Favorite star hidden on uploading (stepper) cards only." }
           ]
         }
       ]
