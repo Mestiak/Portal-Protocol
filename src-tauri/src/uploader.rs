@@ -5952,17 +5952,31 @@ pub fn shape_log_stats(json: &Value) -> LogStats {
         // dps.report "Target" column, our DPS column) is the sum over the
         // boss-target indices from phases[0].targets; the rest fills per-target
         // columns and the group target totals.
+        // WvW: boss target is "Enemy Players" (index 0); use only that.
+        let is_wvw = json
+            .get("targets")
+            .and_then(|t| t.as_array())
+            .map(|arr| arr.iter().any(|tgt| tgt.get("name").and_then(|n| n.as_str()) == Some("Enemy Players")))
+            .unwrap_or(false);
+
         let mut boss_dps = 0.0;
         if let Some(dps_targets) = p.get("dpsTargets").and_then(|v| v.as_array()) {
-            for (idx, dt) in dps_targets.iter().enumerate() {
-                let t_dps = dt
-                    .get(0)
-                    .and_then(|v| v.get("dps"))
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(0.0);
-                *target_totals.entry(idx).or_insert(0.0) += t_dps;
-                if boss_indices.contains(&idx) {
-                    boss_dps += t_dps;
+            if is_wvw {
+                // Only the "Enemy Players" target (index 0).
+                if let Some(dt) = dps_targets.first() {
+                    boss_dps = dt.get(0).and_then(|v| v.get("dps")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                }
+            } else {
+                for (idx, dt) in dps_targets.iter().enumerate() {
+                    let t_dps = dt
+                        .get(0)
+                        .and_then(|v| v.get("dps"))
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0);
+                    *target_totals.entry(idx).or_insert(0.0) += t_dps;
+                    if boss_indices.contains(&idx) {
+                        boss_dps += t_dps;
+                    }
                 }
             }
         }
