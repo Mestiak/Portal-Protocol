@@ -245,6 +245,7 @@ fn emit_skipped(app: &AppHandle, file_path: &str, file_name: &str) {
         diagnostics: None,
         is_convergence: None,
         is_wvw: None,
+        wvw_enemy_count: None,
         boss_duration: None,
         group_dps: None,
         kaineng_phases: None,
@@ -695,6 +696,17 @@ const STORY_MAP_IDS: &[u16] = &[
 
 /// Human-readable instance name for a story map id (display + grouping bucket).
 /// Falls back to the map id itself when unknown so the UI never shows a blank.
+fn wvw_map_name(map_id: u16) -> String {
+    match map_id {
+        38 => "Eternal Battlegrounds".to_string(),
+        95 => "Green Borderlands".to_string(),
+        96 => "Blue Borderlands".to_string(),
+        1099 => "Red Borderlands".to_string(),
+        968 => "Edge of the Mists".to_string(),
+        899 => "Obsidian Sanctum".to_string(),
+        other => format!("WvW (map {})", other),
+    }
+}
 fn story_map_name(map_id: u16) -> String {
     match map_id {
         579 => "The Snaff Prize".to_string(),
@@ -1194,6 +1206,8 @@ pub struct UploadRecord {
     pub ura_health_regen: Option<String>,
     #[serde(default)]
     pub is_wvw: Option<bool>,
+    #[serde(default)]
+    pub wvw_enemy_count: Option<usize>,
     pub boss_duration: Option<f64>,
     /// Group DPS (sum of all players' all-targets DPS) fetched from dps.report's
     /// Elite Insights JSON. Used by the frontend to render a damage badge.
@@ -2540,6 +2554,7 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
         diagnostics: None,
         is_convergence: None,
         is_wvw: None,
+        wvw_enemy_count: None,
         boss_duration: None,
         group_dps: None,
         is_quick_play: None,
@@ -2658,6 +2673,7 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
     let local_players_result = evtc_parser::parse_players(&file_bytes);
     let boss_hp_left_local = evtc_parser::parse_boss_hp(&file_bytes);
     let local_boss_id = evtc_parser::parse_boss_id(&file_bytes);
+    let local_wvw_map_id = evtc_parser::parse_wvw_map_id(&file_bytes);
     // Active boss-fight duration (from first combat engagement event to boss death).
     // Prioritized so that the provisional "while uploading" duration matches Elite
     // Insights' trimmed duration as closely as possible.
@@ -2698,6 +2714,24 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
             .collect::<Vec<PlayerInfo>>(),
     };
 
+    // WvW detection: boss name or local boss id in WvW map range.
+    let boss_id_opt = local_boss_id.as_ref().map(|(id, _)| *id);
+    let boss_name_opt = local_boss_id.as_ref().and_then(|(_, n)| n.clone());
+    let is_wvw = boss_name_opt.as_deref().map(|n| {
+        let l = n.to_lowercase();
+        l.contains("world vs world") || l.contains("wvw") || l.contains("enemy players") || l.contains("enemy player")
+    }).unwrap_or(false)
+        || boss_id_opt.map(|id| matches!(id, 38 | 95 | 96 | 1099 | 968 | 899)).unwrap_or(false)
+        || local_wvw_map_id.map(|id| matches!(id, 38 | 95 | 96 | 1099 | 968 | 899)).unwrap_or(false);
+    record.is_wvw = Some(is_wvw);
+    if is_wvw {
+        record.boss_name = Some("World vs World".to_string());
+        record.boss_icon = Some("wvw".to_string());
+        if let Some(mid) = local_wvw_map_id {
+            record.map_id = Some(mid);
+        }
+    }
+    if !is_wvw {
     if let Some((boss_id, boss_name)) = local_boss_id {
         // Prefer the real boss name read from the agent table (correctly
         // disambiguates shared-strike ids like Icebrood Saga 22521 = Fraenir
@@ -2713,6 +2747,7 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
             record.boss_name = Some("The Dragonvoid".to_string());
             record.boss_icon = Some("dragonvoid".to_string());
         }
+    }
     }
     let mut is_conv = false;
     if diag_bytes.len() >= 15 && diag_bytes.starts_with(b"EVTC") {
@@ -3075,6 +3110,18 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                                 record.boss_name = Some(story_map_name(sid));
                             }
                         }
+                        // WvW: capture map id from dps.report bossId if missing.
+                        if record.is_wvw == Some(true) && record.map_id.is_none() {
+                            if let Some(sid) = story_id {
+                                record.map_id = Some(sid);
+                            }
+                        }
+                        // WvW: capture map id from dps.report bossId if missing.
+                        if record.is_wvw == Some(true) && record.map_id.is_none() {
+                            if let Some(sid) = story_id {
+                                record.map_id = Some(sid);
+                            }
+                        }
                         // ── Convergences: finalize locally, skip the Elite Insights wait ──
                         // dps.report does NOT run Elite Insights on convergences, so the upload
                         // response always reports `jsonAvailable:false`. The block below would
@@ -3181,6 +3228,18 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                             // above, so keep ours instead of clobbering it with the generic tag.
                             if api_boss.as_deref() != Some("DPS.Report") && api_boss.is_some() {
                                 record.boss_name = api_boss;
+                            }
+                            // WvW: if dps.report names it World vs World, mark is_wvw + map_id
+                            if let Some(ref name) = record.boss_name {
+                                let l = name.to_lowercase();
+                                if l.contains("world vs world") || l.contains("enemy players") {
+                                    record.is_wvw = Some(true);
+                                    if record.map_id.is_none() {
+                                        record.map_id = local_wvw_map_id;
+                                    }
+                                    record.boss_name = Some("World vs World".to_string());
+                                    record.boss_icon = Some("wvw".to_string());
+                                }
                             }
                             // dps.report runs Elite Insights, which judges kill/wipe from
                             // the actual boss-death statechange — authoritative. The local
@@ -3989,6 +4048,16 @@ fn extract_api_roles(enc: &Value) -> Vec<PlayerInfo> {
         None => return vec![],
     };
 
+    // WvW: detect by presence of an "Enemy Players" target.
+    let is_wvw = enc
+        .get("targets")
+        .and_then(|t| t.as_array())
+        .map(|arr| {
+            arr.iter()
+                .any(|tgt| tgt.get("name").and_then(|n| n.as_str()) == Some("Enemy Players"))
+        })
+        .unwrap_or(false);
+
     let raws: Vec<&Value> = if let Some(arr) = players_val.as_array() {
         arr.iter().collect()
     } else if let Some(obj) = players_val.as_object() {
@@ -4027,7 +4096,11 @@ fn extract_api_roles(enc: &Value) -> Vec<PlayerInfo> {
                 }
             });
 
-            let dps = extract_dps_number(target_val).or(cleave);
+            let dps = if is_wvw {
+                cleave
+            } else {
+                extract_dps_number(target_val).or(cleave)
+            };
 
             Some(PlayerInfo {
                 display_name: vstr_val(p, "displayName")
@@ -5164,6 +5237,14 @@ fn build_discord_embed(record: &UploadRecord) -> serde_json::Value {
     if let Some(n) = record.num_players {
         fields.push(json!({ "name": "Players", "value": n.to_string(), "inline": true }));
     }
+    if record.is_wvw == Some(true) {
+        if let Some(mid) = record.map_id {
+            fields.push(json!({ "name": "Map", "value": wvw_map_name(mid), "inline": true }));
+        }
+        if let Some(ec) = record.wvw_enemy_count {
+            fields.push(json!({ "name": "Enemies", "value": ec.to_string(), "inline": true }));
+        }
+    }
     if !log_link.is_empty() {
         fields.push(json!({ "name": "Log", "value": format!("[dps.report]({})", log_link), "inline": false }));
     }
@@ -5281,6 +5362,7 @@ pub async fn test_webhook(webhook: DiscordWebhook) -> Result<String, String> {
         is_convergence: Some(false),
         kaineng_phases: None,
         is_wvw: None,
+        wvw_enemy_count: None,
         boss_duration: None,
         group_dps: None,
         is_story: Some(false),
@@ -5870,23 +5952,60 @@ pub fn shape_log_stats(json: &Value) -> LogStats {
         // dps.report "Target" column, our DPS column) is the sum over the
         // boss-target indices from phases[0].targets; the rest fills per-target
         // columns and the group target totals.
+        // WvW: boss target is "Enemy Players" (index 0); use only that.
+        let is_wvw = json
+            .get("targets")
+            .and_then(|t| t.as_array())
+            .map(|arr| {
+                arr.len() == 1
+                    && arr[0]
+                        .get("name")
+                        .and_then(|n| n.as_str())
+                        .map(|s| s.to_lowercase().contains("enemy"))
+                        .unwrap_or(false)
+                    || arr.iter().any(|tgt| {
+                        tgt.get("name")
+                            .and_then(|n| n.as_str())
+                            .map(|s| s.eq_ignore_ascii_case("Enemy Players"))
+                            .unwrap_or(false)
+                    })
+            })
+            .unwrap_or(false);
+
         let mut boss_dps = 0.0;
         if let Some(dps_targets) = p.get("dpsTargets").and_then(|v| v.as_array()) {
-            for (idx, dt) in dps_targets.iter().enumerate() {
-                let t_dps = dt
-                    .get(0)
-                    .and_then(|v| v.get("dps"))
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(0.0);
-                *target_totals.entry(idx).or_insert(0.0) += t_dps;
-                if boss_indices.contains(&idx) {
-                    boss_dps += t_dps;
+            if is_wvw {
+                // WvW: show total damage (not DPS) to match dps.report's Damage column.
+                if let Some(dt) = dps_targets.first() {
+                    boss_dps = dt.get(0).and_then(|v| v.get("damage")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                }
+            } else {
+                for (idx, dt) in dps_targets.iter().enumerate() {
+                    let t_dps = dt
+                        .get(0)
+                        .and_then(|v| v.get("dps"))
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0);
+                    *target_totals.entry(idx).or_insert(0.0) += t_dps;
+                    if boss_indices.contains(&idx) {
+                        boss_dps += t_dps;
+                    }
                 }
             }
         }
         // DPS = boss damage (dps.report Target); Cleave = total (dps.report All).
         let dps = boss_dps;
-        let cleave_dps = all_dps;
+        let cleave_dps = if is_wvw {
+            p.get("dpsAll")
+                .and_then(|v| {
+                    if let Some(arr) = v.as_array() { arr.first() } else { v.get("0") }
+                })
+                .and_then(|v| v.get("damage"))
+                .and_then(|v| v.as_f64())
+                .unwrap_or(all_dps)
+        } else {
+            all_dps
+        };
         total_dps += dps;
 
         // Boon uptimes from buffUptimesActive: [{ id, buffData:[{ uptime, presence }] }].
@@ -6037,6 +6156,7 @@ mod discord_embed_tests {
             diagnostics: None,
             is_convergence: None,
             is_wvw: None,
+        wvw_enemy_count: None,
             boss_duration: None,
             group_dps: None,
             is_quick_play: None,

@@ -880,6 +880,20 @@ async fn retry_wingman_raw_upload(app: AppHandle, file_path: String) -> Result<(
 }
 
 pub async fn wingman_raw_upload(app: AppHandle, file_path: String) -> Result<(), String> {
+    // WvW logs are excluded from Wingman (no raw upload).
+    {
+        let fp = file_path.clone();
+        let mut is_wvw = false;
+        let _ = crate::config::with_history_mut(&app, |history| {
+            if let Some(rec) = history.iter().find(|r| r.file_path == fp) {
+                is_wvw = rec.is_wvw == Some(true);
+            }
+            false
+        });
+        if is_wvw {
+            return Err("WvW logs are not uploaded to Wingman.".into());
+        }
+    }
     let config = crate::config::load_config(&app);
     if !config.wingman_enabled {
         return Err("Wingman is disabled in settings.".into());

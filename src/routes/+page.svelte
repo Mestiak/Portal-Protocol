@@ -73,6 +73,7 @@
     is_story?: boolean; // true => story instance (Personal Story grouping)
     map_id?: number; // story instance map id (stable classification key)
     is_wvw?: boolean; // World vs World log
+    wvw_enemy_count?: number;
     notes?: LogNote[];
     wingman_status?: string | null;
     wingman_account?: string | null;
@@ -407,6 +408,8 @@
   }
 
   function enqueueWingmanRetry(file_path: string) {
+    const rec = allHistory.find((h) => h.file_path === file_path) ?? uploads.find((u) => u.file_path === file_path);
+    if (rec?.is_wvw) return; // WvW logs are excluded from Wingman
     if (wingmanQueue.includes(file_path)) return;
     const freshBatch = wingmanQueue.length === 0 && !wingmanQueueRunning;
     wingmanQueue = [...wingmanQueue, file_path];
@@ -474,7 +477,7 @@
   function enqueueAllFailedOnRecovery() {
     if (wingmanStatus !== "online") return; // defer until online
     const collectFailed = (logs: UploadRecord[]) =>
-      logs.filter((h) => h.wingman_status === "failed").map((h) => h.file_path);
+      logs.filter((h) => h.wingman_status === "failed" && !h.is_wvw).map((h) => h.file_path);
     const failedSet = new Set<string>();
     for (const fp of collectFailed(allHistory)) failedSet.add(fp);
     for (const fp of collectFailed(uploads)) failedSet.add(fp);
@@ -496,7 +499,7 @@
   // is declared, further down — it can't live here (used-before-declaration).
   function retryAllFailedWingman() {
     for (const h of allHistory) {
-      if (h.wingman_status === "failed") enqueueWingmanRetry(h.file_path);
+      if (h.wingman_status === "failed" && !h.is_wvw) enqueueWingmanRetry(h.file_path);
     }
   }
 
@@ -579,6 +582,28 @@
   type PatchNoteCategory = { category: string; items: PatchNoteItem[] };
   type PatchNoteVersion = { version: string; date: string; image?: string; notes: PatchNoteCategory[] };
   const PATCH_NOTES_DATA: PatchNoteVersion[] = [
+    {
+      version: "0.7.9",
+      date: "November 2026",
+      notes: [
+        {
+          category: "⚔️ WvW Support",
+          items: [
+            { title: "WvW Log Detection", desc: "WvW logs are now detected via the EVTC MapID statechange event and dps.report boss name, with a restricted set of known WvW map IDs to avoid false positives." },
+            { title: "Borderland Badges", desc: "WvW log cards and the stepper show a color-coded borderland badge (EBG, Red/Green/Blue Borderlands, EoTM) instead of 'Normal Mode'; Success/Failed badge is hidden for WvW." },
+            { title: "WvW Map & Enemies", desc: "WvW webhooks and log cards display the borderland map name and enemy count." },
+            { title: "WvW Stats", desc: "Stats modal DPS uses the 'Enemy Players' target only; DPS column uses total (cleave) damage for WvW." },
+            { title: "WvW Excluded from Wingman", desc: "WvW logs are excluded from Wingman raw uploads and badges." }
+          ]
+        },
+        {
+          category: "🐉 Harvest Temple",
+          items: [
+            { title: "Wipe Fallback Fix", desc: "On wipe logs where dps.report truncates the phase list before the actual wipe dragon, earlier cleared dragons are now marked correctly instead of showing as not killed." }
+          ]
+        }
+      ]
+    },
     {
       version: "0.7.8",
       date: "November 2026",
@@ -1928,6 +1953,37 @@
     return base;
   }
 
+  function wvwBadgeColor(mapId?: number | null): string {
+    switch (mapId) {
+      case 1099: return "#fca59d"; // Red Borderlands
+      case 95: return "#69dcaf"; // Green Borderlands
+      case 96: return "#5fa3f8"; // Blue Borderlands
+      case 38: return "#aaaaaa"; // Eternal Battlegrounds
+      case 968: return "#aaaaaa"; // Edge of the Mists
+      default: return "#aaaaaa";
+    }
+  }
+  function wvwBadgeBg(mapId?: number | null): string {
+    switch (mapId) {
+      case 1099: return "#381e22"; // Red Borderlands
+      case 95: return "#1e3630"; // Green Borderlands
+      case 96: return "#1f2b43"; // Blue Borderlands
+      case 38: return "#515960"; // Eternal Battlegrounds
+      case 968: return "#515960"; // Edge of the Mists
+      default: return "#515960";
+    }
+  }
+  function wvwMapName(mapId: number): string {
+    const names: Record<number, string> = {
+      38: "Eternal Battlegrounds",
+      95: "Green Borderlands",
+      96: "Blue Borderlands",
+      1099: "Red Borderlands",
+      968: "Edge of the Mists",
+      899: "Obsidian Sanctum"
+    };
+    return names[mapId] ?? `WvW (map ${mapId})`;
+  }
   function formatDuration(seconds?: number | null): string {
     if (seconds == null || Number.isNaN(seconds)) return "0:00";
     const total = Math.max(0, Math.floor(seconds));
@@ -2233,6 +2289,10 @@
   function resolveBossIconSrc(log: any): string {
     const story = getStoryIcon(log.boss_name, log);
     if (story) return story;
+    // WvW logs use the dedicated borderland icon.
+    if (log.is_wvw || log.boss_icon === "wvw" || /world vs world|enemy players/i.test(log.boss_name ?? "")) {
+      return "/wvw/eternal_battlegrounds.jpg";
+    }
     const local = getBossIcon(log.boss_name, log.num_players);
     if (local !== "/bosses/unknown.png") return local;
     if (log.boss_icon) return iconForExternal(log.boss_icon);
@@ -5736,6 +5796,8 @@ async function testWebhook(wh: any) {
           <span class="cm-badge">Challenge Mode</span>
         {:else if isStoryBoss(log.boss_name, log)}
           <span class="cm-badge story-badge">Personal Story</span>
+        {:else if log.is_wvw || log.boss_icon === "wvw" || /enemy players|world vs world/i.test(log.boss_name ?? "")}
+          <span class="cm-badge wvw-badge" style="background-color: {wvwBadgeBg(log.map_id)}; color: {wvwBadgeColor(log.map_id)}; border-color: {wvwBadgeBg(log.map_id)};">{log.map_id != null ? wvwMapName(log.map_id) : (log.boss_name ?? "World vs World")}</span>
         {:else if log.boss_name}
           <span class="cm-badge nm-badge">Normal Mode</span>
         {:else if log.status === "Skipped"}
@@ -5751,6 +5813,8 @@ async function testWebhook(wh: any) {
         {:else if log.status === "Completed"}
           {#if isStoryBoss(log.boss_name, log)}
             <span class="status-pill sp-done">✓ Completed</span>
+          {:else if log.is_wvw || log.boss_icon === "wvw" || /enemy players|world vs world/i.test(log.boss_name ?? "")}
+            <!-- no success/fail badge for WvW logs -->
           {:else if log.success === true}
             <span class="status-pill sp-success">✓ Success</span>
           {:else if log.success === false}
@@ -5766,7 +5830,7 @@ async function testWebhook(wh: any) {
             Alt
           </span>
         {/if}
-        {#if wingman_enabled && wingmanQueue.includes(log.file_path)}
+        {#if wingman_enabled && wingmanQueue.includes(log.file_path) && !log.is_wvw}
           <span class="wm-chip wm-sending" title="Queued for Wingman import — will be processed shortly.">
             <img src="/wingman_icon.png" alt="" class="wm-spin" style="width:14px;height:14px;vertical-align:middle;" /> Queued
           </span>
@@ -5777,7 +5841,7 @@ async function testWebhook(wh: any) {
             <span class="custom-tooltip">Uploads paused — resume in settings.</span>
           </span>
         {/if}
-        {#if wingman_enabled && (log.wingman_status === "failed" || log.wingman_status === "imported" || wingmanUi[log.file_path] === "sending" || wingmanUi[log.file_path] === "verifying" || log.wingman_status === "done" || log.wingman_status === "in_progress")}
+        {#if wingman_enabled && (log.wingman_status === "failed" || log.wingman_status === "imported" || wingmanUi[log.file_path] === "sending" || wingmanUi[log.file_path] === "verifying" || log.wingman_status === "done" || log.wingman_status === "in_progress") && !log.is_wvw}
           {@const isActive = wingmanUi[log.file_path] === "sending" || wingmanQueue.includes(log.file_path)}
           {@const isVerifying = wingmanUi[log.file_path] === "verifying"}
           {@const wmState = isVerifying ? "verifying" : (isActive ? "sending" : (log.wingman_status === "in_progress" ? "pending" : (log.wingman_status ?? "failed")))}
@@ -5844,6 +5908,12 @@ async function testWebhook(wh: any) {
           {/if}
           {#if log.num_players != null}
             <span class="meta-item"><i class="fa-solid fa-users" style="margin-right: 4px; font-size: 11px;"></i> {log.num_players} Players</span>
+          {/if}
+          {#if log.is_wvw && log.map_id != null}
+            <span class="meta-item"><i class="fa-solid fa-map" style="margin-right: 4px; font-size: 11px;"></i> {wvwMapName(log.map_id)}</span>
+          {/if}
+          {#if log.is_wvw && log.wvw_enemy_count != null}
+            <span class="meta-item"><i class="fa-solid fa-skull" style="margin-right: 4px; font-size: 11px;"></i> {log.wvw_enemy_count} Enemies</span>
           {/if}
           <span class="meta-item"><i class="fa-solid fa-calendar-days" style="margin-right: 4px; font-size: 11px;"></i> {log.timestamp}</span>
         </div>
