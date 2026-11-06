@@ -2144,6 +2144,9 @@ async fn spawn_upload(
     // finish instantly. Previously the dedup `return` ran before registration,
     // so a re-dragged (already-uploaded) log never appeared in the drawer — the
     // exact "2 of 5 invisible" the user hit when re-testing with the same files.
+    // Clear any stale terminal entry first so a re-processed log doesn't get
+    // stuck in "queued" (which caused an infinite queue loop).
+    queue_remove(&file_path);
     queue_upsert(QueueItem {
         file_path: file_path.clone(),
         file_name: file_name.clone(),
