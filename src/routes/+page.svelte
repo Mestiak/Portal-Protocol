@@ -485,12 +485,17 @@
     enqueueWingmanRetry(file_path);
   }
 
+  let wingmanRetryCooldown = $state<Record<string, number>>({});
   // On Wingman recovery, sweep all failed logs into the queue. Jitter spreads
   // client start times so recovery doesn't trigger a synchronized herd.
+  // A per-log cooldown prevents the same failing log from being re-enqueued
+  // on every recovery blip (which caused an infinite retry loop + drawer spam).
   function enqueueAllFailedOnRecovery() {
     if (wingmanStatus !== "online") return; // defer until online
+    const COOLDOWN_MS = 300000; // 5 min
+    const now = Date.now();
     const collectFailed = (logs: UploadRecord[]) =>
-      logs.filter((h) => h.wingman_status === "failed" && !h.is_wvw).map((h) => h.file_path);
+      logs.filter((h) => h.wingman_status === "failed" && !h.is_wvw && !(wingmanRetryCooldown[h.file_path] && now - wingmanRetryCooldown[h.file_path] < COOLDOWN_MS)).map((h) => h.file_path);
     const failedSet = new Set<string>();
     for (const fp of collectFailed(allHistory)) failedSet.add(fp);
     for (const fp of collectFailed(uploads)) failedSet.add(fp);
@@ -503,7 +508,12 @@
     const failed = [...failedSet];
     if (failed.length === 0) return;
     const jitter = Math.floor(Math.random() * 15000);
-    setTimeout(() => { for (const fp of failed) enqueueWingmanRetry(fp); }, jitter);
+    setTimeout(() => {
+      for (const fp of failed) {
+        wingmanRetryCooldown[fp] = Date.now();
+        enqueueWingmanRetry(fp);
+      }
+    }, jitter);
   }
 
   // Manual "Retry all failed" (sidebar button): enqueue every failed log NOW,
