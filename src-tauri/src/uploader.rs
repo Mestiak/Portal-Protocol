@@ -5975,9 +5975,9 @@ pub fn shape_log_stats(json: &Value) -> LogStats {
         let mut boss_dps = 0.0;
         if let Some(dps_targets) = p.get("dpsTargets").and_then(|v| v.as_array()) {
             if is_wvw {
-                // Only the "Enemy Players" target (index 0).
+                // WvW: show total damage (not DPS) to match dps.report's Damage column.
                 if let Some(dt) = dps_targets.first() {
-                    boss_dps = dt.get(0).and_then(|v| v.get("dps")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    boss_dps = dt.get(0).and_then(|v| v.get("damage")).and_then(|v| v.as_f64()).unwrap_or(0.0);
                 }
             } else {
                 for (idx, dt) in dps_targets.iter().enumerate() {
@@ -5995,7 +5995,17 @@ pub fn shape_log_stats(json: &Value) -> LogStats {
         }
         // DPS = boss damage (dps.report Target); Cleave = total (dps.report All).
         let dps = boss_dps;
-        let cleave_dps = all_dps;
+        let cleave_dps = if is_wvw {
+            p.get("dpsAll")
+                .and_then(|v| {
+                    if let Some(arr) = v.as_array() { arr.first() } else { v.get("0") }
+                })
+                .and_then(|v| v.get("damage"))
+                .and_then(|v| v.as_f64())
+                .unwrap_or(all_dps)
+        } else {
+            all_dps
+        };
         total_dps += dps;
 
         // Boon uptimes from buffUptimesActive: [{ id, buffData:[{ uptime, presence }] }].
