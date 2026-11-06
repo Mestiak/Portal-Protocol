@@ -44,7 +44,62 @@ pub fn query_filtered(app: &AppHandle, f: &HistoryFilters, page: usize, limit: u
 }
 
 fn clean(s: &str) -> String {
-    s.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect()
+    let name: String = s.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect();
+    if name.contains("umbriel") {
+        return "umbriel".to_string();
+    }
+    if name.contains("greer") {
+        return "greer".to_string();
+    }
+    if name.contains("decima") {
+        return "decima".to_string();
+    }
+    if name.contains("ura") {
+        return "ura".to_string();
+    }
+    if name == "oldlion" || name == "oldlionscourt" {
+        return "oldlionscourt".to_string();
+    }
+    if name == "samaroq" || name == "samarog" {
+        return "samarog".to_string();
+    }
+    if name == "captainmaitrin" || name == "maitrin" {
+        return "captainmaitrin".to_string();
+    }
+    if name == "aetherbladehideout" {
+        return "aetherbladehideout".to_string();
+    }
+    if name == "ministerli" || name == "kainengoverlook" {
+        return "kainengoverlook".to_string();
+    }
+    if name == "ankka" || name == "xunlaijadejunkyard" {
+        return "xunlaijadejunkyard".to_string();
+    }
+    if name == "dragonvoid" || name == "harvesttemple" || name == "harvesttemplecm" {
+        return "harvesttemple".to_string();
+    }
+    if name == "thevoiceandtheclaw"
+        || name == "voiceandclaw"
+        || name == "voiceandclawofthefallen"
+        || name == "voiceofthefallen"
+        || name == "clawofthefallen"
+    {
+        return "voiceandclaw".to_string();
+    }
+    if name == "dagda" || name == "cosmicobservatory" {
+        return "cosmicobservatory".to_string();
+    }
+    if name == "cerus" || name == "templeoffebe" {
+        return "templeoffebe".to_string();
+    }
+    if name == "desminaescort" || name == "riverofsouls" {
+        return "riverofsouls".to_string();
+    }
+    // Prototype Watchknights (Old Lion's Court)
+    if name == "prototypevermilion" || name == "prototypeindigo" || name == "prototypegold" {
+        return "oldlionscourt".to_string();
+    }
+    name
 }
 
 fn encounter_type(log: &UploadRecord) -> &'static str {
