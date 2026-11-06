@@ -1703,7 +1703,7 @@ dependencies = [
 
 [[package]]
 name = "gw2-log-uploader"
-version = "0.7.7"
+version = "0.7.8"
 dependencies = [
  "chrono",
  "directories",
