@@ -2135,8 +2135,22 @@ async fn spawn_upload(
     let file_path = path.to_string_lossy().to_string();
     let file_name = path
         .file_name()
-        .map(|f| f.to_string_lossy().to_string())
+        .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
+
+    // Dedup guard: if this file is already in-flight (queued/active) in the
+    // live queue, don't re-process it — a re-triggered spawn (watcher re-scan,
+    // duplicate drag, recovery overlap) would otherwise reset the entry back to
+    // "queued" and loop forever. Terminal (done/skipped) entries are allowed to
+    // re-enter so genuine retries still work.
+    {
+        let g = UPLOAD_QUEUE.get_or_init(|| Mutex::new(Vec::new())).lock().unwrap();
+        if let Some(it) = g.iter().find(|i| i.file_path == file_path) {
+            if it.state == "queued" || it.state == "active" {
+                return;
+            }
+        }
+    }
 
     // Register EVERY received file in the live queue IMMEDIATELY — BEFORE any
     // skip/dedup gate — so the footer drawer shows the ENTIRE batch the user
