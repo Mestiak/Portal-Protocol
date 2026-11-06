@@ -3003,10 +3003,12 @@
   let historyLogs = $derived(filteredHistory);             // alias for code that expected the full list
   let historyTotalCount = $derived(historyFilteredTotal); // drives the pager
   // Server-side filtered + paginated history for the History tab.
+  let historyFetchSeq = 0;
   $effect(() => {
     const f = filters;
     const page = historyPage;
     const limit = historyLimit;
+    const seq = ++historyFetchSeq;
     (async () => {
       try {
         const range = f.datePreset !== "all" ? dateRange(f) : null;
@@ -3030,6 +3032,7 @@
           page,
           limit,
         });
+        if (seq !== historyFetchSeq) return;
         filteredHistory = res.rows;
         historyFilteredTotal = res.total;
       } catch (e) {
@@ -3051,7 +3054,7 @@
   });
   // Reset to page 1 whenever any filter changes so a now-shorter list never
   // leaves the user stranded on a blank page 3.
-  $effect(() => { filters; historyPage = 0; });
+  $effect(() => { filters.boss; filters.result; filters.cmMode; filters.profession; filters.professionKind; filters.type; filters.vlRank; filters.search; filters.datePreset; filters.hasNotes; filters.isFavorite; filters.timeFrom; filters.timeTo; historyPage = 0; });
   let pendingManualTargets: Record<string, { sessionId: string; subFolderId: string | null }> = {};
   let deletingLogPaths = $state<Set<string>>(new Set());
   let toastMsg = $state<string | null>(null);
