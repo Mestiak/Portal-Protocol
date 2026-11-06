@@ -1082,10 +1082,7 @@ pub fn dragon_phase_full_with_adds(
             })
             .map(|p| p.order)
             .or_else(|| {
-                out.iter()
-                    .rev()
-                    .find(|p| dragon_keys.contains(p.key.as_str()))
-                    .map(|p| p.order)
+                out.last().map(|p| p.order)
             });
 
         if let Some(wipe_order) = wipe_order {
