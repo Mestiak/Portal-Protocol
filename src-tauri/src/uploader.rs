@@ -2182,7 +2182,16 @@ async fn spawn_upload(
     let fp_key = file_path.clone(); // keep an owned copy for the post-upload queue cleanup
     let sem = concurrency_sem();
     if let Some(sem) = sem {
-        let permit = sem.clone().acquire_owned().await;
+        // Guard against a stuck slot (e.g. after a crash/orphaned permit) so a
+        // "queued" entry can never hang forever waiting for a permit that never
+        // arrives. After the timeout we drop the item from the queue as done.
+        let permit = match tokio::time::timeout(Duration::from_secs(60), sem.clone().acquire_owned()).await {
+            Ok(Ok(p)) => p,
+            _ => {
+                queue_mark_done(&file_path, &emit_handle);
+                return;
+            }
+        };
         // Now we actually hold a slot -> flip to "active" so the pill reflects reality.
         queue_upsert(QueueItem {
             file_path: file_path.clone(),
