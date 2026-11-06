@@ -592,14 +592,6 @@
   type PatchNoteCategory = { category: string; items: PatchNoteItem[] };
   type PatchNoteVersion = { version: string; date: string; image?: string; notes: PatchNoteCategory[] };
   const PATCH_NOTES_DATA: PatchNoteVersion[] = [
-        {
-          category: "🐉 Harvest Temple",
-          items: [
-            { title: "Wipe Fallback Fix", desc: "On wipe logs where dps.report truncates the phase list before the actual wipe dragon, earlier cleared dragons are now marked correctly instead of showing as not killed." }
-          ]
-        }
-      ]
-    },
     {
       version: "0.7.8",
       date: "November 2026",
