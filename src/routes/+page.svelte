@@ -8601,11 +8601,11 @@ async function testWebhook(wh: any) {
                 <div class="queue-row">
                   <i class="fa-solid fa-clock queue-row-icon"></i>
                   <span class="queue-row-name" title={fp}>{fp.split('/').pop()}</span>
-                  <button class="queue-row-cancel" onclick={() => { wingmanQueue = wingmanQueue.filter(x => x !== fp); }} title="Cancel">✕</button>
+                  <button class="queue-row-cancel" style="border: none; background: transparent; color: #fca5a5; cursor: pointer; font-size: 12px; padding: 0 4px;" onclick={() => { wingmanQueue = wingmanQueue.filter(x => x !== fp); }} title="Cancel">✕</button>
                 </div>
               {/each}
             </div>
-            <button class="queue-drawer-pause" onclick={() => { wingmanQueue = []; wingmanQueueRunning = false; wingmanDrawerOpen = false; }}>
+            <button class="queue-drawer-pause" style="background: color-mix(in srgb, #ef4444 15%, transparent); border-color: #ef4444; color: #fca5a5;" onclick={() => { wingmanQueue = []; wingmanQueueRunning = false; wingmanDrawerOpen = false; }}>
               Cancel all
             </button>
           </div>
