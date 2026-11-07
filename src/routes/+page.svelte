@@ -8217,7 +8217,7 @@ async function testWebhook(wh: any) {
                 </button>
               </div>
               <span style="font-size: 10px; color: var(--text-muted); display: block; margin-top: 4px;">
-                VACUUM compacts the file after bulk deletes. REINDEX rebuilds search indexes. Backup copies history.db to your config folder.
+                Optimize DB compacts the file after bulk deletes. Rebuild Index rebuilds search indexes. Check Integrity verifies the database. Backup DB copies history.db to your config folder.
               </span>
             </div>
 
