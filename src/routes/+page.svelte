@@ -3008,6 +3008,7 @@
   let historyLimit = $state(25);
   let filteredHistory = $state<UploadRecord[]>([]); // server-filtered page
   let historyFilteredTotal = $state(0);
+  let historyReloadTick = $state(0);
   // Count of logs whose Wingman import failed — drives the sidebar "Retry all failed" button.
   let failedWingmanCount = $derived(
     allHistory.filter((h) => h.wingman_status === "failed").length,
@@ -3026,6 +3027,7 @@
     const page = historyPage;
     const limit = historyLimit;
     const seq = ++historyFetchSeq;
+    void historyReloadTick;
     (async () => {
       try {
         const range = f.datePreset !== "all" ? dateRange(f) : null;
@@ -4284,6 +4286,7 @@
             apply(c);
             allHistory[hIdx] = c;
             allHistory = [...allHistory];
+            historyReloadTick++;
           }
           return;
         }
@@ -4297,6 +4300,7 @@
         if (hIdx !== -1) {
           allHistory[hIdx] = r;
           allHistory = [...allHistory];
+          historyReloadTick++;
         } else if (
           // Patch live into History for any terminal/settled state. `Processing`
           // (a log parked while dps.report's Elite Insights runs) MUST be included
@@ -4306,6 +4310,8 @@
           r.status === "Duplicate" || r.status === "Processing"
         ) {
           allHistory = [r, ...allHistory];
+          historyReloadTick++;
+          historyPage = 0;
         }
 
         // Auto-enqueue On Hold logs (no dps.report link) for Wingman raw upload
