@@ -612,7 +612,8 @@
         {
           category: "🗄️ History & Storage",
           items: [
-            { title: "SQLite History", desc: "History migrated from history.json to a local SQLite database (history.db) for fast filtering/pagination across thousands of logs." },
+            { title: "Why", desc: "history.json loaded the entire history into memory for every filter/pagination action, which got slow and capped at 5,000 records. SQLite (history.db) keeps everything on disk and queries only the page you're viewing, so filters and Next/Prev stay instant even with thousands of logs." },
+            { title: "SQLite History", desc: "History migrated from history.json to a local SQLite database (history.db)." },
             { title: "Server-Side Filtering", desc: "Server-side filtered, paginated history queries (boss, type, rank, profession, date/time, search) — no more loading everything into memory." },
             { title: "Boss Filter Aliases", desc: "Fixed boss filter aliases (Cerus, Dagda, Minister Li, Prototype Watchknights, River of Souls, The Dragonvoid, Umbriel, Voice and Claw, etc.)." },
             { title: "Pagination Fix", desc: "Fixed Next/Prev pagination blank page and stale-fetch flash." },
