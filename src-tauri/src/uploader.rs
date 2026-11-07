@@ -5777,7 +5777,91 @@ pub async fn clear_history_cache(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Streams the full dps.report getJson for a permalink ONCE (size-capped) and
+/// Returns (db_file_bytes, reclaimable_bytes, record_count) for the History DB.
+#[tauri::command]
+pub async fn get_history_db_stats(app: AppHandle) -> Result<(u64, u64, usize), String> {
+    let path = crate::db::get_db_path(&app);
+    let mut total_bytes: u64 = 0;
+    for suffix in ["", "-wal", "-shm"] {
+        let p = if suffix.is_empty() {
+            path.clone()
+        } else {
+            PathBuf::from(format!("{}{}", path.display(), suffix))
+        };
+        if let Ok(meta) = std::fs::metadata(&p) {
+            if meta.is_file() {
+                total_bytes += meta.len();
+            }
+        }
+    }
+    let (reclaimable, count) = match crate::db::open_db(&app) {
+        Ok(conn) => {
+            let page_size: i64 = conn
+                .query_row("PRAGMA page_size", [], |r| r.get(0))
+                .unwrap_or(0);
+            let freelist: i64 = conn
+                .query_row("PRAGMA freelist_count", [], |r| r.get(0))
+                .unwrap_or(0);
+            let count: usize = conn
+                .query_row("SELECT COUNT(*) FROM history", [], |r| r.get(0))
+                .unwrap_or(0);
+            (freelist * page_size, count)
+        }
+        Err(_) => (0, crate::config::load_history(&app).len()),
+    };
+    Ok((total_bytes, reclaimable.max(0) as u64, count))
+}
+
+/// Compact the History DB (VACUUM) and checkpoint WAL.
+#[tauri::command]
+pub async fn vacuum_history_db(app: AppHandle) -> Result<(), String> {
+    let conn = crate::db::open_db(&app)?;
+    conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;")
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Rebuild all indexes in the History DB.
+#[tauri::command]
+pub async fn reindex_history_db(app: AppHandle) -> Result<(), String> {
+    let conn = crate::db::open_db(&app)?;
+    conn.execute_batch("REINDEX;")
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Run PRAGMA integrity_check; returns true if "ok".
+#[tauri::command]
+pub async fn check_history_db_integrity(app: AppHandle) -> Result<bool, String> {
+    let conn = crate::db::open_db(&app)?;
+    let result: String = conn
+        .query_row("PRAGMA integrity_check", [], |r| r.get(0))
+        .map_err(|e| e.to_string())?;
+    Ok(result.eq_ignore_ascii_case("ok"))
+}
+
+/// Copy history.db (+wal) to a timestamped backup file; returns the path.
+#[tauri::command]
+pub async fn backup_history_db(app: AppHandle) -> Result<String, String> {
+    let src = crate::db::get_db_path(&app);
+    if !src.exists() {
+        return Err("history.db does not exist".into());
+    }
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| e.to_string())?;
+    let backup_dir = dir.join("history_backups");
+    std::fs::create_dir_all(&backup_dir).map_err(|e| e.to_string())?;
+    let ts = chrono::Utc::now().format("%Y%m%d-%H%M%S");
+    let dest = backup_dir.join(format!("history-{}.db", ts));
+    // Checkpoint WAL into main db first so the copy is consistent.
+    if let Ok(conn) = crate::db::open_db(&app) {
+        let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+    }
+    std::fs::copy(&src, &dest).map_err(|e| e.to_string())?;
+    Ok(dest.display().to_string())
+}
 /// returns both the raw JSON (for the in-browser mechanic parser) and the
 /// Rust-shaped combat `LogStats` (for the Combat tab). Served from a raw-JSON
 /// cache so re-opening the modal never re-downloads. The raw `Value` is dropped

@@ -223,6 +223,10 @@
   let showClearCacheModal = $state(false);
   let historyCacheSize = $state<number>(0);
   let historyCacheCount = $state<number>(0);
+  let historyDbBytes = $state<number>(0);
+  let historyDbReclaimable = $state<number>(0);
+  let historyDbIntegrity = $state<boolean | null>(null);
+  let dbMaintBusy = $state<string>("");
   let showClearHistoryModal = $state(false);
   let html_cache_max_files = $state<number>(50);
   let htmlCacheSize = $state<number>(0);
@@ -5640,6 +5644,15 @@ async function testWebhook(wh: any) {
       console.error("Failed to query history cache size:", e);
     }
     try {
+      const res = await invoke("get_history_db_stats") as [number, number, number];
+      if (Array.isArray(res)) {
+        historyDbBytes = res[0] ?? 0;
+        historyDbReclaimable = res[1] ?? 0;
+      }
+    } catch (e) {
+      console.error("Failed to query history db stats:", e);
+    }
+    try {
       const res = await invoke("get_ei_html_cache_info") as [number, number];
       if (Array.isArray(res)) {
         htmlCacheSize = res[0] ?? 0;
@@ -8159,7 +8172,7 @@ async function testWebhook(wh: any) {
             <div style="display: flex; flex-direction: column; gap: 6px;">
               <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px;">
                 <div>
-                  <div style="font-size: 13px; font-weight: 600; color: var(--text);">Analytics &amp; History Cache</div>
+                  <div style="font-size: 13px; font-weight: 600; color: var(--text);">History Records</div>
                   <div class="tabular-nums" style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
                     {formatSize(historyCacheSize)} accumulated across {historyCacheCount} uploaded records
                   </div>
@@ -8175,8 +8188,56 @@ async function testWebhook(wh: any) {
                 </button>
               </div>
               <span style="font-size: 10px; color: var(--text-muted); display: block; margin-left: 4px;">
-                Clear historical records database (`history.json`). This will clear your Analytics graphs and History logs list.
+                Clears the History list and Analytics graphs. Stored in history.db.
               </span>
+            </div>
+
+            <!-- Database maintenance -->
+            <div style="display: flex; flex-direction: column; gap: 6px; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                <div>
+                  <div style="font-size: 13px; font-weight: 600; color: var(--text);">Database Maintenance</div>
+                  <div class="tabular-nums" style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                    {formatSize(historyDbBytes)} on disk · {historyDbReclaimable > 0 ? formatSize(historyDbReclaimable) + ' reclaimable' : 'no free space'} · {historyDbIntegrity === null ? 'not checked' : historyDbIntegrity ? 'integrity OK' : 'integrity FAILED'}
+                  </div>
+                </div>
+              </div>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px;">
+                <button class="cache-export-btn" style="padding: 6px 12px;" disabled={dbMaintBusy !== ""} onclick={async () => { dbMaintBusy = "optimizing"; try { await invoke("vacuum_history_db"); await refreshCacheSize(); showToast("Database optimized.", "success"); } catch (e) { showToast(`Optimize failed: ${e}`, "default"); } finally { dbMaintBusy = ""; } }}>
+                  <i class="fa-solid fa-broom" style="margin-right: 4px;"></i> {dbMaintBusy === "optimizing" ? "Optimizing…" : "Optimize DB"}
+                </button>
+                <button class="cache-export-btn" style="padding: 6px 12px;" disabled={dbMaintBusy !== ""} onclick={async () => { dbMaintBusy = "reindexing"; try { await invoke("reindex_history_db"); showToast("Search index rebuilt.", "success"); } catch (e) { showToast(`Reindex failed: ${e}`, "default"); } finally { dbMaintBusy = ""; } }}>
+                  <i class="fa-solid fa-rotate" style="margin-right: 4px;"></i> {dbMaintBusy === "reindexing" ? "Rebuilding…" : "Rebuild Index"}
+                </button>
+                <button class="cache-export-btn" style="padding: 6px 12px;" disabled={dbMaintBusy !== ""} onclick={async () => { dbMaintBusy = "checking"; try { const ok = await invoke("check_history_db_integrity") as boolean; historyDbIntegrity = ok; showToast(ok ? "Database integrity OK." : "Integrity check FAILED.", ok ? "success" : "default"); } catch (e) { showToast(`Integrity check failed: ${e}`, "default"); } finally { dbMaintBusy = ""; } }}>
+                  <i class="fa-solid fa-shield-halved" style="margin-right: 4px;"></i> {dbMaintBusy === "checking" ? "Checking…" : "Check Integrity"}
+                </button>
+                <button class="cache-export-btn" style="padding: 6px 12px;" disabled={dbMaintBusy !== ""} onclick={async () => { dbMaintBusy = "backingup"; try { const p = await invoke("backup_history_db") as string; showToast(`Backup saved: ${p}`, "success"); } catch (e) { showToast(`Backup failed: ${e}`, "default"); } finally { dbMaintBusy = ""; } }}>
+                  <i class="fa-solid fa-copy" style="margin-right: 4px;"></i> {dbMaintBusy === "backingup" ? "Backing up…" : "Backup DB"}
+                </button>
+              </div>
+              <span style="font-size: 10px; color: var(--text-muted); display: block; margin-top: 4px;">
+                VACUUM compacts the file after bulk deletes. REINDEX rebuilds search indexes. Backup copies history.db to your config folder.
+              </span>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px;">
+                <div>
+                  <div style="font-size: 13px; font-weight: 600; color: var(--text);">Analytics Cache</div>
+                  <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                    In-memory memoized stats. Regenerable from History.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  class="cache-clear-btn"
+                  onclick={async () => { const m = await import("../lib/analyticsEngine"); m.clearAnalyticsCache(); showToast("Analytics cache cleared.", "success"); }}
+                  title="Clear in-memory analytics memo"
+                >
+                  <i class="fa-solid fa-trash-can"></i> Clear
+                </button>
+              </div>
             </div>
           </div>
         </section>
