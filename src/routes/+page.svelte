@@ -610,22 +610,6 @@
       date: "November 2026",
       notes: [
         {
-          category: "⚔️ WvW Support",
-          items: [
-            { title: "WvW Log Detection", desc: "WvW logs detected via EVTC MapID statechange event + dps.report boss name, restricted to known WvW map IDs." },
-            { title: "Borderland Badges", desc: "Color-coded borderland badges (EBG, Red/Green/Blue Borderlands, EoTM) on cards and stepper; Success/Failed badge hidden for WvW." },
-            { title: "WvW Webhooks & Cards", desc: "WvW webhooks and cards show borderland map name and enemy count." },
-            { title: "WvW Stats & DPS", desc: "Stats modal DPS uses 'Enemy Players' target only; DPS column uses total (cleave) damage." },
-            { title: "Wingman Exclusion", desc: "WvW logs excluded from Wingman raw uploads and badges." }
-          ]
-        },
-        {
-          category: "🐉 Harvest Temple",
-          items: [
-            { title: "Wipe Fallback", desc: "On logs where dps.report truncates the phase list before the actual wipe dragon, earlier cleared dragons are now marked correctly." }
-          ]
-        },
-        {
           category: "🗄️ History & Storage",
           items: [
             { title: "SQLite History", desc: "History migrated from history.json to a local SQLite database (history.db) for fast filtering/pagination across thousands of logs." },
