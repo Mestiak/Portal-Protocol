@@ -606,6 +606,38 @@
   type PatchNoteVersion = { version: string; date: string; image?: string; notes: PatchNoteCategory[] };
   const PATCH_NOTES_DATA: PatchNoteVersion[] = [
     {
+      version: "0.7.9",
+      date: "November 2026",
+      notes: [
+        {
+          category: "⚔️ WvW Support",
+          items: [
+            { title: "WvW Log Detection", desc: "WvW logs detected via EVTC MapID statechange event + dps.report boss name, restricted to known WvW map IDs." },
+            { title: "Borderland Badges", desc: "Color-coded borderland badges (EBG, Red/Green/Blue Borderlands, EoTM) on cards and stepper; Success/Failed badge hidden for WvW." },
+            { title: "WvW Webhooks & Cards", desc: "WvW webhooks and cards show borderland map name and enemy count." },
+            { title: "WvW Stats & DPS", desc: "Stats modal DPS uses 'Enemy Players' target only; DPS column uses total (cleave) damage." },
+            { title: "Wingman Exclusion", desc: "WvW logs excluded from Wingman raw uploads and badges." }
+          ]
+        },
+        {
+          category: "🐉 Harvest Temple",
+          items: [
+            { title: "Wipe Fallback", desc: "On logs where dps.report truncates the phase list before the actual wipe dragon, earlier cleared dragons are now marked correctly." }
+          ]
+        },
+        {
+          category: "🗄️ History & Storage",
+          items: [
+            { title: "SQLite History", desc: "History migrated from history.json to a local SQLite database (history.db) for fast filtering/pagination across thousands of logs." },
+            { title: "Server-Side Filtering", desc: "Server-side filtered, paginated history queries (boss, type, rank, profession, date/time, search) — no more loading everything into memory." },
+            { title: "Boss Filter Aliases", desc: "Fixed boss filter aliases (Cerus, Dagda, Minister Li, Prototype Watchknights, River of Souls, The Dragonvoid, Umbriel, Voice and Claw, etc.)." },
+            { title: "Pagination Fix", desc: "Fixed Next/Prev pagination blank page and stale-fetch flash." },
+            { title: "Storage Size", desc: "Settings → Storage now reports the real history.db size instead of 0 Bytes." }
+          ]
+        }
+      ]
+    },
+    {
       version: "0.7.8",
       date: "November 2026",
       notes: [
