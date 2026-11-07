@@ -3746,6 +3746,8 @@
     // store. Must NOT touch the Uploads Feed or Folders (independent stores).
     setTimeout(async () => {
       allHistory = allHistory.filter(u => u.file_path !== filePath);
+      filteredHistory = filteredHistory.filter(u => u.file_path !== filePath);
+      if (historyFilteredTotal > 0) historyFilteredTotal--;
       try {
         await invoke("delete_history_log", { filePath });
       } catch (err) {
