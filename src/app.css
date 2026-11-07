@@ -8939,3 +8939,18 @@ input:focus {
 .wm-cancel:hover { color: var(--accent); }
 
 .wm-retry-in { font-size: 11px; color: var(--muted-foreground); margin-left: 4px; }
+
+.migration-toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  padding: 10px 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--foreground);
+  font-size: 13px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
