@@ -5840,6 +5840,83 @@ pub async fn check_history_db_integrity(app: AppHandle) -> Result<bool, String> 
     Ok(result.eq_ignore_ascii_case("ok"))
 }
 
+/// Auto-backup history.db if the last backup is older than `days` days.
+/// Keeps at most `keep` backups (newest first). Returns (backed_up, path_or_reason).
+#[tauri::command]
+pub async fn auto_backup_if_stale(app: AppHandle, days: u64, keep: usize) -> Result<(bool, String), String> {
+    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let backup_dir = dir.join("history_backups");
+    std::fs::create_dir_all(&backup_dir).map_err(|e| e.to_string())?;
+
+    // Find newest backup mtime.
+    let mut newest: Option<std::time::SystemTime> = None;
+    if let Ok(entries) = std::fs::read_dir(&backup_dir) {
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.extension().and_then(|s| s.to_str()) == Some("db") {
+                if let Ok(meta) = e.metadata() {
+                    if let Ok(mtime) = meta.modified() {
+                        if newest.map(|n| mtime > n).unwrap_or(true) {
+                            newest = Some(mtime);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let stale = match newest {
+        None => true,
+        Some(t) => {
+            let age = std::time::SystemTime::now()
+                .duration_since(t)
+                .unwrap_or_default();
+            age.as_secs() > days * 24 * 3600
+        }
+    };
+
+    if !stale {
+        // Still prune to retention.
+        prune_backups(&backup_dir, keep);
+        return Ok((false, "backup up to date".into()));
+    }
+
+    // Checkpoint WAL first for consistency.
+    if let Ok(conn) = crate::db::open_db(&app) {
+        let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+    }
+
+    let src = crate::db::get_db_path(&app);
+    if !src.exists() {
+        return Ok((false, "no history.db".into()));
+    }
+    let ts = chrono::Utc::now().format("%Y%m%d-%H%M%S");
+    let dest = backup_dir.join(format!("history-{}.db", ts));
+    std::fs::copy(&src, &dest).map_err(|e| e.to_string())?;
+
+    prune_backups(&backup_dir, keep);
+    Ok((true, dest.display().to_string()))
+}
+
+fn prune_backups(dir: &std::path::Path, keep: usize) {
+    let mut files: Vec<(std::time::SystemTime, std::path::PathBuf)> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.extension().and_then(|s| s.to_str()) == Some("db") {
+                if let Ok(meta) = e.metadata() {
+                    if let Ok(mtime) = meta.modified() {
+                        files.push((mtime, p));
+                    }
+                }
+            }
+        }
+    }
+    files.sort_by(|a, b| b.0.cmp(&a.0)); // newest first
+    for (_, p) in files.into_iter().skip(keep) {
+        let _ = std::fs::remove_file(p);
+    }
+}
 /// Copy history.db (+wal) to a timestamped backup file; returns the path.
 #[tauri::command]
 pub async fn backup_history_db(app: AppHandle) -> Result<String, String> {

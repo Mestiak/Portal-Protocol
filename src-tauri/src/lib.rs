@@ -1550,6 +1550,7 @@ pub fn run() {
             crate::uploader::vacuum_history_db,
             crate::uploader::reindex_history_db,
             crate::uploader::check_history_db_integrity,
+            crate::uploader::auto_backup_if_stale,
             crate::uploader::backup_history_db,
             crate::uploader::test_webhook,
             crate::uploader::read_webhook_log,

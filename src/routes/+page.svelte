@@ -228,6 +228,8 @@
   let historyDbIntegrity = $state<boolean | null>(null);
   let dbMaintBusy = $state<string>("");
   let showClearHistoryModal = $state(false);
+  let showCloseBackupModal = $state(false);
+  let isClosing = $state(false);
   let html_cache_max_files = $state<number>(50);
   let htmlCacheSize = $state<number>(0);
   let htmlCacheCount = $state<number>(0);
@@ -4155,13 +4157,28 @@
     invoke("check_bundled_ei").catch((e) => {
       console.error("Bundled EI check failed:", e);
     });
-    // Show migration toast if a history.json → SQLite migration ran this launch.
-    invoke<number>("get_migration_count").then((n) => {
-      if (n > 0) {
-        migrationToast = `Migrated ${n} logs into the new database`;
-        setTimeout(() => (migrationToast = ""), 4000);
-      }
-    }).catch(() => {});
+    // Auto-backup + checkpoint on close: show a brief modal so the user sees it.
+    try {
+      const appWindow = getCurrentWindow();
+      appWindow.onCloseRequested(async (event) => {
+        if (isClosing) return;
+        event.preventDefault();
+        isClosing = true;
+        showCloseBackupModal = true;
+        try {
+          await invoke("auto_backup_if_stale", { days: 1, keep: 7 });
+        } catch (e) { console.error("auto backup failed", e); }
+        await new Promise((r) => setTimeout(r, 2000));
+        await appWindow.close();
+      });
+    } catch (e) { console.error("close handler failed", e); }
+      // Show migration toast if a history.json → SQLite migration ran this launch.
+      invoke<number>("get_migration_count").then((n) => {
+        if (n > 0) {
+          migrationToast = `Migrated ${n} logs into the new database`;
+          setTimeout(() => (migrationToast = ""), 4000);
+        }
+      }).catch(() => {});
     const statusInterval = setInterval(() => {
       checkDpsReportStatus();
       checkBackupDpsStatus();
@@ -5503,6 +5520,10 @@ async function testWebhook(wh: any) {
       gw2_accounts = config.gw2_accounts ?? [];
       configLoaded = true;
       refreshCacheSize();
+      // Daily rolling backup of history.db (keeps last 7).
+      invoke("auto_backup_if_stale", { days: 1, keep: 7 })
+        .then((res: any) => { if (res && res[0]) showToast(`Database backed up: ${res[1]}`, "success"); })
+        .catch(() => {});
     } catch (e) {
       console.error("Failed to load config:", e);
       // Don't set configLoaded = true on failure, otherwise autosave will
@@ -9311,6 +9332,26 @@ async function testWebhook(wh: any) {
         <button type="button" class="confirm-btn danger" onclick={confirmPurgeHistoryCache}>
           <i class="fa-solid fa-trash-can" style="margin-right: 4px;"></i> Purge History
         </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if showCloseBackupModal}
+  <div class="confirm-modal-overlay" role="dialog" aria-modal="true" aria-label="Backing up database">
+    <div class="confirm-modal-card">
+      <div class="confirm-modal-head">
+        <span class="confirm-modal-icon"><i class="fa-solid fa-database"></i></span>
+        <div>
+          <h3 class="confirm-modal-title">Backing up database…</h3>
+          <p class="confirm-modal-sub">Checkpointing and saving a backup. Please wait.</p>
+        </div>
+      </div>
+      <div class="confirm-modal-body">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <i class="fa-solid fa-spinner fa-spin"></i>
+          <span>The app will close automatically in a moment.</span>
+        </div>
       </div>
     </div>
   </div>
