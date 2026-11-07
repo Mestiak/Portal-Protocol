@@ -5917,6 +5917,15 @@ fn prune_backups(dir: &std::path::Path, keep: usize) {
         let _ = std::fs::remove_file(p);
     }
 }
+/// Force-close the main window from the backend (bypasses JS close-requested flow).
+#[tauri::command]
+pub async fn force_close_window(app: AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("main") {
+        w.destroy().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// Copy history.db (+wal) to a timestamped backup file; returns the path.
 #[tauri::command]
 pub async fn backup_history_db(app: AppHandle) -> Result<String, String> {

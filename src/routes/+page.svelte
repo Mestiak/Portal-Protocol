@@ -230,6 +230,7 @@
   let showClearHistoryModal = $state(false);
   let showCloseBackupModal = $state(false);
   let isClosing = $state(false);
+  let closeBackupDone = $state(false);
   let html_cache_max_files = $state<number>(50);
   let htmlCacheSize = $state<number>(0);
   let htmlCacheCount = $state<number>(0);
@@ -618,12 +619,10 @@
         {
           category: "🗄️ History & Storage",
           items: [
-            { title: "Why", desc: "history.json loaded the entire history into memory for every filter/pagination action, which got slow and capped at 5,000 records. SQLite (history.db) keeps everything on disk and queries only the page you're viewing, so filters and Next/Prev stay instant even with thousands of logs." },
-            { title: "SQLite History", desc: "History migrated from history.json to a local SQLite database (history.db)." },
+            { title: "SQLite History", desc: "History migrated from history.json to a local SQLite database (history.db). history.json loaded the entire history into memory for every filter/pagination action, which got slow and capped at 5,000 records; SQLite keeps everything on disk and queries only the page you're viewing, so filters and Next/Prev stay instant even with thousands of logs." },
+            { title: "DB Migration", desc: "Migration runs once, automatically, on first launch after updating: existing history.json records are imported into history.db, and the original file is kept as a fallback." },
             { title: "Server-Side Filtering", desc: "Server-side filtered, paginated history queries (boss, type, rank, profession, date/time, search) — no more loading everything into memory." },
-            { title: "Boss Filter Aliases", desc: "Fixed boss filter aliases (Cerus, Dagda, Minister Li, Prototype Watchknights, River of Souls, The Dragonvoid, Umbriel, Voice and Claw, etc.)." },
-            { title: "Pagination Fix", desc: "Fixed Next/Prev pagination blank page and stale-fetch flash." },
-            { title: "Storage Size", desc: "Settings → Storage now reports the real history.db size instead of 0 Bytes." }
+            { title: "Database Maintenance", desc: "Settings → Storage & Cache Maintenance now has dedicated buttons for the history database: Optimize DB (VACUUM compacts the file after bulk deletes), Rebuild Index (REINDEX rebuilds search indexes), Check Integrity (PRAGMA integrity_check verifies the database is sound), Backup DB (timestamped copy to history_backups/)." }
           ]
         }
       ]
@@ -4164,12 +4163,17 @@
         if (isClosing) return;
         event.preventDefault();
         isClosing = true;
+        closeBackupDone = false;
         showCloseBackupModal = true;
+        console.log("[close] handler started");
         try {
-          await invoke("auto_backup_if_stale", { days: 1, keep: 7 });
-        } catch (e) { console.error("auto backup failed", e); }
-        await new Promise((r) => setTimeout(r, 2000));
-        await appWindow.close();
+          await Promise.race([
+            invoke("auto_backup_if_stale", { days: 1, keep: 7 }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error("backup timeout")), 5000)),
+          ]);
+        } catch (e) { console.error("[close] auto backup failed/timed out", e); }
+        closeBackupDone = true;
+        console.log("[close] backup done, waiting for user");
       });
     } catch (e) { console.error("close handler failed", e); }
       // Show migration toast if a history.json → SQLite migration ran this launch.
@@ -9343,16 +9347,30 @@ async function testWebhook(wh: any) {
       <div class="confirm-modal-head">
         <span class="confirm-modal-icon"><i class="fa-solid fa-database"></i></span>
         <div>
-          <h3 class="confirm-modal-title">Backing up database…</h3>
-          <p class="confirm-modal-sub">Checkpointing and saving a backup. Please wait.</p>
+          <h3 class="confirm-modal-title">{closeBackupDone ? "Backup completed" : "Backing up database…"}</h3>
+          <p class="confirm-modal-sub">{closeBackupDone ? "You're safe to close the app." : "Checkpointing and saving a backup. Please wait."}</p>
         </div>
       </div>
       <div class="confirm-modal-body">
-        <div style="display:flex;align-items:center;gap:10px;">
-          <i class="fa-solid fa-spinner fa-spin"></i>
-          <span>The app will close automatically in a moment.</span>
-        </div>
+        {#if !closeBackupDone}
+          <div style="display:flex;align-items:center;gap:10px;">
+            <i class="fa-solid fa-spinner fa-spin"></i>
+            <span>Working…</span>
+          </div>
+        {:else}
+          <div style="display:flex;align-items:center;gap:10px;">
+            <i class="fa-solid fa-circle-check" style="color:#34d399;"></i>
+            <span>Database backed up successfully.</span>
+          </div>
+        {/if}
       </div>
+      {#if closeBackupDone}
+        <div class="confirm-modal-actions">
+          <button type="button" class="confirm-btn danger" onclick={() => invoke("force_close_window").catch((e) => console.error(e))}>
+            <i class="fa-solid fa-xmark" style="margin-right: 4px;"></i> Close
+          </button>
+        </div>
+      {/if}
     </div>
   </div>
 {/if}
