@@ -3742,23 +3742,21 @@
   async function deleteHistoryLog(filePath: string) {
     deletingLogPaths.add(filePath);
     deletingLogPaths = new Set(deletingLogPaths);
-    // HISTORY-ONLY delete: fade the card out first, then drop it from the History
-    // store. Must NOT touch the Uploads Feed or Folders (independent stores).
-    setTimeout(async () => {
-      allHistory = allHistory.filter(u => u.file_path !== filePath);
-      filteredHistory = filteredHistory.filter(u => u.file_path !== filePath);
-      if (historyFilteredTotal > 0) historyFilteredTotal--;
-      try {
-        await invoke("delete_history_log", { filePath });
-      } catch (err) {
-        console.error("Failed to delete log from history:", err);
-      }
-      const nextSelected = new Set(selectedLogs);
-      nextSelected.delete(filePath);
-      selectedLogs = nextSelected;
-      deletingLogPaths.delete(filePath);
-      deletingLogPaths = new Set(deletingLogPaths);
-    }, 280);
+    // HISTORY-ONLY delete: drop from History stores immediately; Svelte's
+    // out:slide animates the card removal. Must NOT touch Uploads Feed/Folders.
+    allHistory = allHistory.filter(u => u.file_path !== filePath);
+    filteredHistory = filteredHistory.filter(u => u.file_path !== filePath);
+    if (historyFilteredTotal > 0) historyFilteredTotal--;
+    const nextSelected = new Set(selectedLogs);
+    nextSelected.delete(filePath);
+    selectedLogs = nextSelected;
+    try {
+      await invoke("delete_history_log", { filePath });
+    } catch (err) {
+      console.error("Failed to delete log from history:", err);
+    }
+    deletingLogPaths.delete(filePath);
+    deletingLogPaths = new Set(deletingLogPaths);
   }
 
   // Caps the in-RAM working set so a huge history can't blow up memory or make
@@ -7298,7 +7296,7 @@ async function testWebhook(wh: any) {
                           {@const id = cardId(log)}
                           {@const isExpanded = !!expanded[id]}
                           {@const isSelected = selectedLogs.has(log.file_path)}
-                          <div class="log-card card" class:is-favorite={log.is_favorite === true} class:menu-open={activeMenuCard === id} class:is-expanded={isExpanded} class:uploading={log.status === "Uploading"} class:is-selected={isSelected} class:deleting={deletingLogPaths.has(log.file_path)} style="position: relative; cursor: context-menu;" oncontextmenu={(e) => handleLogContextMenu(e, log, false, undefined, () => deleteLogRecord(log.file_path))} role="button" tabindex="0">
+                          <div class="log-card card" class:is-favorite={log.is_favorite === true} class:menu-open={activeMenuCard === id} class:is-expanded={isExpanded} class:uploading={log.status === "Uploading"} class:is-selected={isSelected} style="position: relative; cursor: context-menu;" oncontextmenu={(e) => handleLogContextMenu(e, log, false, undefined, () => deleteLogRecord(log.file_path))} role="button" tabindex="0" out:slide={{ duration: prefersReducedMotion ? 0 : 280 }}>
                             {#if log.status === "Uploading"}
                               <div class="upload-progress-top"></div>
                             {/if}
@@ -7485,7 +7483,7 @@ async function testWebhook(wh: any) {
           {@const id = cardId(log)}
           {@const isExpanded = !!expanded[id]}
           {@const isSelected = selectedLogs.has(log.file_path)}
-          <div class="log-card card" class:is-favorite={log.is_favorite === true} class:menu-open={activeMenuCard === id} class:is-expanded={isExpanded} class:uploading={log.status === "Uploading"} class:is-selected={isSelected} class:deleting={deletingLogPaths.has(log.file_path)} style="position: relative; cursor: context-menu;" oncontextmenu={(e) => handleLogContextMenu(e, log, false, undefined, () => deleteLogRecord(log.file_path))} role="button" tabindex="0">
+          <div class="log-card card" class:is-favorite={log.is_favorite === true} class:menu-open={activeMenuCard === id} class:is-expanded={isExpanded} class:uploading={log.status === "Uploading"} class:is-selected={isSelected} style="position: relative; cursor: context-menu;" oncontextmenu={(e) => handleLogContextMenu(e, log, false, undefined, () => deleteLogRecord(log.file_path))} role="button" tabindex="0" out:slide={{ duration: prefersReducedMotion ? 0 : 280 }}>
             {#if log.status === "Uploading"}
               <div class="upload-progress-top"></div>
             {/if}
