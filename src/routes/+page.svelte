@@ -3027,7 +3027,7 @@
     const page = historyPage;
     const limit = historyLimit;
     const seq = ++historyFetchSeq;
-    void historyReloadTick;
+    const _reload = historyReloadTick;
     (async () => {
       try {
         const range = f.datePreset !== "all" ? dateRange(f) : null;
