@@ -2641,8 +2641,8 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                 "{} — Likely cause: {}",
                 "Could not read file (locked or empty)", diag.likely_cause
             ));
-            let _ = app.emit("upload-status", record.clone());
             let _ = crate::config::add_to_history(&app, record.clone());
+            let _ = app.emit("upload-status", record.clone());
             // Emit diagnostics for debugging
             let _ = app.emit("upload-diagnostics", diag);
             return;
@@ -2922,8 +2922,8 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
         record.stage = None;
         record.upload_done = Some(true);
         record.diagnostics = Some(diag.clone());
-        let _ = app.emit("upload-status", record.clone());
         let _ = crate::config::add_to_history(&app, record.clone());
+        let _ = app.emit("upload-status", record.clone());
         if let Some(handle) = ei_join_handle {
             if let Ok(Ok(raw)) = handle.await {
                 crate::ei_runner::store_local_ei_report(&app, &record.file_path, raw);
@@ -3017,8 +3017,8 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
         record.error_msg = Some("Log too short to parse: This encounter ended too quickly (likely a fast /gg or instant wipe). Neither the app nor dps.report could process this file.".to_string());
         diag.determine_cause();
         record.diagnostics = Some(diag.clone());
-        let _ = app.emit("upload-status", record.clone());
         let _ = crate::config::add_to_history(&app, record.clone());
+        let _ = app.emit("upload-status", record.clone());
         let _ = app.emit("upload-diagnostics", diag);
         return;
     }
@@ -3061,8 +3061,8 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
         });
         record.stage = None;
         record.diagnostics = Some(diag.clone());
-        let _ = app.emit("upload-status", record.clone());
         let _ = crate::config::add_to_history(&app, record.clone());
+        let _ = app.emit("upload-status", record.clone());
         return;
     }
     record.stage = Some("Uploading".to_string());
@@ -3201,8 +3201,8 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                             // Local duration (parse_duration) and player count (parse_players)
                             // were captured before upload — leave them as-is.
                             eprintln!("[UPLOAD_STATUS] emitting record: file={} is_cm={:?} is_lcm={:?} ura_regen={:?}", record.file_name, record.is_cm, record.is_lcm, record.ura_health_regen);
-                            let _ = app.emit("upload-status", record.clone());
                             let _ = crate::config::add_to_history(&app, record.clone());
+                            let _ = app.emit("upload-status", record.clone());
                             break;
                         }
                         // dps.report processes logs asynchronously: a freshly uploaded
@@ -3225,8 +3225,8 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                             diag.determine_cause();
                             record.diagnostics = Some(diag.clone());
                             eprintln!("[UPLOAD_STATUS] emitting record: file={} is_cm={:?} is_lcm={:?} ura_regen={:?}", record.file_name, record.is_cm, record.is_lcm, record.ura_health_regen);
-                            let _ = app.emit("upload-status", record.clone());
                             let _ = crate::config::add_to_history(&app, record.clone());
+                            let _ = app.emit("upload-status", record.clone());
                             // Schedule a ONE-SHOT deferred re-check of this single URL.
                             // Elite Insights runs asynchronously on dps.report; once it
                             // finishes we flip the badge to Completed (no app restart needed).
@@ -3921,11 +3921,10 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
     // Final diagnostics emission
     diag.determine_cause();
     record.diagnostics = Some(diag.clone());
-    let _ = app.emit("upload-status", record.clone());
-
     if record.status == "Completed" || record.status == "Failed" {
         let _ = crate::config::add_to_history(&app, record.clone());
     }
+    let _ = app.emit("upload-status", record.clone());
     let _ = app.emit("upload-diagnostics", diag);
 
     // Defer Wingman import until a terminal state, and only when Wingman is enabled.

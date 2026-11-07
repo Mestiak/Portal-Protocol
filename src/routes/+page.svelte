@@ -4286,7 +4286,7 @@
             apply(c);
             allHistory[hIdx] = c;
             allHistory = [...allHistory];
-            setTimeout(() => { historyReloadTick++; }, 150);
+            historyReloadTick++;
           }
           return;
         }
@@ -4300,7 +4300,7 @@
         if (hIdx !== -1) {
           allHistory[hIdx] = r;
           allHistory = [...allHistory];
-          setTimeout(() => { historyReloadTick++; }, 150);
+          historyReloadTick++;
         } else if (
           // Patch live into History for any terminal/settled state. `Processing`
           // (a log parked while dps.report's Elite Insights runs) MUST be included
@@ -4310,7 +4310,8 @@
           r.status === "Duplicate" || r.status === "Processing"
         ) {
           allHistory = [r, ...allHistory];
-          setTimeout(() => { historyReloadTick++; historyPage = 0; }, 150);
+          historyReloadTick++;
+          historyPage = 0;
         }
 
         // Auto-enqueue On Hold logs (no dps.report link) for Wingman raw upload
