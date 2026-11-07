@@ -3,6 +3,8 @@
 // Licensed under MIT License
 
 mod config;
+mod db;
+mod history_filter;
 mod ei_runner;
 mod evtc_parser;
 mod uploader;
@@ -503,7 +505,24 @@ async fn open_settings_folder(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 async fn get_history_count(app: AppHandle) -> usize {
+    if crate::db::db_exists(&app) {
+        if let Ok(conn) = crate::db::open_db(&app) {
+            if let Ok(n) = conn.query_row("SELECT COUNT(*) FROM history", [], |r| r.get::<_, i64>(0)) {
+                return n as usize;
+            }
+        }
+    }
     config::load_history(&app).len()
+}
+
+#[tauri::command]
+async fn get_migration_count() -> usize {
+    crate::db::last_migration_count()
+}
+
+#[tauri::command]
+async fn get_history_page_filtered(app: AppHandle, filters: history_filter::HistoryFilters, page: usize, limit: usize) -> Result<history_filter::FilteredPage, String> {
+    history_filter::query_filtered(&app, &filters, page, limit)
 }
 
 #[tauri::command]
@@ -1380,9 +1399,11 @@ pub fn run() {
             // A1: restore any webhook recovery queue persisted before a mid-outage
             // restart, so queued posts drain once dps.report is back.
             crate::uploader::load_webhook_recovery(app.handle());
-            // Populate the in-memory history file-path set from the persisted history.json
-            // so that `already_in_history()` can do an O(1) contains check instead of
-            // loading the full 2000+ record history from disk on every watcher detection.
+            // Migrate legacy history.json → SQLite on first launch after update.
+            // One-time, fast (single transaction). Emits "history-migration" for UI toast.
+            let _ = crate::db::migrate_from_json_if_needed(app.handle());
+            // Populate the in-memory history file-path set from the persisted store
+            // (SQLite now, JSON fallback) so `already_in_history()` stays O(1).
             crate::config::load_history_into_set(app.handle());
             if config.auto_upload && !config.logs_directory.is_empty() {
                 let _ = watcher.start(&config.logs_directory, tx.clone(), config.watch_stability_delay_ms, config.watch_poll_interval_ms);
@@ -1481,6 +1502,8 @@ pub fn run() {
             check_wingman_status,
             sweep_dps_processing,
             get_history_count,
+            get_migration_count,
+            get_history_page_filtered,
             get_history_page,
             clear_history,
             crate::uploader::backfill_dps_history,
@@ -1523,6 +1546,11 @@ pub fn run() {
             crate::uploader::invalidate_log_cache,
             crate::uploader::get_history_cache_size,
             crate::uploader::clear_history_cache,
+            crate::uploader::get_history_db_stats,
+            crate::uploader::vacuum_history_db,
+            crate::uploader::reindex_history_db,
+            crate::uploader::check_history_db_integrity,
+            crate::uploader::backup_history_db,
             crate::uploader::test_webhook,
             crate::uploader::read_webhook_log,
             crate::uploader::resend_failed_webhooks,

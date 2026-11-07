@@ -223,6 +223,10 @@
   let showClearCacheModal = $state(false);
   let historyCacheSize = $state<number>(0);
   let historyCacheCount = $state<number>(0);
+  let historyDbBytes = $state<number>(0);
+  let historyDbReclaimable = $state<number>(0);
+  let historyDbIntegrity = $state<boolean | null>(null);
+  let dbMaintBusy = $state<string>("");
   let showClearHistoryModal = $state(false);
   let html_cache_max_files = $state<number>(50);
   let htmlCacheSize = $state<number>(0);
@@ -605,6 +609,23 @@
   type PatchNoteCategory = { category: string; items: PatchNoteItem[] };
   type PatchNoteVersion = { version: string; date: string; image?: string; notes: PatchNoteCategory[] };
   const PATCH_NOTES_DATA: PatchNoteVersion[] = [
+    {
+      version: "0.7.9",
+      date: "November 2026",
+      notes: [
+        {
+          category: "🗄️ History & Storage",
+          items: [
+            { title: "Why", desc: "history.json loaded the entire history into memory for every filter/pagination action, which got slow and capped at 5,000 records. SQLite (history.db) keeps everything on disk and queries only the page you're viewing, so filters and Next/Prev stay instant even with thousands of logs." },
+            { title: "SQLite History", desc: "History migrated from history.json to a local SQLite database (history.db)." },
+            { title: "Server-Side Filtering", desc: "Server-side filtered, paginated history queries (boss, type, rank, profession, date/time, search) — no more loading everything into memory." },
+            { title: "Boss Filter Aliases", desc: "Fixed boss filter aliases (Cerus, Dagda, Minister Li, Prototype Watchknights, River of Souls, The Dragonvoid, Umbriel, Voice and Claw, etc.)." },
+            { title: "Pagination Fix", desc: "Fixed Next/Prev pagination blank page and stale-fetch flash." },
+            { title: "Storage Size", desc: "Settings → Storage now reports the real history.db size instead of 0 Bytes." }
+          ]
+        }
+      ]
+    },
     {
       version: "0.7.8",
       date: "November 2026",
@@ -2986,9 +3007,12 @@
     }
   });
   let isHistoryLoading = $state(false);
+  let migrationToast = $state("");
   let historyPage = $state(0);
   let historyLimit = $state(25);
-  let filteredHistory = $derived(filterLogs(allHistory)); // full filtered list
+  let filteredHistory = $state<UploadRecord[]>([]); // server-filtered page
+  let historyFilteredTotal = $state(0);
+  let historyReloadTick = $state(0);
   // Count of logs whose Wingman import failed — drives the sidebar "Retry all failed" button.
   let failedWingmanCount = $derived(
     allHistory.filter((h) => h.wingman_status === "failed").length,
@@ -2999,7 +3023,46 @@
     new Set([...uploads, ...allHistory].filter((h) => h.status === "On Hold").map((h) => h.file_path)).size,
   );
   let historyLogs = $derived(filteredHistory);             // alias for code that expected the full list
-  let historyTotalCount = $derived(filteredHistory.length);// drives the pager
+  let historyTotalCount = $derived(historyFilteredTotal); // drives the pager
+  // Server-side filtered + paginated history for the History tab.
+  let historyFetchSeq = 0;
+  $effect(() => {
+    const f = filters;
+    const page = historyPage;
+    const limit = historyLimit;
+    const seq = ++historyFetchSeq;
+    const _reload = historyReloadTick;
+    (async () => {
+      try {
+        const range = f.datePreset !== "all" ? dateRange(f) : null;
+        const res = await invoke<{ rows: UploadRecord[]; total: number }>("get_history_page_filtered", {
+          filters: {
+            result: f.result,
+            cm_mode: f.cmMode,
+            boss: f.boss,
+            profession: f.profession === "all" ? null : Number(f.profession),
+            profession_kind: f.professionKind,
+            has_notes: f.hasNotes || null,
+            is_favorite: f.isFavorite || null,
+            vl_rank: f.vlRank,
+            date_from: range?.from ?? null,
+            date_to: range?.to ?? null,
+            time_from: f.timeFrom || null,
+            time_to: f.timeTo || null,
+            search: f.search || null,
+            encounter_type: f.type === "all" ? null : f.type,
+          },
+          page,
+          limit,
+        });
+        if (seq !== historyFetchSeq) return;
+        filteredHistory = res.rows;
+        historyFilteredTotal = res.total;
+      } catch (e) {
+        console.error("filtered history failed:", e);
+      }
+    })();
+  });
   // Launch-time CM/LCM Mode-flag self-heal progress (Rust emits `repair_progress`).
   // repairProgress removed - repair badge feature deprecated
   // repairHideTimer removed - repair badge feature deprecated
@@ -3009,12 +3072,11 @@
   let eiRuntimeNotice = $state<{ url: string } | null>(null);
   let vloxxLcmNotice = $state(false);
   let pagedHistory = $derived.by(() => {
-    const start = historyPage * historyLimit;
-    return filteredHistory.slice(start, start + historyLimit);
+    return filteredHistory;
   });
   // Reset to page 1 whenever any filter changes so a now-shorter list never
   // leaves the user stranded on a blank page 3.
-  $effect(() => { filters; historyPage = 0; });
+  $effect(() => { filters.boss; filters.result; filters.cmMode; filters.profession; filters.professionKind; filters.type; filters.vlRank; filters.search; filters.datePreset; filters.hasNotes; filters.isFavorite; filters.timeFrom; filters.timeTo; historyPage = 0; });
   let pendingManualTargets: Record<string, { sessionId: string; subFolderId: string | null }> = {};
   let deletingLogPaths = $state<Set<string>>(new Set());
   let toastMsg = $state<string | null>(null);
@@ -3684,21 +3746,21 @@
   async function deleteHistoryLog(filePath: string) {
     deletingLogPaths.add(filePath);
     deletingLogPaths = new Set(deletingLogPaths);
-    // HISTORY-ONLY delete: fade the card out first, then drop it from the History
-    // store. Must NOT touch the Uploads Feed or Folders (independent stores).
-    setTimeout(async () => {
-      allHistory = allHistory.filter(u => u.file_path !== filePath);
-      try {
-        await invoke("delete_history_log", { filePath });
-      } catch (err) {
-        console.error("Failed to delete log from history:", err);
-      }
-      const nextSelected = new Set(selectedLogs);
-      nextSelected.delete(filePath);
-      selectedLogs = nextSelected;
-      deletingLogPaths.delete(filePath);
-      deletingLogPaths = new Set(deletingLogPaths);
-    }, 280);
+    // HISTORY-ONLY delete: drop from History stores immediately; Svelte's
+    // out:slide animates the card removal. Must NOT touch Uploads Feed/Folders.
+    allHistory = allHistory.filter(u => u.file_path !== filePath);
+    filteredHistory = filteredHistory.filter(u => u.file_path !== filePath);
+    if (historyFilteredTotal > 0) historyFilteredTotal--;
+    const nextSelected = new Set(selectedLogs);
+    nextSelected.delete(filePath);
+    selectedLogs = nextSelected;
+    try {
+      await invoke("delete_history_log", { filePath });
+    } catch (err) {
+      console.error("Failed to delete log from history:", err);
+    }
+    deletingLogPaths.delete(filePath);
+    deletingLogPaths = new Set(deletingLogPaths);
   }
 
   // Caps the in-RAM working set so a huge history can't blow up memory or make
@@ -3707,17 +3769,17 @@
   // load everything. Only when history exceeds the cap do we keep the most
   // recent HISTORY_CAP records and surface a "+" indicator. Filtering/paging
   // stay client-side (FilterBar needs the full filtered set + distinct bosses).
-  const HISTORY_CAP = 5000;
+  const HISTORY_CAP = 100000; // DB-backed loads are fast; no artificial cap.
   let historyHasMore = $state(false);
-  // Loads history into memory (bounded by HISTORY_CAP). Filtering + pagination
-  // stay client-side via `filteredHistory` / `pagedHistory`.
+  // Loads history into memory. Filtering + pagination stay client-side via
+  // `filteredHistory` / `pagedHistory`. Data now comes from SQLite (fast).
   async function loadFullHistory() {
     isHistoryLoading = true;
     try {
       const count = await invoke("get_history_count") as number;
       if (count === 0) { allHistory = []; historyHasMore = false; return; }
-      const limit = Math.min(count, HISTORY_CAP);
-      historyHasMore = count > limit;
+      const limit = count; // load all; DB reads are fast
+      historyHasMore = false;
       allHistory = await invoke("get_history_page", { page: 0, limit }) as UploadRecord[];
     } catch (err) {
       console.error("Failed to load full history:", err);
@@ -4093,6 +4155,13 @@
     invoke("check_bundled_ei").catch((e) => {
       console.error("Bundled EI check failed:", e);
     });
+    // Show migration toast if a history.json → SQLite migration ran this launch.
+    invoke<number>("get_migration_count").then((n) => {
+      if (n > 0) {
+        migrationToast = `Migrated ${n} logs into the new database`;
+        setTimeout(() => (migrationToast = ""), 4000);
+      }
+    }).catch(() => {});
     const statusInterval = setInterval(() => {
       checkDpsReportStatus();
       checkBackupDpsStatus();
@@ -4221,6 +4290,7 @@
             apply(c);
             allHistory[hIdx] = c;
             allHistory = [...allHistory];
+            historyReloadTick++;
           }
           return;
         }
@@ -4234,6 +4304,7 @@
         if (hIdx !== -1) {
           allHistory[hIdx] = r;
           allHistory = [...allHistory];
+          historyReloadTick++;
         } else if (
           // Patch live into History for any terminal/settled state. `Processing`
           // (a log parked while dps.report's Elite Insights runs) MUST be included
@@ -4243,6 +4314,8 @@
           r.status === "Duplicate" || r.status === "Processing"
         ) {
           allHistory = [r, ...allHistory];
+          historyReloadTick++;
+          historyPage = 0;
         }
 
         // Auto-enqueue On Hold logs (no dps.report link) for Wingman raw upload
@@ -5571,6 +5644,15 @@ async function testWebhook(wh: any) {
       console.error("Failed to query history cache size:", e);
     }
     try {
+      const res = await invoke("get_history_db_stats") as [number, number, number];
+      if (Array.isArray(res)) {
+        historyDbBytes = res[0] ?? 0;
+        historyDbReclaimable = res[1] ?? 0;
+      }
+    } catch (e) {
+      console.error("Failed to query history db stats:", e);
+    }
+    try {
       const res = await invoke("get_ei_html_cache_info") as [number, number];
       if (Array.isArray(res)) {
         htmlCacheSize = res[0] ?? 0;
@@ -6748,6 +6830,9 @@ async function testWebhook(wh: any) {
   </div>
 {/snippet}
 
+{#if migrationToast}
+  <div class="migration-toast">{migrationToast}</div>
+{/if}
 <main class="app-container" class:sidebar-collapsed={!sidebarOpen}>
   {#if vloxxLcmNotice}
     <div style="position: sticky; top: 0; z-index: 50; background: var(--card); border-bottom: 1px solid var(--border); padding: 8px 12px; display: flex; align-items: center; gap: 8px;">
@@ -7224,7 +7309,7 @@ async function testWebhook(wh: any) {
                           {@const id = cardId(log)}
                           {@const isExpanded = !!expanded[id]}
                           {@const isSelected = selectedLogs.has(log.file_path)}
-                          <div class="log-card card" class:is-favorite={log.is_favorite === true} class:menu-open={activeMenuCard === id} class:is-expanded={isExpanded} class:uploading={log.status === "Uploading"} class:is-selected={isSelected} class:deleting={deletingLogPaths.has(log.file_path)} style="position: relative; cursor: context-menu;" oncontextmenu={(e) => handleLogContextMenu(e, log, false, undefined, () => deleteLogRecord(log.file_path))} role="button" tabindex="0">
+                          <div class="log-card card" class:is-favorite={log.is_favorite === true} class:menu-open={activeMenuCard === id} class:is-expanded={isExpanded} class:uploading={log.status === "Uploading"} class:is-selected={isSelected} style="position: relative; cursor: context-menu;" oncontextmenu={(e) => handleLogContextMenu(e, log, false, undefined, () => deleteLogRecord(log.file_path))} role="button" tabindex="0" out:slide={{ duration: prefersReducedMotion ? 0 : 280 }}>
                             {#if log.status === "Uploading"}
                               <div class="upload-progress-top"></div>
                             {/if}
@@ -7411,7 +7496,7 @@ async function testWebhook(wh: any) {
           {@const id = cardId(log)}
           {@const isExpanded = !!expanded[id]}
           {@const isSelected = selectedLogs.has(log.file_path)}
-          <div class="log-card card" class:is-favorite={log.is_favorite === true} class:menu-open={activeMenuCard === id} class:is-expanded={isExpanded} class:uploading={log.status === "Uploading"} class:is-selected={isSelected} class:deleting={deletingLogPaths.has(log.file_path)} style="position: relative; cursor: context-menu;" oncontextmenu={(e) => handleLogContextMenu(e, log, false, undefined, () => deleteLogRecord(log.file_path))} role="button" tabindex="0">
+          <div class="log-card card" class:is-favorite={log.is_favorite === true} class:menu-open={activeMenuCard === id} class:is-expanded={isExpanded} class:uploading={log.status === "Uploading"} class:is-selected={isSelected} style="position: relative; cursor: context-menu;" oncontextmenu={(e) => handleLogContextMenu(e, log, false, undefined, () => deleteLogRecord(log.file_path))} role="button" tabindex="0" out:slide={{ duration: prefersReducedMotion ? 0 : 280 }}>
             {#if log.status === "Uploading"}
               <div class="upload-progress-top"></div>
             {/if}
@@ -8087,7 +8172,7 @@ async function testWebhook(wh: any) {
             <div style="display: flex; flex-direction: column; gap: 6px;">
               <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px;">
                 <div>
-                  <div style="font-size: 13px; font-weight: 600; color: var(--text);">Analytics &amp; History Cache</div>
+                  <div style="font-size: 13px; font-weight: 600; color: var(--text);">History Records</div>
                   <div class="tabular-nums" style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
                     {formatSize(historyCacheSize)} accumulated across {historyCacheCount} uploaded records
                   </div>
@@ -8103,8 +8188,56 @@ async function testWebhook(wh: any) {
                 </button>
               </div>
               <span style="font-size: 10px; color: var(--text-muted); display: block; margin-left: 4px;">
-                Clear historical records database (`history.json`). This will clear your Analytics graphs and History logs list.
+                Clears the History list and Analytics graphs. Stored in history.db.
               </span>
+            </div>
+
+            <!-- Database maintenance -->
+            <div style="display: flex; flex-direction: column; gap: 6px; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                <div>
+                  <div style="font-size: 13px; font-weight: 600; color: var(--text);">Database Maintenance</div>
+                  <div class="tabular-nums" style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                    {formatSize(historyDbBytes)} on disk · {historyDbReclaimable > 0 ? formatSize(historyDbReclaimable) + ' reclaimable' : 'no free space'} · {historyDbIntegrity === null ? 'not checked' : historyDbIntegrity ? 'integrity OK' : 'integrity FAILED'}
+                  </div>
+                </div>
+              </div>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px;">
+                <button class="cache-export-btn" style="padding: 6px 12px;" disabled={dbMaintBusy !== ""} onclick={async () => { dbMaintBusy = "optimizing"; try { await invoke("vacuum_history_db"); await refreshCacheSize(); showToast("Database optimized.", "success"); } catch (e) { showToast(`Optimize failed: ${e}`, "default"); } finally { dbMaintBusy = ""; } }}>
+                  <i class="fa-solid fa-broom" style="margin-right: 4px;"></i> {dbMaintBusy === "optimizing" ? "Optimizing…" : "Optimize DB"}
+                </button>
+                <button class="cache-export-btn" style="padding: 6px 12px;" disabled={dbMaintBusy !== ""} onclick={async () => { dbMaintBusy = "reindexing"; try { await invoke("reindex_history_db"); showToast("Search index rebuilt.", "success"); } catch (e) { showToast(`Reindex failed: ${e}`, "default"); } finally { dbMaintBusy = ""; } }}>
+                  <i class="fa-solid fa-rotate" style="margin-right: 4px;"></i> {dbMaintBusy === "reindexing" ? "Rebuilding…" : "Rebuild Index"}
+                </button>
+                <button class="cache-export-btn" style="padding: 6px 12px;" disabled={dbMaintBusy !== ""} onclick={async () => { dbMaintBusy = "checking"; try { const ok = await invoke("check_history_db_integrity") as boolean; historyDbIntegrity = ok; showToast(ok ? "Database integrity OK." : "Integrity check FAILED.", ok ? "success" : "default"); } catch (e) { showToast(`Integrity check failed: ${e}`, "default"); } finally { dbMaintBusy = ""; } }}>
+                  <i class="fa-solid fa-shield-halved" style="margin-right: 4px;"></i> {dbMaintBusy === "checking" ? "Checking…" : "Check Integrity"}
+                </button>
+                <button class="cache-export-btn" style="padding: 6px 12px;" disabled={dbMaintBusy !== ""} onclick={async () => { dbMaintBusy = "backingup"; try { const p = await invoke("backup_history_db") as string; showToast(`Backup saved: ${p}`, "success"); } catch (e) { showToast(`Backup failed: ${e}`, "default"); } finally { dbMaintBusy = ""; } }}>
+                  <i class="fa-solid fa-copy" style="margin-right: 4px;"></i> {dbMaintBusy === "backingup" ? "Backing up…" : "Backup DB"}
+                </button>
+              </div>
+              <span style="font-size: 10px; color: var(--text-muted); display: block; margin-top: 4px;">
+                Optimize DB compacts the file after bulk deletes. Rebuild Index rebuilds search indexes. Check Integrity verifies the database. Backup DB copies history.db to your config folder.
+              </span>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px;">
+                <div>
+                  <div style="font-size: 13px; font-weight: 600; color: var(--text);">Analytics Cache</div>
+                  <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                    In-memory memoized stats. Regenerable from History.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  class="cache-clear-btn"
+                  onclick={async () => { const m = await import("../lib/analyticsEngine"); m.clearAnalyticsCache(); showToast("Analytics cache cleared.", "success"); }}
+                  title="Clear in-memory analytics memo"
+                >
+                  <i class="fa-solid fa-trash-can"></i> Clear
+                </button>
+              </div>
             </div>
           </div>
         </section>
