@@ -606,6 +606,23 @@
   type PatchNoteVersion = { version: string; date: string; image?: string; notes: PatchNoteCategory[] };
   const PATCH_NOTES_DATA: PatchNoteVersion[] = [
     {
+      version: "0.7.9",
+      date: "November 2026",
+      notes: [
+        {
+          category: "🗄️ History & Storage",
+          items: [
+            { title: "Why", desc: "history.json loaded the entire history into memory for every filter/pagination action, which got slow and capped at 5,000 records. SQLite (history.db) keeps everything on disk and queries only the page you're viewing, so filters and Next/Prev stay instant even with thousands of logs." },
+            { title: "SQLite History", desc: "History migrated from history.json to a local SQLite database (history.db)." },
+            { title: "Server-Side Filtering", desc: "Server-side filtered, paginated history queries (boss, type, rank, profession, date/time, search) — no more loading everything into memory." },
+            { title: "Boss Filter Aliases", desc: "Fixed boss filter aliases (Cerus, Dagda, Minister Li, Prototype Watchknights, River of Souls, The Dragonvoid, Umbriel, Voice and Claw, etc.)." },
+            { title: "Pagination Fix", desc: "Fixed Next/Prev pagination blank page and stale-fetch flash." },
+            { title: "Storage Size", desc: "Settings → Storage now reports the real history.db size instead of 0 Bytes." }
+          ]
+        }
+      ]
+    },
+    {
       version: "0.7.8",
       date: "November 2026",
       notes: [
@@ -2986,9 +3003,11 @@
     }
   });
   let isHistoryLoading = $state(false);
+  let migrationToast = $state("");
   let historyPage = $state(0);
   let historyLimit = $state(25);
-  let filteredHistory = $derived(filterLogs(allHistory)); // full filtered list
+  let filteredHistory = $state<UploadRecord[]>([]); // server-filtered page
+  let historyFilteredTotal = $state(0);
   // Count of logs whose Wingman import failed — drives the sidebar "Retry all failed" button.
   let failedWingmanCount = $derived(
     allHistory.filter((h) => h.wingman_status === "failed").length,
@@ -2999,7 +3018,45 @@
     new Set([...uploads, ...allHistory].filter((h) => h.status === "On Hold").map((h) => h.file_path)).size,
   );
   let historyLogs = $derived(filteredHistory);             // alias for code that expected the full list
-  let historyTotalCount = $derived(filteredHistory.length);// drives the pager
+  let historyTotalCount = $derived(historyFilteredTotal); // drives the pager
+  // Server-side filtered + paginated history for the History tab.
+  let historyFetchSeq = 0;
+  $effect(() => {
+    const f = filters;
+    const page = historyPage;
+    const limit = historyLimit;
+    const seq = ++historyFetchSeq;
+    (async () => {
+      try {
+        const range = f.datePreset !== "all" ? dateRange(f) : null;
+        const res = await invoke<{ rows: UploadRecord[]; total: number }>("get_history_page_filtered", {
+          filters: {
+            result: f.result,
+            cm_mode: f.cmMode,
+            boss: f.boss,
+            profession: f.profession === "all" ? null : Number(f.profession),
+            profession_kind: f.professionKind,
+            has_notes: f.hasNotes || null,
+            is_favorite: f.isFavorite || null,
+            vl_rank: f.vlRank,
+            date_from: range?.from ?? null,
+            date_to: range?.to ?? null,
+            time_from: f.timeFrom || null,
+            time_to: f.timeTo || null,
+            search: f.search || null,
+            encounter_type: f.type === "all" ? null : f.type,
+          },
+          page,
+          limit,
+        });
+        if (seq !== historyFetchSeq) return;
+        filteredHistory = res.rows;
+        historyFilteredTotal = res.total;
+      } catch (e) {
+        console.error("filtered history failed:", e);
+      }
+    })();
+  });
   // Launch-time CM/LCM Mode-flag self-heal progress (Rust emits `repair_progress`).
   // repairProgress removed - repair badge feature deprecated
   // repairHideTimer removed - repair badge feature deprecated
@@ -3009,12 +3066,11 @@
   let eiRuntimeNotice = $state<{ url: string } | null>(null);
   let vloxxLcmNotice = $state(false);
   let pagedHistory = $derived.by(() => {
-    const start = historyPage * historyLimit;
-    return filteredHistory.slice(start, start + historyLimit);
+    return filteredHistory;
   });
   // Reset to page 1 whenever any filter changes so a now-shorter list never
   // leaves the user stranded on a blank page 3.
-  $effect(() => { filters; historyPage = 0; });
+  $effect(() => { filters.boss; filters.result; filters.cmMode; filters.profession; filters.professionKind; filters.type; filters.vlRank; filters.search; filters.datePreset; filters.hasNotes; filters.isFavorite; filters.timeFrom; filters.timeTo; historyPage = 0; });
   let pendingManualTargets: Record<string, { sessionId: string; subFolderId: string | null }> = {};
   let deletingLogPaths = $state<Set<string>>(new Set());
   let toastMsg = $state<string | null>(null);
@@ -3707,17 +3763,17 @@
   // load everything. Only when history exceeds the cap do we keep the most
   // recent HISTORY_CAP records and surface a "+" indicator. Filtering/paging
   // stay client-side (FilterBar needs the full filtered set + distinct bosses).
-  const HISTORY_CAP = 5000;
+  const HISTORY_CAP = 100000; // DB-backed loads are fast; no artificial cap.
   let historyHasMore = $state(false);
-  // Loads history into memory (bounded by HISTORY_CAP). Filtering + pagination
-  // stay client-side via `filteredHistory` / `pagedHistory`.
+  // Loads history into memory. Filtering + pagination stay client-side via
+  // `filteredHistory` / `pagedHistory`. Data now comes from SQLite (fast).
   async function loadFullHistory() {
     isHistoryLoading = true;
     try {
       const count = await invoke("get_history_count") as number;
       if (count === 0) { allHistory = []; historyHasMore = false; return; }
-      const limit = Math.min(count, HISTORY_CAP);
-      historyHasMore = count > limit;
+      const limit = count; // load all; DB reads are fast
+      historyHasMore = false;
       allHistory = await invoke("get_history_page", { page: 0, limit }) as UploadRecord[];
     } catch (err) {
       console.error("Failed to load full history:", err);
@@ -4093,6 +4149,13 @@
     invoke("check_bundled_ei").catch((e) => {
       console.error("Bundled EI check failed:", e);
     });
+    // Show migration toast if a history.json → SQLite migration ran this launch.
+    invoke<number>("get_migration_count").then((n) => {
+      if (n > 0) {
+        migrationToast = `Migrated ${n} logs into the new database`;
+        setTimeout(() => (migrationToast = ""), 4000);
+      }
+    }).catch(() => {});
     const statusInterval = setInterval(() => {
       checkDpsReportStatus();
       checkBackupDpsStatus();
@@ -6748,6 +6811,9 @@ async function testWebhook(wh: any) {
   </div>
 {/snippet}
 
+{#if migrationToast}
+  <div class="migration-toast">{migrationToast}</div>
+{/if}
 <main class="app-container" class:sidebar-collapsed={!sidebarOpen}>
   {#if vloxxLcmNotice}
     <div style="position: sticky; top: 0; z-index: 50; background: var(--card); border-bottom: 1px solid var(--border); padding: 8px 12px; display: flex; align-items: center; gap: 8px;">

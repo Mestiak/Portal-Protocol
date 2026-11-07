@@ -5751,7 +5751,13 @@ pub async fn invalidate_log_cache(app: AppHandle, permalink: String) -> Result<(
 #[tauri::command]
 /// Returns (size_bytes, file_count) of the history database cache.
 pub async fn get_history_cache_size(app: AppHandle) -> Result<(u64, usize), String> {
-    let path = crate::config::get_history_path(&app);
+    // After the SQLite migration the history lives in history.db, not history.json.
+    // Prefer the DB file when present so the reported size reflects reality.
+    let path = if crate::db::db_exists(&app) {
+        crate::db::get_db_path(&app)
+    } else {
+        crate::config::get_history_path(&app)
+    };
     let mut total_bytes: u64 = 0;
     if let Ok(meta) = std::fs::metadata(&path) {
         if meta.is_file() {
