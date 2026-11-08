@@ -242,6 +242,7 @@
   // half-hydrated config.
   let configLoaded = $state(false);
   let settingsDirty = $state(false);
+  let suppressDirtyToast = $state(false);
   let suppressDirty = false;
   // Debounce timer for the global settings autosave (persistConfig) so a burst
   // of setting changes (e.g. typing a numeric field) only writes disk once.
@@ -3627,6 +3628,8 @@
     async function toggleFavorite(filePath: string) {
     const currentVal = allHistory.find((l: any) => l.file_path === filePath)?.is_favorite === true;
     const newVal = !currentVal;
+    suppressDirty = true;
+    suppressDirtyToast = true;
     updateLogInUploads(filePath, (l: any) => ({ ...l, is_favorite: newVal }));
     await invoke("toggle_favorite", { filePath });
   }
@@ -3643,6 +3646,14 @@
       const newHistory = [...allHistory];
       newHistory[hIdx] = updater(newHistory[hIdx]);
       allHistory = newHistory;
+    }
+    // Keep filteredHistory in sync (rendered page) so favorite/note changes
+    // show immediately without needing a filter change or reload.
+    const fIdx = filteredHistory.findIndex((h: any) => h.file_path === filePath);
+    if (fIdx >= 0) {
+      const newFiltered = [...filteredHistory];
+      newFiltered[fIdx] = updater(newFiltered[fIdx]);
+      filteredHistory = newFiltered;
     }
     // Also update in sessions/folders/subfolders
     const newSessions = sessions.map((s: any) => {
@@ -3672,12 +3683,16 @@
     if (!text) return;
     const newNote = { id: `tmp${Date.now()}`, text, created_at: new Date().toISOString() };
     invoke("add_log_note", { filePath: log.file_path, text }).catch(console.error);
+    suppressDirty = true;
+    suppressDirtyToast = true;
     updateLogInUploads(log.file_path, (l: any) => ({ ...l, notes: [...(l.notes ?? []), newNote] }));
     noteDraft[id] = "";
   }
   function removeNote(log: any, noteId: string) {
     const id = cardId(log);
     invoke("delete_log_note", { filePath: log.file_path, noteId }).catch(console.error);
+    suppressDirty = true;
+    suppressDirtyToast = true;
     updateLogInUploads(log.file_path, (l: any) => ({ ...l, notes: (l.notes ?? []).filter((n: any) => n.id !== noteId) }));
   }
 
@@ -5573,10 +5588,11 @@ async function testWebhook(wh: any) {
     // hydrated squadPlans from disk.
     if (!squadPlansLoaded) return;
     if (isSaving) return;
-    if (suppressDirty) { suppressDirty = false; return; }
+    if (suppressDirty) { suppressDirty = false; suppressDirtyToast = false; return; }
 
     if (configSaveTimer) clearTimeout(configSaveTimer);
-    settingsDirty = true;
+    if (!suppressDirtyToast) settingsDirty = true;
+    suppressDirtyToast = false;
     configSaveTimer = setTimeout(() => { persistConfig(); }, 400);
   });
 
