@@ -11,7 +11,7 @@ use serde_json::Value;
 /// table. Duplicated across every agent-scan pass, so centralised here.
 const BOSS_IDS: &[u16] = &[
     26106, 26126, 26142, 26146, 26196, 26681, 26257, 26309, 26889, 26231, 26625, 26720, 26774,
-    26123, 26228, 27017,
+    26123, 26228, 27017, 28077,
 ];
 
 /// A local parse reports HP in 0.01% integer steps (0..10000), so a true death
@@ -226,7 +226,8 @@ pub fn parse_boss_hp(bytes: &[u8]) -> Option<f64> {
     let is_convergence = header_boss_id == 1523
         || header_boss_id == 1527
         || header_boss_id == 1562
-        || header_boss_id == 1571;
+        || header_boss_id == 1571
+        || header_boss_id == 1629;
     let header_end: usize = if revision == 0 { 15 } else { 16 };
 
     let agent_count = ru32(&data, header_end).ok()? as usize;
@@ -237,7 +238,7 @@ pub fn parse_boss_hp(bytes: &[u8]) -> Option<f64> {
         return None;
     }
 
-    if boss_id == 1523 || boss_id == 1527 || boss_id == 1562 || boss_id == 1571 {
+    if boss_id == 1523 || boss_id == 1527 || boss_id == 1562 || boss_id == 1571 || boss_id == 1629 {
         for i in 0..agent_count {
             let base = agents_base + i * AGENT_SZ;
             if let Ok(prof) = ru32(&data, base + 8) {
@@ -1154,7 +1155,8 @@ pub fn parse_boss_fight_duration(bytes: &[u8]) -> Option<f64> {
     let _is_convergence = header_boss_id == 1523
         || header_boss_id == 1527
         || header_boss_id == 1562
-        || header_boss_id == 1571;
+        || header_boss_id == 1571
+        || header_boss_id == 1629;
     let header_end: usize = if revision == 0 { 15 } else { 16 };
 
     let agent_count = ru32(&data, header_end).ok()? as usize;
@@ -1165,7 +1167,7 @@ pub fn parse_boss_fight_duration(bytes: &[u8]) -> Option<f64> {
     }
 
     // Resolve convergence boss prof id (same mapping as parse_boss_hp)
-    if [1523u16, 1527, 1562, 1571].contains(&boss_id) {
+    if [1523u16, 1527, 1562, 1571, 1629].contains(&boss_id) {
         for i in 0..agent_count {
             let base = agents_base + i * AGENT_SZ;
             if let Ok(prof) = ru32(&data, base + 8) {
@@ -1338,7 +1340,8 @@ pub fn parse_full_fight_duration(bytes: &[u8]) -> Option<f64> {
     let _is_convergence = header_boss_id == 1523
         || header_boss_id == 1527
         || header_boss_id == 1562
-        || header_boss_id == 1571;
+        || header_boss_id == 1571
+        || header_boss_id == 1629;
     let header_end: usize = if revision == 0 { 15 } else { 16 };
     let agent_count = ru32(&data, header_end).ok()? as usize;
     let agents_base = header_end + 4;
@@ -1347,7 +1350,7 @@ pub fn parse_full_fight_duration(bytes: &[u8]) -> Option<f64> {
         return parse_duration(bytes);
     }
     // Resolve convergence boss prof id (same mapping as parse_boss_hp)
-    if [1523u16, 1527, 1562, 1571].contains(&boss_id) {
+    if [1523u16, 1527, 1562, 1571, 1629].contains(&boss_id) {
         for i in 0..agent_count {
             let base = agents_base + i * AGENT_SZ;
             if let Ok(prof) = ru32(&data, base + 8) {
@@ -1737,6 +1740,7 @@ pub fn get_boss_name_from_id(boss_id: u16) -> String {
         // Convergences
         1523 | 1527 => "Convergence: Outer Nayos".to_string(),
         1562 | 1571 => "Convergence: Mount Balrior".to_string(),
+        1629 => "Vloxx".to_string(),
 
         // Personal Story instance maps (story logs carry the map id as the "boss id").
         579 => "The Snaff Prize".to_string(),
@@ -1812,7 +1816,7 @@ pub fn parse_boss_id(bytes: &[u8]) -> Option<(u16, Option<String>)> {
         return None;
     }
 
-    if [1523u16, 1527, 1562, 1571].contains(&boss_id) {
+    if [1523u16, 1527, 1562, 1571, 1629].contains(&boss_id) {
         for i in 0..agent_count {
             let base = agents_base + i * AGENT_SZ;
             if let Ok(prof) = ru32(&data, base + 8) {
@@ -2248,6 +2252,10 @@ pub fn parse_is_cm(bytes: &[u8]) -> Option<bool> {
     if header_boss_id == 1523 || header_boss_id == 1527 {
         return detect_outer_nayos_cm(&data, agents_base, agent_count, revision);
     }
+    // Nexus of Eternity Convergence (header id 1629) is a CM-only encounter.
+    if header_boss_id == 1629 {
+        return Some(true);
+    }
 
     // ── Special cases: CM detected without health or statechange events ─────────
 
@@ -2487,6 +2495,7 @@ pub fn parse_is_lcm(bytes: &[u8]) -> Option<bool> {
         || header_boss_id == 1571
         || header_boss_id == 1523
         || header_boss_id == 1527
+        || header_boss_id == 1629
     {
         return Some(false);
     }
@@ -2726,7 +2735,8 @@ pub fn parse_cerus_empowered_stacks(bytes: &[u8]) -> Option<u32> {
     let _is_convergence = header_boss_id == 1523
         || header_boss_id == 1527
         || header_boss_id == 1562
-        || header_boss_id == 1571;
+        || header_boss_id == 1571
+        || header_boss_id == 1629;
     let header_end: usize = if revision == 0 { 15 } else { 16 };
 
     let agent_count = ru32(&data, header_end).ok()? as usize;
@@ -2738,7 +2748,7 @@ pub fn parse_cerus_empowered_stacks(bytes: &[u8]) -> Option<u32> {
     }
 
     // Resolve boss_id
-    if boss_id == 1523 || boss_id == 1527 || boss_id == 1562 || boss_id == 1571 {
+    if boss_id == 1523 || boss_id == 1527 || boss_id == 1562 || boss_id == 1571 || boss_id == 1629 {
         for i in 0..agent_count {
             let base = agents_base + i * AGENT_SZ;
             if let Ok(prof) = ru32(&data, base + 8) {

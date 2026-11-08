@@ -502,7 +502,7 @@
     const COOLDOWN_MS = 300000; // 5 min
     const now = Date.now();
     const collectFailed = (logs: UploadRecord[]) =>
-      logs.filter((h) => h.wingman_status === "failed" && !h.is_wvw && !(wingmanRetryCooldown[h.file_path] && now - wingmanRetryCooldown[h.file_path] < COOLDOWN_MS)).map((h) => h.file_path);
+      logs.filter((h) => h.wingman_status === "failed" && !h.is_wvw && !h.is_convergence && !h.is_story && !(wingmanRetryCooldown[h.file_path] && now - wingmanRetryCooldown[h.file_path] < COOLDOWN_MS)).map((h) => h.file_path);
     const failedSet = new Set<string>();
     for (const fp of collectFailed(allHistory)) failedSet.add(fp);
     for (const fp of collectFailed(uploads)) failedSet.add(fp);
@@ -529,7 +529,7 @@
   // is declared, further down — it can't live here (used-before-declaration).
   function retryAllFailedWingman() {
     for (const h of allHistory) {
-      if (h.wingman_status === "failed" && !h.is_wvw) enqueueWingmanRetry(h.file_path);
+      if (h.wingman_status === "failed" && !h.is_wvw && !h.is_convergence && !h.is_story) enqueueWingmanRetry(h.file_path);
     }
   }
 
@@ -623,6 +623,12 @@
             { title: "DB Migration", desc: "Migration runs once, automatically, on first launch after updating: existing history.json records are imported into history.db, and the original file is kept as a fallback." },
             { title: "Server-Side Filtering", desc: "Server-side filtered, paginated history queries (boss, type, rank, profession, date/time, search) — no more loading everything into memory." },
             { title: "Database Maintenance", desc: "Settings → Storage & Cache Maintenance now has dedicated buttons for the history database: Optimize DB (VACUUM compacts the file after bulk deletes), Rebuild Index (REINDEX rebuilds search indexes), Check Integrity (PRAGMA integrity_check verifies the database is sound), Backup DB (timestamped copy to history_backups/)." }
+          ]
+        },
+        {
+          category: "🎮 Bosses & Encounters",
+          items: [
+            { title: "Nexus of Eternity Convergence CM", desc: "Added recognition and support for the Nexus of Eternity Convergence (Challenge Mode) — Vloxx — including group header, CM badge, icon, and duration parsing." }
           ]
         }
       ]
@@ -1937,6 +1943,7 @@
     if (c === "ura" || c === "urathesteamshrieker") return "Ura, the Steamshrieker";
     if (c === "convergenceouternayos") return "Convergence: Outer Nayos";
     if (c === "convergencemountbalrior") return "Convergence: Mount Balrior";
+    if (c === "vloxx") return "Vloxx";
     if (c === "mcleod" || c === "mcleodthesilent") return "McLeod the Silent";
     if (c === "gate" || c === "keyofahdashimgate" || c === "keyofahdashim") return "Key of Ahdashim Gate";
     if (c === "voiceandclaw") return "Voice and Claw of the Fallen";
@@ -2243,6 +2250,7 @@
         ura: "ura", urathesteamshrieker: "ura",
         // Mount Balrior metrix has no dedicated asset; reuse Greer as before.
         convergencemountbalrior: "greer",
+        vloxx: "vloxx",
       };
       const base = CONV_ICON_KEY[c] ?? (c === "convergenceouternayos" ? null : c);
       if (!base) return "/bosses/unknown.png"; // map-name guard with no asset -> catch-all
@@ -3001,7 +3009,7 @@
             .finally(() => { wingmanUi[h.file_path] = null; });
         }
       }
-      const pendingFailed = allHistory.filter((h) => h.status === "On Hold" && (!h.wingman_status || h.wingman_status === "failed"));
+      const pendingFailed = allHistory.filter((h) => h.status === "On Hold" && (!h.wingman_status || h.wingman_status === "failed") && !h.is_convergence && !h.is_story);
       for (const h of pendingFailed) {
         if (!wingmanQueue.includes(h.file_path)) enqueueWingmanRetry(h.file_path);
       }
@@ -3880,6 +3888,8 @@
       if (getEncounterType(log.boss_name, log.num_players, log.is_convergence) === "convergence") {
         if (["greer", "greerthebightbringer", "greertheblightbringer", "decima", "decimathestormsinger", "ura", "urathesteamshrieker"].includes(c)) {
           catName = "Convergence: Mount Balrior";
+        } else if (c === "vloxx") {
+          catName = "Nexus of Eternity Convergence CM";
         } else {
           catName = "Convergence: Outer Nayos";
         }
@@ -4202,7 +4212,7 @@
           .finally(() => { wingmanUi[h.file_path] = null; });
       }
       // On Hold failed logs: re-enqueue
-      const pendingFailed = allHistory.filter((h) => h.status === "On Hold" && (!h.wingman_status || h.wingman_status === "failed") && !wingmanQueue.includes(h.file_path));
+      const pendingFailed = allHistory.filter((h) => h.status === "On Hold" && (!h.wingman_status || h.wingman_status === "failed") && !h.is_convergence && !h.is_story && !wingmanQueue.includes(h.file_path));
       for (const h of pendingFailed) enqueueWingmanRetry(h.file_path);
     }, 20000);
     // Hourly update-poll handle (declared here so the onMount cleanup can clear it).
@@ -4340,7 +4350,7 @@
         }
 
         // Auto-enqueue On Hold logs (no dps.report link) for Wingman raw upload
-        if (r.status === "On Hold" && (!r.wingman_status || r.wingman_status === "failed" || r.wingman_status === "in_progress")) {
+        if (r.status === "On Hold" && (!r.wingman_status || r.wingman_status === "failed" || r.wingman_status === "in_progress") && !r.is_convergence && !r.is_story) {
           enqueueWingmanRetry(r.file_path);
         }
 
@@ -5956,7 +5966,7 @@ async function testWebhook(wh: any) {
             <span class="custom-tooltip">Uploads paused — resume in settings.</span>
           </span>
         {/if}
-        {#if wingman_enabled && (log.wingman_status === "failed" || log.wingman_status === "imported" || wingmanUi[log.file_path] === "sending" || wingmanUi[log.file_path] === "verifying" || log.wingman_status === "done" || log.wingman_status === "in_progress") && !log.is_wvw}
+        {#if wingman_enabled && (log.wingman_status === "failed" || log.wingman_status === "imported" || wingmanUi[log.file_path] === "sending" || wingmanUi[log.file_path] === "verifying" || log.wingman_status === "done" || log.wingman_status === "in_progress") && !log.is_wvw && !log.is_convergence && !log.is_story}
           {@const isActive = wingmanUi[log.file_path] === "sending" || wingmanQueue.includes(log.file_path)}
           {@const isVerifying = wingmanUi[log.file_path] === "verifying"}
           {@const wmState = isVerifying ? "verifying" : (isActive ? "sending" : (log.wingman_status === "in_progress" ? "pending" : (log.wingman_status ?? "failed")))}

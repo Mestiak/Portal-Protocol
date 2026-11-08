@@ -111,10 +111,10 @@ fn encounter_type(log: &UploadRecord) -> &'static str {
         return "convergence";
     }
     let c = clean(boss);
-    if ["sorrow", "demonknight", "dreadwing", "hellsister", "umbriel", "convergenceouternayos"].contains(&c.as_str()) {
+    if ["sorrow", "demonknight", "dreadwing", "hellsister", "umbriel", "convergenceouternayos", "vloxx"].contains(&c.as_str()) {
         return "convergence";
     }
-    if ["greer", "greerthebightbringer", "greertheblightbringer", "decima", "decimathestormsinger", "ura", "urathesteamshrieker", "convergencemountbalrior"].contains(&c.as_str()) {
+    if ["greer", "greerthebightbringer", "greertheblightbringer", "decima", "decimathestormsinger", "ura", "urathesteamshrieker", "convergencemountbalrior", "vloxx"].contains(&c.as_str()) {
         if c == "convergencemountbalrior" || log.num_players.unwrap_or(0) > 10 {
             return "convergence";
         }

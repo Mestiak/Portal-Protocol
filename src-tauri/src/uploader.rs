@@ -2799,7 +2799,7 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
     let mut is_conv = false;
     if diag_bytes.len() >= 15 && diag_bytes.starts_with(b"EVTC") {
         let raw_id = u16::from_le_bytes([diag_bytes[13], diag_bytes[14]]);
-        is_conv = raw_id == 1523 || raw_id == 1527 || raw_id == 1562 || raw_id == 1571;
+        is_conv = raw_id == 1523 || raw_id == 1527 || raw_id == 1562 || raw_id == 1571 || raw_id == 1629;
     }
     record.is_convergence = Some(is_conv);
     // Provisional duration (rough EVTC span) shown while uploading. This is a
@@ -3324,7 +3324,7 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                             // Only story logs keep the local span: dps.report reports 0 there
                             // before EI finishes, so overwriting with 0 would be wrong.
                             let api_duration = enc.get("duration").and_then(|v| v.as_f64());
-                            if !ei_duration_set && record.is_story != Some(true) {
+                            if (!ei_duration_set || record.is_convergence == Some(true)) && record.is_story != Some(true) {
                                 if let Some(d) = api_duration {
                                     if d != 0.0 {
                                         record.duration = Some(d);
@@ -3935,8 +3935,9 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
     if !is_terminal {
         return;
     }
-    // Convergences in Challenge Mode and WvW logs are not valid Wingman logs.
-    let skip_wingman = (record.is_convergence == Some(true) && record.is_cm == Some(true))
+    // Convergences and Story logs (and WvW) are not valid Wingman logs.
+    let skip_wingman = record.is_convergence == Some(true)
+        || record.is_story == Some(true)
         || record.is_wvw == Some(true);
     if skip_wingman {
         return;
@@ -4039,7 +4040,8 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
 
     // Raw-log Wingman fallback when dps.report is down / no permalink.
     if record.url.is_none() && config.wingman_enabled {
-        let skip_wingman = (record.is_convergence == Some(true) && record.is_cm == Some(true))
+        let skip_wingman = record.is_convergence == Some(true)
+            || record.is_story == Some(true)
             || record.is_wvw == Some(true);
         if !skip_wingman && matches!(record.status.as_str(), "On Hold" | "Failed" | "Completed") {
             let fp = record.file_path.clone();
