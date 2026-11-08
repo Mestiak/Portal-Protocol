@@ -6194,10 +6194,6 @@ async function testWebhook(wh: any) {
           </div>
         {/if}
         <div class="meta-line">
-          {#if log.status === "On Hold" && log.duration != null}
-            <span class="meta-item"><i class="fa-solid fa-stopwatch" style="margin-right: 4px; font-size: 11px;"></i> {formatDuration(log.duration)}</span>
-            <span class="meta-divider">|</span>
-          {/if}
           {#if log.boss_hp_left != null && shouldShowHpLeft(log) && !(log.twin_largos && log.success !== true) && !(log.eyes && log.success !== true) && !(log.voice_claw && log.success !== true) && !(log.aetherblade && log.success !== true) && !(log.old_lions_court && log.success !== true) && !isDragonvoid(log.boss_name)}
             {#if log.ura_health_regen === "AHR"}
               <span class="custom-tooltip-container">
