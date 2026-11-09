@@ -1426,20 +1426,19 @@ pub fn enrich_record_from_ei(record: &mut crate::uploader::UploadRecord, ei: &Va
         // - "100% - 1%" / "Healed" sub-phases (created when Determined895 is detected)
         // - "70% - 1%" in CM (vs "70% - 0%" in NM) — indicates boss went to 1% without dying
         // In CM mode, any phase name with "70% - 1%" means the boss was healed from 1%.
-        let has_healed_phase =
-            ei.get("phases")
-                .and_then(|v| v.as_array())
-                .map_or(false, |phases| {
-                    phases.iter().any(|p| {
-                        let name = p.get("name").and_then(|n| n.as_str()).unwrap_or("");
-                        // Phase names explicitly indicating Ura hit 1% and was healed
-                        name == "100% - 1%" || name.contains("100% - 1%") ||
-                name == "Healed" || name.to_lowercase().contains("healed") ||
-                name.contains("100%") && name.contains("1%") ||
-                // CM-only: "70% - 1%" means boss reached 1% and regenerated (NM uses "70% - 0%")
-                name == "70% - 1%" || name == "40% - 1%"
-                    })
-                });
+        let has_healed_phase = ei
+                    .get("phases")
+                    .and_then(|v| v.as_array())
+                    .map_or(false, |phases| {
+                        phases.iter().any(|p| {
+                            let name = p.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                            name == "100% - 1%"
+                                || name.contains("100% - 1%")
+                                || name == "Healed"
+                                || name.to_lowercase().contains("healed")
+                                || (name.contains("100%") && name.contains("1%"))
+                        })
+                    });
         eprintln!("[AHR_DEBUG] has_healed_phase={}", has_healed_phase);
         if has_healed_phase {
             record.ura_health_regen = Some("AHR".to_string());
@@ -1885,9 +1884,10 @@ mod tests {
     }
 
     #[test]
-    fn test_ura_ahr_detection_with_70_1_percent_phase() {
-        // Simulates EI JSON where the Determined895 buff wasn't detected,
-        // but the "70% - 1%" CM phase name still indicates AHR occurred.
+    fn test_ura_no_ahr_without_healed_phase() {
+        // CM logs that reach 40% but never heal (no Determined895 "Healed" phase)
+        // must NOT be flagged AHR. "70% - 1%" / "40% - 1%" are ordinary CM phase
+        // names and do not imply regeneration.
         let ei = json!({
             "bossName": "Godscream Ura",
             "phases": [
@@ -1901,7 +1901,7 @@ mod tests {
         record.boss_name = Some("Godscream Ura".to_string());
         record.is_cm = Some(true);
         enrich_record_from_ei(&mut record, &ei);
-        assert_eq!(record.ura_health_regen, Some("AHR".to_string()));
+        assert_eq!(record.ura_health_regen, None);
     }
 
     #[test]
