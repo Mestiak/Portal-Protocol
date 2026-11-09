@@ -9400,8 +9400,8 @@ async function testWebhook(wh: any) {
 
 {#if showCloseBackupModal}
   <div class="confirm-modal-overlay" role="dialog" aria-modal="true" aria-label="Backing up database" transition:fade={{ duration: 150 }}>
-    <div class="confirm-modal-card close-backup-card" transition:scale={{ duration: 200, start: 0.9 }}>
-      <div class="confirm-modal-head" style={closeBackupDone ? "flex-direction:column;align-items:center;text-align:center;gap:12px;padding:8px 0;" : ""}>
+    <div class="confirm-modal-card close-backup-card" transition:scale={{ duration: 200, start: 0.9 }} style={closeBackupDone ? "min-height:160px;" : ""}>
+      <div class="confirm-modal-head" style={closeBackupDone ? "flex:1;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:12px;" : ""}>
         <span class="confirm-modal-icon close-backup-icon" class:done={closeBackupDone} style={closeBackupDone ? "margin-bottom:4px;width:44px;height:44px;font-size:20px;" : ""}><i class="fa-solid fa-database"></i></span>
         <div>
           <h3 class="confirm-modal-title">{closeBackupDone ? "Backup completed" : "Backing up database…"}</h3>
