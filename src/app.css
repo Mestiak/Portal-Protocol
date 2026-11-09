@@ -8954,3 +8954,55 @@ input:focus {
   font-size: 13px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.3);
 }
+
+/* ─── App splash (loading screen) ─────────────────────────────────────── */
+.app-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--background, #0f1115);
+}
+.app-splash-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+.app-splash-logo {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--foreground);
+  animation: splash-logo-in 0.5s ease-out both;
+}
+.app-splash-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent, #6366f1);
+  border-radius: 50%;
+  animation: splash-spin 0.8s linear infinite;
+}
+.app-splash-sub {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  animation: splash-fade-in 0.6s ease-out 0.2s both;
+}
+@keyframes splash-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes splash-logo-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes splash-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-splash-spinner { animation: none; border-top-color: var(--accent, #6366f1); }
+  .app-splash-logo, .app-splash-sub { animation: none; }
+}

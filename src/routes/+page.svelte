@@ -6905,6 +6905,15 @@ async function testWebhook(wh: any) {
 {#if migrationToast}
   <div class="migration-toast">{migrationToast}</div>
 {/if}
+{#if !configLoaded}
+  <div class="app-splash" transition:fade={{ duration: 250 }}>
+    <div class="app-splash-inner">
+      <div class="app-splash-logo">Portal Protocol</div>
+      <div class="app-splash-spinner"></div>
+      <div class="app-splash-sub">Loading your settings…</div>
+    </div>
+  </div>
+{/if}
 <main class="app-container" class:sidebar-collapsed={!sidebarOpen}>
   {#if vloxxLcmNotice}
     <div style="position: sticky; top: 0; z-index: 50; background: var(--card); border-bottom: 1px solid var(--border); padding: 8px 12px; display: flex; align-items: center; gap: 8px;">
