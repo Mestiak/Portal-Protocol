@@ -5578,7 +5578,6 @@ async function testWebhook(wh: any) {
     wingman_enabled; wingman_account; use_backup_dps; max_concurrent_uploads;
     watch_stability_delay_ms; watch_poll_interval_ms; max_upload_retries; min_log_seconds;
     reduce_motion; hide_on_startup; wvw_enabled; accent; compact_mode; app_font;
-    sidebarOpen;
     JSON.stringify(sessions);
     JSON.stringify(gw2_accounts);
     JSON.stringify(discord_webhooks);
@@ -6893,7 +6892,7 @@ async function testWebhook(wh: any) {
     <button
       class="sidebar-toggle-btn"
       data-tauri-drag-region="false"
-      onpointerdown={(e) => { e.preventDefault(); suppressDirtyToast = true; sidebarOpen = !sidebarOpen; }}
+      onpointerdown={(e) => { e.preventDefault(); sidebarOpen = !sidebarOpen; persistConfig(); }}
       title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
       aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
     >
