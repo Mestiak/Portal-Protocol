@@ -635,7 +635,7 @@
           items: [
             { title: "Save Settings Toast", desc: "Toggling the sidebar and marking favorites / adding notes no longer triggers the 'Unsaved settings changes' toast." },
             { title: "History Instant Updates", desc: "Favorite and note changes now reflect immediately on the rendered History card without needing a filter change or reload." },
-            { title: ".NET 10 Runtime (Elite Insights)", desc: "The bundled Elite Insights parser now requires the free .NET 10 Desktop Runtime (upgraded from .NET 8). Install it from the link in the in-app notice to keep full local parsing; otherwise uploads fall back to dps.report." }
+            { title: ".NET 10 Runtime (Elite Insights)", desc: "The bundled Elite Insights parser now requires the free .NET 10 Desktop Runtime (upgraded from .NET 8). Install it from https://dotnet.microsoft.com/en-us/download/dotnet/10.0 to keep full local parsing; otherwise uploads fall back to dps.report." }
           ]
         }
       ]
