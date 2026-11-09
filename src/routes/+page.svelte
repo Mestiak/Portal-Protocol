@@ -4153,7 +4153,7 @@
 
   function dismissEiNotice() {
     eiRuntimeNotice = null;
-    localStorage.setItem("ei_runtime_notice_dismissed", "1");
+    localStorage.setItem("ei_runtime_notice_dotnet10_dismissed", "1");
   }
 
   $effect(() => {
@@ -4307,7 +4307,7 @@
       // One-time notice: if the bundled Elite Insights can't run (missing .NET 8
       // Desktop Runtime), uploads still work but fall back to dps.report. Only
       // show when not already dismissed this app version.
-      if (localStorage.getItem("ei_runtime_notice_dismissed") !== "1") {
+      if (localStorage.getItem("ei_runtime_notice_dotnet10_dismissed") !== "1") {
         invoke<{ available: boolean; download_url: string }>("check_ei_runtime")
           .then((s) => { if (!s.available) eiRuntimeNotice = { url: s.download_url }; })
           .catch(() => {});
