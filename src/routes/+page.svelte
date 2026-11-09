@@ -4283,6 +4283,7 @@
 
     void (async () => {
       await loadConfig();
+      try { await getCurrentWindow().show(); } catch {}
       // the installed version (not a hard-coded string). This makes the modal
 
       try {
