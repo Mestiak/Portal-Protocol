@@ -614,6 +614,32 @@
   type PatchNoteVersion = { version: string; date: string; image?: string; notes: PatchNoteCategory[] };
   const PATCH_NOTES_DATA: PatchNoteVersion[] = [
     {
+      version: "0.8.0",
+      date: "November 2026",
+      notes: [
+        {
+          category: "🛡️ Stability",
+          items: [
+            { title: "WvW Crash Hardening", desc: "Local EVTC parsing is now wrapped in catch_unwind: a panic on an oversized or malformed log degrades to a 'Failed' card with an error message instead of crashing the app." }
+          ]
+        },
+        {
+          category: "🎮 Bosses & Encounters",
+          items: [
+            { title: "Ura AHR Fix", desc: "Ura 'After Health Regeneration' (AHR) badge is now only set when EI creates a 'Healed' / '100% - 1%' phase (actual regeneration past 1%). Ordinary CM phase names ('70% - 1%', '40% - 1%') no longer trigger a false AHR badge." },
+            { title: "Ura CM Recognition", desc: "Ura CM kill logs are detected via the 70M HP threshold; classification relies on the bundled Elite Insights parser." }
+          ]
+        },
+        {
+          category: "🎨 UI & Settings",
+          items: [
+            { title: "Save Settings Toast", desc: "Toggling the sidebar and marking favorites / adding notes no longer triggers the 'Unsaved settings changes' toast." },
+            { title: "History Instant Updates", desc: "Favorite and note changes now reflect immediately on the rendered History card without needing a filter change or reload." }
+          ]
+        }
+      ]
+    },
+    {
       version: "0.7.9",
       date: "November 2026",
       notes: [
