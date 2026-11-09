@@ -7,11 +7,11 @@ use chrono::Utc;
 use reqwest::multipart;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::HashSet;
 use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
-use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::OnceLock;
@@ -64,11 +64,21 @@ pub fn manual_tx() -> Option<Sender<PathBuf>> {
 // effect without an app restart.
 static CONCURRENCY_SEM: OnceLock<Mutex<Option<Arc<tokio::sync::Semaphore>>>> = OnceLock::new();
 pub fn set_concurrency(max: usize) {
-    let sem = if max == 0 { None } else { Some(Arc::new(tokio::sync::Semaphore::new(max))) };
-    *CONCURRENCY_SEM.get_or_init(|| Mutex::new(None)).lock().unwrap() = sem;
+    let sem = if max == 0 {
+        None
+    } else {
+        Some(Arc::new(tokio::sync::Semaphore::new(max)))
+    };
+    *CONCURRENCY_SEM
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .unwrap() = sem;
 }
 fn concurrency_sem() -> Option<Arc<tokio::sync::Semaphore>> {
-    CONCURRENCY_SEM.get().and_then(|m| m.lock().ok()).and_then(|g| g.clone())
+    CONCURRENCY_SEM
+        .get()
+        .and_then(|m| m.lock().ok())
+        .and_then(|g| g.clone())
 }
 
 static UPLOAD_QUEUE: OnceLock<Mutex<Vec<QueueItem>>> = OnceLock::new();
@@ -336,13 +346,20 @@ pub fn get_upload_queue() -> Result<serde_json::Value, String> {
 static DPS_REPORT_DOWN: OnceLock<AtomicBool> = OnceLock::new();
 static CONSECUTIVE_5XX: OnceLock<AtomicU32> = OnceLock::new();
 pub fn consecutive_5xx() -> u32 {
-    CONSECUTIVE_5XX.get_or_init(|| AtomicU32::new(0)).load(std::sync::atomic::Ordering::Relaxed)
+    CONSECUTIVE_5XX
+        .get_or_init(|| AtomicU32::new(0))
+        .load(std::sync::atomic::Ordering::Relaxed)
 }
 pub fn incr_consecutive_5xx() -> u32 {
-    CONSECUTIVE_5XX.get_or_init(|| AtomicU32::new(0)).fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1
+    CONSECUTIVE_5XX
+        .get_or_init(|| AtomicU32::new(0))
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        + 1
 }
 pub fn reset_consecutive_5xx() {
-    CONSECUTIVE_5XX.get_or_init(|| AtomicU32::new(0)).store(0, std::sync::atomic::Ordering::Relaxed);
+    CONSECUTIVE_5XX
+        .get_or_init(|| AtomicU32::new(0))
+        .store(0, std::sync::atomic::Ordering::Relaxed);
 }
 fn dps_report_down() -> bool {
     DPS_REPORT_DOWN
@@ -1463,7 +1480,12 @@ pub async fn repair_history_cm_flags(app: AppHandle) {
 
         // Targeted repair for Vloxx LCM logs that were stored as plain CM before
         // LCM support landed. Local EVTC parse (85M HP threshold) is authoritative.
-        if vloxx_repair_pending && lcm_eligible && rec.is_lcm != Some(true) && !rec.file_path.is_empty() && (boss == "vloxx" || boss == "nexusofeternity") {
+        if vloxx_repair_pending
+            && lcm_eligible
+            && rec.is_lcm != Some(true)
+            && !rec.file_path.is_empty()
+            && (boss == "vloxx" || boss == "nexusofeternity")
+        {
             if let Ok(bytes) = std::fs::read(&rec.file_path) {
                 if crate::evtc_parser::parse_is_lcm(&bytes) == Some(true) {
                     rec.is_lcm = Some(true);
@@ -1986,7 +2008,11 @@ pub async fn repair_history_story_classification(app: AppHandle) {
         // run Elite Insights for the 422 case, so we can resolve the verdict + duration
         // and flip a stale "Processing" record to "Completed" (it's no longer processing).
         if let Some(permalink) = rec.url.clone() {
-            if rec.success.is_none() || rec.duration.is_none() || rec.status == "Processing" || rec.recorded_account.is_none() {
+            if rec.success.is_none()
+                || rec.duration.is_none()
+                || rec.status == "Processing"
+                || rec.recorded_account.is_none()
+            {
                 let url = format!("https://dps.report/getJson?permalink={}", permalink);
                 if let Ok(r) = client.get(&url).send().await {
                     if let Ok(json) = r.json::<Value>().await {
@@ -2011,7 +2037,8 @@ pub async fn repair_history_story_classification(app: AppHandle) {
                             rec.status = "Completed".to_string();
                         }
                         if rec.recorded_account.is_none() {
-                            if let Some(a) = json.get("recordedAccountBy").and_then(|v| v.as_str()) {
+                            if let Some(a) = json.get("recordedAccountBy").and_then(|v| v.as_str())
+                            {
                                 rec.recorded_account = Some(a.to_string());
                             }
                         }
@@ -2126,12 +2153,7 @@ pub async fn start_upload_loop(
 }
 
 /// Helper: enqueue one upload, respecting the concurrency semaphore.
-async fn spawn_upload(
-    app: &AppHandle,
-    client: &reqwest::Client,
-    path: PathBuf,
-    manual: bool,
-) {
+async fn spawn_upload(app: &AppHandle, client: &reqwest::Client, path: PathBuf, manual: bool) {
     let file_path = path.to_string_lossy().to_string();
     let file_name = path
         .file_name()
@@ -2144,7 +2166,10 @@ async fn spawn_upload(
     // "queued" and loop forever. Terminal (done/skipped) entries are allowed to
     // re-enter so genuine retries still work.
     {
-        let g = UPLOAD_QUEUE.get_or_init(|| Mutex::new(Vec::new())).lock().unwrap();
+        let g = UPLOAD_QUEUE
+            .get_or_init(|| Mutex::new(Vec::new()))
+            .lock()
+            .unwrap();
         if let Some(it) = g.iter().find(|i| i.file_path == file_path) {
             if it.state == "queued" || it.state == "active" {
                 return;
@@ -2199,7 +2224,12 @@ async fn spawn_upload(
         // Guard against a stuck slot (e.g. after a crash/orphaned permit) so a
         // "queued" entry can never hang forever waiting for a permit that never
         // arrives. After the timeout we drop the item from the queue as done.
-        let permit = match tokio::time::timeout(Duration::from_secs(60), sem.clone().acquire_owned()).await {
+        let permit = match tokio::time::timeout(
+            Duration::from_secs(60),
+            sem.clone().acquire_owned(),
+        )
+        .await
+        {
             Ok(Ok(p)) => p,
             _ => {
                 queue_mark_done(&file_path, &emit_handle);
@@ -2346,7 +2376,9 @@ fn schedule_processing_check(
                         // Check presentInstanceBuffs — dps.report's getJson response includes
                         // this array of [buffId, stacks, phaseIdx]. The QP buffs are
                         // 77676 (Quickplay Boost) and 79492 (Quickplay Morale).
-                        if let Some(buffs) = json.get("presentInstanceBuffs").and_then(|v| v.as_array()) {
+                        if let Some(buffs) =
+                            json.get("presentInstanceBuffs").and_then(|v| v.as_array())
+                        {
                             for entry in buffs {
                                 if let Some(arr) = entry.as_array() {
                                     if let Some(id) = arr.first().and_then(|v| v.as_u64()) {
@@ -2454,12 +2486,13 @@ fn schedule_processing_check(
                         // getJson response's own `success` field. This mirrors
                         // how dragon_phase_state_with_success already resolves
                         // the success flag (evtc_parser.rs:756).
-                        let success = rec.success
+                        let success = rec
+                            .success
                             .or_else(|| json.get("success").and_then(|v| v.as_bool()))
                             .unwrap_or(false);
-                        if let Some(phases) = crate::evtc_parser::dragon_phase_full_with_adds(
-                            &json, success, None,
-                        ) {
+                        if let Some(phases) =
+                            crate::evtc_parser::dragon_phase_full_with_adds(&json, success, None)
+                        {
                             rec.bosses_phases = Some(phases);
                         }
                     }
@@ -2757,9 +2790,9 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
             record.status = "Failed".to_string();
             record.diagnostics = Some(diag.clone());
             record.error_msg = Some(
-                "Parsing failed on this log (likely too large or malformed). The app stayed alive; try re-uploading or splitting the log."
-                    .to_string(),
-            );
+                            "Parsing failed on this log (likely too large or malformed). The app stayed alive; try re-uploading."
+                                .to_string(),
+                        );
             let _ = app.emit("upload-status", record.clone());
             let _ = app.emit("upload-diagnostics", diag);
             return;
@@ -2799,12 +2832,22 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
     // WvW detection: boss name or local boss id in WvW map range.
     let boss_id_opt = local_boss_id.as_ref().map(|(id, _)| *id);
     let boss_name_opt = local_boss_id.as_ref().and_then(|(_, n)| n.clone());
-    let is_wvw = boss_name_opt.as_deref().map(|n| {
-        let l = n.to_lowercase();
-        l.contains("world vs world") || l.contains("wvw") || l.contains("enemy players") || l.contains("enemy player")
-    }).unwrap_or(false)
-        || boss_id_opt.map(|id| matches!(id, 38 | 95 | 96 | 1099 | 968 | 899)).unwrap_or(false)
-        || local_wvw_map_id.map(|id| matches!(id, 38 | 95 | 96 | 1099 | 968 | 899)).unwrap_or(false);
+    let is_wvw = boss_name_opt
+        .as_deref()
+        .map(|n| {
+            let l = n.to_lowercase();
+            l.contains("world vs world")
+                || l.contains("wvw")
+                || l.contains("enemy players")
+                || l.contains("enemy player")
+        })
+        .unwrap_or(false)
+        || boss_id_opt
+            .map(|id| matches!(id, 38 | 95 | 96 | 1099 | 968 | 899))
+            .unwrap_or(false)
+        || local_wvw_map_id
+            .map(|id| matches!(id, 38 | 95 | 96 | 1099 | 968 | 899))
+            .unwrap_or(false);
     record.is_wvw = Some(is_wvw);
     if is_wvw {
         record.boss_name = Some("World vs World".to_string());
@@ -2814,27 +2857,29 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
         }
     }
     if !is_wvw {
-    if let Some((boss_id, boss_name)) = local_boss_id {
-        // Prefer the real boss name read from the agent table (correctly
-        // disambiguates shared-strike ids like Icebrood Saga 22521 = Fraenir
-        // vs Boneskinner). Fall back to the id->name map if the agent name
-        // is missing for some reason.
-        record.boss_name = boss_name.or_else(|| Some(evtc_parser::get_boss_name_from_id(boss_id)));
-        // Harvest Temple (boss_id 43488) is The Dragonvoid — a CM-only strike
-        // whose agent-table name is a per-dragon NPC (e.g. "Jormag"), not a
-        // recognizable encounter key. Override to the canonical strike name so
-        // that bossCmEligible(), icon resolution, and the CM badge all work
-        // before EI enrichment arrives.
-        if boss_id == 43488 {
-            record.boss_name = Some("The Dragonvoid".to_string());
-            record.boss_icon = Some("dragonvoid".to_string());
+        if let Some((boss_id, boss_name)) = local_boss_id {
+            // Prefer the real boss name read from the agent table (correctly
+            // disambiguates shared-strike ids like Icebrood Saga 22521 = Fraenir
+            // vs Boneskinner). Fall back to the id->name map if the agent name
+            // is missing for some reason.
+            record.boss_name =
+                boss_name.or_else(|| Some(evtc_parser::get_boss_name_from_id(boss_id)));
+            // Harvest Temple (boss_id 43488) is The Dragonvoid — a CM-only strike
+            // whose agent-table name is a per-dragon NPC (e.g. "Jormag"), not a
+            // recognizable encounter key. Override to the canonical strike name so
+            // that bossCmEligible(), icon resolution, and the CM badge all work
+            // before EI enrichment arrives.
+            if boss_id == 43488 {
+                record.boss_name = Some("The Dragonvoid".to_string());
+                record.boss_icon = Some("dragonvoid".to_string());
+            }
         }
-    }
     }
     let mut is_conv = false;
     if diag_bytes.len() >= 15 && diag_bytes.starts_with(b"EVTC") {
         let raw_id = u16::from_le_bytes([diag_bytes[13], diag_bytes[14]]);
-        is_conv = raw_id == 1523 || raw_id == 1527 || raw_id == 1562 || raw_id == 1571 || raw_id == 1629;
+        is_conv =
+            raw_id == 1523 || raw_id == 1527 || raw_id == 1562 || raw_id == 1571 || raw_id == 1629;
     }
     record.is_convergence = Some(is_conv);
     // Provisional duration (rough EVTC span) shown while uploading. This is a
@@ -2936,7 +2981,11 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
         let matched: Vec<String> = config
             .wingman_accounts
             .iter()
-            .filter(|a| local_players.iter().any(|p| p.account.eq_ignore_ascii_case(a)))
+            .filter(|a| {
+                local_players
+                    .iter()
+                    .any(|p| p.account.eq_ignore_ascii_case(a))
+            })
             .cloned()
             .collect();
         let detected = if matched.len() == 1 {
@@ -3033,7 +3082,9 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                     ei_parsed.clone().unwrap(),
                 );
                 // Clean up arcdps sidecar files generated by EI.
-                let cleanup_dir = std::path::Path::new(&record.file_path).parent().map(|p| p.to_path_buf());
+                let cleanup_dir = std::path::Path::new(&record.file_path)
+                    .parent()
+                    .map(|p| p.to_path_buf());
                 if let Some(dir) = cleanup_dir {
                     crate::ei_runner::cleanup_leftover_ei_files(&dir);
                 }
@@ -3076,7 +3127,11 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
         let matched: Vec<String> = config
             .wingman_accounts
             .iter()
-            .filter(|a| local_players.iter().any(|p| p.account.eq_ignore_ascii_case(a)))
+            .filter(|a| {
+                local_players
+                    .iter()
+                    .any(|p| p.account.eq_ignore_ascii_case(a))
+            })
             .cloned()
             .collect();
         let detected = if matched.len() == 1 {
@@ -3216,8 +3271,8 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                         // final save at the end of upload_file persists it with dragon data.
                         if record.is_convergence == Some(true) {
                             record.status = "Completed".to_string();
-                        reset_consecutive_5xx();
-                        crate::uploader::set_dps_report_down(false);
+                            reset_consecutive_5xx();
+                            crate::uploader::set_dps_report_down(false);
                             // No early save / no break: fall through so Step 7e populates the
                             // Dragon Council and the end-of-function save captures it all.
                         }
@@ -3230,8 +3285,8 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                         // user can still open the finished report once EI completes server-side.
                         if record.is_story == Some(true) {
                             record.status = "Completed".to_string();
-                        reset_consecutive_5xx();
-                        crate::uploader::set_dps_report_down(false);
+                            reset_consecutive_5xx();
+                            crate::uploader::set_dps_report_down(false);
                             record.success = Some(true);
                             // Local duration (parse_duration) and player count (parse_players)
                             // were captured before upload — leave them as-is.
@@ -3359,7 +3414,9 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                             // Only story logs keep the local span: dps.report reports 0 there
                             // before EI finishes, so overwriting with 0 would be wrong.
                             let api_duration = enc.get("duration").and_then(|v| v.as_f64());
-                            if (!ei_duration_set || record.is_convergence == Some(true)) && record.is_story != Some(true) {
+                            if (!ei_duration_set || record.is_convergence == Some(true))
+                                && record.is_story != Some(true)
+                            {
                                 if let Some(d) = api_duration {
                                     if d != 0.0 {
                                         record.duration = Some(d);
@@ -3433,7 +3490,9 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                             // Only set for QP-eligible bosses so we never accidentally tag a
                             // non-QP raid as Quick Play.
                             if record.is_quick_play.is_none() && quick_play_boss(&pre_api_clean) {
-                                if let Some(buffs) = enc.get("presentInstanceBuffs").and_then(|v| v.as_array()) {
+                                if let Some(buffs) =
+                                    enc.get("presentInstanceBuffs").and_then(|v| v.as_array())
+                                {
                                     for entry in buffs {
                                         if let Some(arr) = entry.as_array() {
                                             if let Some(id) = arr.first().and_then(|v| v.as_u64()) {
@@ -3677,12 +3736,8 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                             // is already set). Let the getJson poll handle it instead.
                             if let Some(success) = record.success {
                                 if let Some(ref permalink) = record.url {
-                                    if let Some(phases) = fetch_dragon_timeline(
-                                        &client,
-                                        permalink,
-                                        success,
-                                    )
-                                    .await
+                                    if let Some(phases) =
+                                        fetch_dragon_timeline(&client, permalink, success).await
                                     {
                                         record.bosses_phases = Some(phases);
                                     }
@@ -3801,8 +3856,8 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                             || record.map_id.map(is_story_map_id).unwrap_or(false);
                         if is_story {
                             record.status = "Completed".to_string();
-                        reset_consecutive_5xx();
-                        crate::uploader::set_dps_report_down(false);
+                            reset_consecutive_5xx();
+                            crate::uploader::set_dps_report_down(false);
                             record.success = Some(true);
                             // Keep local duration/players; story has no EI combat verdict.
                             let _ = crate::config::add_to_history(&app, record.clone());
@@ -3817,8 +3872,8 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                                 record.is_convergence == Some(true) && record.is_cm == Some(true);
                             if is_conv_cm {
                                 record.status = "Completed".to_string();
-                        reset_consecutive_5xx();
-                        crate::uploader::set_dps_report_down(false);
+                                reset_consecutive_5xx();
+                                crate::uploader::set_dps_report_down(false);
                                 if record.success.is_none() {
                                     record.success = Some(
                                         record
@@ -4023,50 +4078,54 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                 o.to_string()
             } else {
                 match client.get(&url).send().await {
-                Ok(resp) => {
-                    let status = resp.status();
-                    let text = resp.text().await.unwrap_or_default();
-                    eprintln!(
-                        "[uploader] Wingman import status for {}: {}, body: {}",
-                        permalink, status, text
-                    );
-                    if status.is_success() {
-                        // Wingman may return HTTP 200 with a body indicating the log
-                        // was already present (`success:0` / `already in wingman DB`).
-                        // Treat that as terminal imported-equivalent, not failed, so
-                        // we don't keep retrying an already-known log.
-                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
-                            let success = v.get("success").and_then(|s| s.as_i64());
-                            let note = v.get("note").and_then(|s| s.as_str()).unwrap_or("").to_lowercase();
-                            if success == Some(1)
-                                || success == Some(0)
-                                || note.contains("already")
-                                || note.contains("in wingman")
-                            {
-                                "imported".to_string()
+                    Ok(resp) => {
+                        let status = resp.status();
+                        let text = resp.text().await.unwrap_or_default();
+                        eprintln!(
+                            "[uploader] Wingman import status for {}: {}, body: {}",
+                            permalink, status, text
+                        );
+                        if status.is_success() {
+                            // Wingman may return HTTP 200 with a body indicating the log
+                            // was already present (`success:0` / `already in wingman DB`).
+                            // Treat that as terminal imported-equivalent, not failed, so
+                            // we don't keep retrying an already-known log.
+                            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+                                let success = v.get("success").and_then(|s| s.as_i64());
+                                let note = v
+                                    .get("note")
+                                    .and_then(|s| s.as_str())
+                                    .unwrap_or("")
+                                    .to_lowercase();
+                                if success == Some(1)
+                                    || success == Some(0)
+                                    || note.contains("already")
+                                    || note.contains("in wingman")
+                                {
+                                    "imported".to_string()
+                                } else {
+                                    "failed".to_string()
+                                }
                             } else {
-                                "failed".to_string()
+                                let lower = text.to_lowercase();
+                                if lower.contains("success:0")
+                                    || lower.contains("already in wingman db")
+                                    || lower.contains("already in wingmandb")
+                                {
+                                    "imported".to_string()
+                                } else {
+                                    "imported".to_string()
+                                }
                             }
                         } else {
-                            let lower = text.to_lowercase();
-                            if lower.contains("success:0")
-                                || lower.contains("already in wingman db")
-                                || lower.contains("already in wingmandb")
-                            {
-                                "imported".to_string()
-                            } else {
-                                "imported".to_string()
-                            }
+                            "failed".to_string()
                         }
-                    } else {
+                    }
+                    Err(e) => {
+                        eprintln!("[uploader] Wingman import error for {}: {}", permalink, e);
                         "failed".to_string()
                     }
                 }
-                Err(e) => {
-                    eprintln!("[uploader] Wingman import error for {}: {}", permalink, e);
-                    "failed".to_string()
-                }
-            }
             };
             rec.wingman_status = Some(outcome.to_string());
             let _ = crate::config::add_to_history(&app_clone, rec);
@@ -4872,8 +4931,20 @@ const RAID_CM_INFO: &[(&str, RaidCmInfo)] = &[
             lcm: false,
         },
     ),
-    ("harvesttemple", RaidCmInfo { cm: true, lcm: false }),
-    ("harvesttemplecm", RaidCmInfo { cm: true, lcm: false }),
+    (
+        "harvesttemple",
+        RaidCmInfo {
+            cm: true,
+            lcm: false,
+        },
+    ),
+    (
+        "harvesttemplecm",
+        RaidCmInfo {
+            cm: true,
+            lcm: false,
+        },
+    ),
     (
         "oldlionscourt",
         RaidCmInfo {
@@ -4997,9 +5068,9 @@ const QUICK_PLAY_BOSS_NAMES: &[&str] = &[
     "boneskinner",
     "cosmicobservatory",
     "templeoffebe",
-    "cerus",       // Local EVTC parser / EI bossName returns "Cerus" for boss ID 25989
+    "cerus", // Local EVTC parser / EI bossName returns "Cerus" for boss ID 25989
     "xunlaijadejunkyard",
-    "ankka",       // Local EVTC parser / EI bossName returns "Ankka" for boss ID 23957
+    "ankka", // Local EVTC parser / EI bossName returns "Ankka" for boss ID 23957
     "oldlionscourt",
     // Old Lions Court watchknight variant names (EI reads the NPC name from
     // the agent table, which is "Prototype Vermilion" / "Prototype Arsenite" /
@@ -5334,7 +5405,11 @@ fn build_discord_embed(record: &UploadRecord) -> serde_json::Value {
         }
     }
     if !log_link.is_empty() {
-        let link_name = if record.is_wvw == Some(true) { "Full Report" } else { "Log" };
+        let link_name = if record.is_wvw == Some(true) {
+            "Full Report"
+        } else {
+            "Log"
+        };
         fields.push(json!({ "name": link_name, "value": format!("[dps.report]({})", log_link), "inline": false }));
     }
 
@@ -5862,8 +5937,7 @@ pub async fn vacuum_history_db(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn reindex_history_db(app: AppHandle) -> Result<(), String> {
     let conn = crate::db::open_db(&app)?;
-    conn.execute_batch("REINDEX;")
-        .map_err(|e| e.to_string())?;
+    conn.execute_batch("REINDEX;").map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -5880,7 +5954,11 @@ pub async fn check_history_db_integrity(app: AppHandle) -> Result<bool, String> 
 /// Auto-backup history.db if the last backup is older than `days` days.
 /// Keeps at most `keep` backups (newest first). Returns (backed_up, path_or_reason).
 #[tauri::command]
-pub async fn auto_backup_if_stale(app: AppHandle, days: u64, keep: usize) -> Result<(bool, String), String> {
+pub async fn auto_backup_if_stale(
+    app: AppHandle,
+    days: u64,
+    keep: usize,
+) -> Result<(bool, String), String> {
     let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
     let backup_dir = dir.join("history_backups");
     std::fs::create_dir_all(&backup_dir).map_err(|e| e.to_string())?;
@@ -5970,10 +6048,7 @@ pub async fn backup_history_db(app: AppHandle) -> Result<String, String> {
     if !src.exists() {
         return Err("history.db does not exist".into());
     }
-    let dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| e.to_string())?;
+    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
     let backup_dir = dir.join("history_backups");
     std::fs::create_dir_all(&backup_dir).map_err(|e| e.to_string())?;
     let ts = chrono::Utc::now().format("%Y%m%d-%H%M%S");
@@ -6244,7 +6319,11 @@ pub fn shape_log_stats(json: &Value) -> LogStats {
             if is_wvw {
                 // WvW: show total damage (not DPS) to match dps.report's Damage column.
                 if let Some(dt) = dps_targets.first() {
-                    boss_dps = dt.get(0).and_then(|v| v.get("damage")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    boss_dps = dt
+                        .get(0)
+                        .and_then(|v| v.get("damage"))
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0);
                 }
             } else {
                 for (idx, dt) in dps_targets.iter().enumerate() {
@@ -6265,7 +6344,11 @@ pub fn shape_log_stats(json: &Value) -> LogStats {
         let cleave_dps = if is_wvw {
             p.get("dpsAll")
                 .and_then(|v| {
-                    if let Some(arr) = v.as_array() { arr.first() } else { v.get("0") }
+                    if let Some(arr) = v.as_array() {
+                        arr.first()
+                    } else {
+                        v.get("0")
+                    }
                 })
                 .and_then(|v| v.get("damage"))
                 .and_then(|v| v.as_f64())
@@ -6423,9 +6506,9 @@ mod discord_embed_tests {
             diagnostics: None,
             is_convergence: None,
             is_wvw: None,
-        wvw_enemy_count: None,
-        recorded_account: None,
-        recorded_at: None,
+            wvw_enemy_count: None,
+            recorded_account: None,
+            recorded_at: None,
             boss_duration: None,
             group_dps: None,
             is_quick_play: None,
