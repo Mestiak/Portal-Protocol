@@ -286,11 +286,19 @@ pub fn check_dotnet_runtime() -> Result<(), String> {
             }
         }
     }
-    // Fallback: probe the shared framework directory.
+    // Fallback: probe the shared framework directory for a .NET 10 install.
     if let Some(local) = dirs_local_data_dir() {
         let probe = local.join("Microsoft\\dotnet\\shared\\Microsoft.WindowsDesktop.App");
         if probe.exists() {
-            return Ok(());
+            if let Ok(entries) = std::fs::read_dir(&probe) {
+                for e in entries.flatten() {
+                    let name = e.file_name();
+                    let s = name.to_string_lossy();
+                    if s.starts_with("10.") {
+                        return Ok(());
+                    }
+                }
+            }
         }
     }
     Err(
