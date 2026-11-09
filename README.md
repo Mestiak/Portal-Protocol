@@ -62,8 +62,8 @@
 ### Analytics
 ![Analytics](screenshots/analytics_1.png)
 
-### Discord Webhooks
-![Discord Webhooks](screenshots/webhook_1.png)
+### History
+![History](screenshots/history_tab.png)
 
 </div>
 
