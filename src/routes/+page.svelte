@@ -5529,6 +5529,10 @@ async function testWebhook(wh: any) {
         mention: null,
         mention_roles: Array.isArray(w.mention_roles) ? w.mention_roles : (typeof w.mention === "string" && w.mention.trim() ? [{ label: "Mention", token: w.mention.trim() }] : []),
         thread_id: typeof w.thread_id === "string" ? w.thread_id : null,
+        _collapsed: true,
+        _showFilters: false,
+        _showAdvanced: false,
+        _roleFormOpen: false,
         }));
       auto_upload = config.auto_upload;
       autostart = config.autostart;
