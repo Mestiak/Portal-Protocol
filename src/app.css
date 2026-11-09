@@ -7804,6 +7804,44 @@ html.mode-compact .nav-btn {
   animation: confirmModalIn 0.2s var(--ease-spring);
 }
 
+/* ─── Global polish: scrollbars, focus rings, hover lift ─────────────── */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.12);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); background-clip: padding-box; }
+* { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.12) transparent; }
+
+:focus-visible {
+  outline: 2px solid var(--accent, #6366f1);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ─── Card entrance stagger ────────────────────────────────────────────── */
+.log-card {
+  animation: card-enter 0.35s cubic-bezier(0.2, 0, 0, 1) both;
+}
+.log-card:nth-child(2) { animation-delay: 0.04s; }
+.log-card:nth-child(3) { animation-delay: 0.08s; }
+.log-card:nth-child(4) { animation-delay: 0.12s; }
+.log-card:nth-child(5) { animation-delay: 0.16s; }
+@keyframes card-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .log-card { animation: none; }
+}
+.card:hover, .history-row:hover, .log-card:hover {
+  transform: translateY(-1px);
+  transition: transform 0.15s ease;
+}
+
 @keyframes confirmModalIn {
   from {
     opacity: 0;
@@ -8953,4 +8991,98 @@ input:focus {
   color: var(--foreground);
   font-size: 13px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+/* ─── Close-backup modal polish ──────────────────────────────────────── */
+.close-backup-card {
+  box-shadow: 0 0 40px rgba(99, 102, 241, 0.25), 0 8px 32px rgba(0,0,0,0.4);
+  border: 1px solid var(--accent, #6366f1);
+}
+.close-backup-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent, #6366f1);
+  color: #fff;
+  box-shadow: 0 0 16px var(--accent, #6366f1);
+  transition: background 0.3s ease, box-shadow 0.3s ease;
+}
+.close-backup-icon.done {
+  background: #34d399;
+  box-shadow: 0 0 20px #34d399;
+}
+.close-backup-spinner {
+  color: var(--accent, #6366f1);
+  filter: drop-shadow(0 0 6px var(--accent, #6366f1));
+}
+.close-backup-check {
+  color: #34d399;
+  font-size: 18px;
+  filter: drop-shadow(0 0 8px #34d399);
+  animation: close-check-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.close-backup-close {
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
+}
+@keyframes close-check-pop {
+  from { transform: scale(0); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .close-backup-check { animation: none; }
+}
+
+/* ─── App splash (loading screen) ─────────────────────────────────────── */
+.app-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--background, #0f1115);
+}
+.app-splash-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+.app-splash-logo {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--foreground);
+  animation: splash-logo-in 0.5s ease-out both;
+}
+.app-splash-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent, #6366f1);
+  border-radius: 50%;
+  animation: splash-spin 0.8s linear infinite;
+}
+.app-splash-sub {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  animation: splash-fade-in 0.6s ease-out 0.2s both;
+}
+@keyframes splash-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes splash-logo-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes splash-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-splash-spinner { animation: none; border-top-color: var(--accent, #6366f1); }
+  .app-splash-logo, .app-splash-sub { animation: none; }
 }

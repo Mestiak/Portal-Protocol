@@ -14,7 +14,9 @@
       {
         "title": "Portal Protocol - dps.report log uploader",
         "width": 1000,
-        "height": 700
+        "height": 700,
+        "backgroundColor": "#0f1115",
+        "visible": false
       }
     ],
     "security": {

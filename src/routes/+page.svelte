@@ -4283,6 +4283,7 @@
 
     void (async () => {
       await loadConfig();
+      try { await getCurrentWindow().show(); } catch {}
       // the installed version (not a hard-coded string). This makes the modal
 
       try {
@@ -6905,6 +6906,15 @@ async function testWebhook(wh: any) {
 {#if migrationToast}
   <div class="migration-toast">{migrationToast}</div>
 {/if}
+{#if !configLoaded}
+  <div class="app-splash" transition:fade={{ duration: 250 }}>
+    <div class="app-splash-inner">
+      <div class="app-splash-logo">Portal Protocol</div>
+      <div class="app-splash-spinner"></div>
+      <div class="app-splash-sub">Loading your settings…</div>
+    </div>
+  </div>
+{/if}
 <main class="app-container" class:sidebar-collapsed={!sidebarOpen}>
   {#if vloxxLcmNotice}
     <div style="position: sticky; top: 0; z-index: 50; background: var(--card); border-bottom: 1px solid var(--border); padding: 8px 12px; display: flex; align-items: center; gap: 8px;">
@@ -7778,7 +7788,7 @@ async function testWebhook(wh: any) {
 
             <div class="form-group" style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 16px; margin-top: 8px;">
               <div class="form-checkbox" style="margin-bottom: 8px;">
-                <button type="button" class="action-btn" title={wingman_enabled ? "Disable Wingman uploads" : "Enable Wingman uploads"} style="display: inline-flex; align-items: center; gap: 6px; min-width: 240px; justify-content: center; background: {wingman_enabled ? 'var(--accent)' : 'rgba(255,255,255,0.08)'}; color: {wingman_enabled ? '#fff' : 'var(--foreground)'}; border: 1px solid {wingman_enabled ? 'var(--accent)' : 'var(--border)'}; box-shadow: {wingman_enabled ? '0 0 12px color-mix(in srgb, var(--accent) 45%, transparent)' : 'none'}; transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease; border-radius: 8px;" onclick={() => (wingman_enabled = !wingman_enabled)}>
+                <button type="button" class="action-btn" title={wingman_enabled ? "Disable Wingman uploads" : "Enable Wingman uploads"} style="display: inline-flex; align-items: center; gap: 6px; min-width: 240px; justify-content: center; background: {wingman_enabled ? 'var(--accent)' : 'rgba(255,255,255,0.08)'}; color: {wingman_enabled ? '#fff' : 'var(--foreground)'}; border: 1px solid {wingman_enabled ? 'var(--accent)' : 'var(--border)'}; box-shadow: {wingman_enabled ? '0 0 12px color-mix(in srgb, var(--accent) 45%, transparent)' : 'none'}; transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease; border-radius: 8px;" onclick={() => { wingman_enabled = !wingman_enabled; if (!wingman_enabled) { wingmanQueue = []; wingmanQueueRunning = false; wingmanDrawerOpen = false; } }}>
                   <span style="position: relative; display: inline-flex; align-items: center;">
                     <img src="/wingman_icon.png" alt="" style="width: 16px; height: 16px; vertical-align: middle;" />
                   </span>
@@ -8783,7 +8793,7 @@ async function testWebhook(wh: any) {
         {/if}
       {/if}
 
-      {#if wingmanQueue.length > 0}
+      {#if wingmanQueue.length > 0 && wingman_enabled}
         <button
           class="sb-queue-pill"
           aria-expanded={wingmanDrawerOpen}
@@ -9389,10 +9399,10 @@ async function testWebhook(wh: any) {
 {/if}
 
 {#if showCloseBackupModal}
-  <div class="confirm-modal-overlay" role="dialog" aria-modal="true" aria-label="Backing up database">
-    <div class="confirm-modal-card">
-      <div class="confirm-modal-head">
-        <span class="confirm-modal-icon"><i class="fa-solid fa-database"></i></span>
+  <div class="confirm-modal-overlay" role="dialog" aria-modal="true" aria-label="Backing up database" transition:fade={{ duration: 150 }}>
+    <div class="confirm-modal-card close-backup-card" transition:scale={{ duration: 200, start: 0.9 }} style={closeBackupDone ? "min-height:160px;" : ""}>
+      <div class="confirm-modal-head" style={closeBackupDone ? "flex:1;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:12px;" : ""}>
+        <span class="confirm-modal-icon close-backup-icon" class:done={closeBackupDone} style={closeBackupDone ? "margin-bottom:4px;width:44px;height:44px;font-size:20px;" : ""}><i class="fa-solid fa-database"></i></span>
         <div>
           <h3 class="confirm-modal-title">{closeBackupDone ? "Backup completed" : "Backing up database…"}</h3>
           <p class="confirm-modal-sub">{closeBackupDone ? "You're safe to close the app." : "Checkpointing and saving a backup. Please wait."}</p>
@@ -9401,19 +9411,14 @@ async function testWebhook(wh: any) {
       <div class="confirm-modal-body">
         {#if !closeBackupDone}
           <div style="display:flex;align-items:center;gap:10px;">
-            <i class="fa-solid fa-spinner fa-spin"></i>
+            <i class="fa-solid fa-spinner fa-spin close-backup-spinner"></i>
             <span>Working…</span>
-          </div>
-        {:else}
-          <div style="display:flex;align-items:center;gap:10px;">
-            <i class="fa-solid fa-circle-check" style="color:#34d399;"></i>
-            <span>Database backed up successfully.</span>
           </div>
         {/if}
       </div>
       {#if closeBackupDone}
-        <div class="confirm-modal-actions">
-          <button type="button" class="confirm-btn danger" onclick={() => invoke("force_close_window").catch((e) => console.error(e))}>
+        <div class="confirm-modal-actions" transition:fade={{ duration: 200, delay: 100 }} style="justify-content:center;">
+          <button type="button" class="confirm-btn danger close-backup-close" onclick={() => invoke("force_close_window").catch((e) => console.error(e))}>
             <i class="fa-solid fa-xmark" style="margin-right: 4px;"></i> Close
           </button>
         </div>
