@@ -8955,6 +8955,48 @@ input:focus {
   box-shadow: 0 4px 12px rgba(0,0,0,0.3);
 }
 
+/* ─── Close-backup modal polish ──────────────────────────────────────── */
+.close-backup-card {
+  box-shadow: 0 0 40px rgba(99, 102, 241, 0.25), 0 8px 32px rgba(0,0,0,0.4);
+  border: 1px solid var(--accent, #6366f1);
+}
+.close-backup-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent, #6366f1);
+  color: #fff;
+  box-shadow: 0 0 16px var(--accent, #6366f1);
+  transition: background 0.3s ease, box-shadow 0.3s ease;
+}
+.close-backup-icon.done {
+  background: #34d399;
+  box-shadow: 0 0 20px #34d399;
+}
+.close-backup-spinner {
+  color: var(--accent, #6366f1);
+  filter: drop-shadow(0 0 6px var(--accent, #6366f1));
+}
+.close-backup-check {
+  color: #34d399;
+  font-size: 18px;
+  filter: drop-shadow(0 0 8px #34d399);
+  animation: close-check-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.close-backup-close {
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
+}
+@keyframes close-check-pop {
+  from { transform: scale(0); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .close-backup-check { animation: none; }
+}
+
 /* ─── App splash (loading screen) ─────────────────────────────────────── */
 .app-splash {
   position: fixed;

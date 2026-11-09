@@ -9399,10 +9399,10 @@ async function testWebhook(wh: any) {
 {/if}
 
 {#if showCloseBackupModal}
-  <div class="confirm-modal-overlay" role="dialog" aria-modal="true" aria-label="Backing up database">
-    <div class="confirm-modal-card">
+  <div class="confirm-modal-overlay" role="dialog" aria-modal="true" aria-label="Backing up database" transition:fade={{ duration: 150 }}>
+    <div class="confirm-modal-card close-backup-card" transition:scale={{ duration: 200, start: 0.9 }}>
       <div class="confirm-modal-head">
-        <span class="confirm-modal-icon"><i class="fa-solid fa-database"></i></span>
+        <span class="confirm-modal-icon close-backup-icon" class:done={closeBackupDone}><i class="fa-solid fa-database"></i></span>
         <div>
           <h3 class="confirm-modal-title">{closeBackupDone ? "Backup completed" : "Backing up database…"}</h3>
           <p class="confirm-modal-sub">{closeBackupDone ? "You're safe to close the app." : "Checkpointing and saving a backup. Please wait."}</p>
@@ -9411,19 +9411,19 @@ async function testWebhook(wh: any) {
       <div class="confirm-modal-body">
         {#if !closeBackupDone}
           <div style="display:flex;align-items:center;gap:10px;">
-            <i class="fa-solid fa-spinner fa-spin"></i>
+            <i class="fa-solid fa-spinner fa-spin close-backup-spinner"></i>
             <span>Working…</span>
           </div>
         {:else}
-          <div style="display:flex;align-items:center;gap:10px;">
-            <i class="fa-solid fa-circle-check" style="color:#34d399;"></i>
+          <div style="display:flex;align-items:center;gap:10px;" transition:scale={{ duration: 250, start: 0.6 }}>
+            <i class="fa-solid fa-circle-check close-backup-check"></i>
             <span>Database backed up successfully.</span>
           </div>
         {/if}
       </div>
       {#if closeBackupDone}
-        <div class="confirm-modal-actions">
-          <button type="button" class="confirm-btn danger" onclick={() => invoke("force_close_window").catch((e) => console.error(e))}>
+        <div class="confirm-modal-actions" transition:fade={{ duration: 200, delay: 100 }}>
+          <button type="button" class="confirm-btn danger close-backup-close" onclick={() => invoke("force_close_window").catch((e) => console.error(e))}>
             <i class="fa-solid fa-xmark" style="margin-right: 4px;"></i> Close
           </button>
         </div>
