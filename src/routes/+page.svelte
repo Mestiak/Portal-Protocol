@@ -9401,8 +9401,8 @@ async function testWebhook(wh: any) {
 {#if showCloseBackupModal}
   <div class="confirm-modal-overlay" role="dialog" aria-modal="true" aria-label="Backing up database" transition:fade={{ duration: 150 }}>
     <div class="confirm-modal-card close-backup-card" transition:scale={{ duration: 200, start: 0.9 }}>
-      <div class="confirm-modal-head">
-        <span class="confirm-modal-icon close-backup-icon" class:done={closeBackupDone}><i class="fa-solid fa-database"></i></span>
+      <div class="confirm-modal-head" style={closeBackupDone ? "flex-direction:column;align-items:center;text-align:center;gap:8px;" : ""}>
+        <span class="confirm-modal-icon close-backup-icon" class:done={closeBackupDone} style={closeBackupDone ? "margin-bottom:4px;" : ""}><i class="fa-solid fa-database"></i></span>
         <div>
           <h3 class="confirm-modal-title">{closeBackupDone ? "Backup completed" : "Backing up database…"}</h3>
           <p class="confirm-modal-sub">{closeBackupDone ? "You're safe to close the app." : "Checkpointing and saving a backup. Please wait."}</p>
@@ -9413,11 +9413,6 @@ async function testWebhook(wh: any) {
           <div style="display:flex;align-items:center;gap:10px;">
             <i class="fa-solid fa-spinner fa-spin close-backup-spinner"></i>
             <span>Working…</span>
-          </div>
-        {:else}
-          <div style="display:flex;align-items:center;gap:10px;" transition:scale={{ duration: 250, start: 0.6 }}>
-            <i class="fa-solid fa-circle-check close-backup-check"></i>
-            <span>Database backed up successfully.</span>
           </div>
         {/if}
       </div>
