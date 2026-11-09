@@ -6981,7 +6981,6 @@ async function testWebhook(wh: any) {
       <span class="pp-status-icon">{toastIcon}</span>
       <span>{toastMsg}</span>
       <button class="toast-close-btn" onclick={() => { toastMsg = null; if (toastTimer) clearTimeout(toastTimer); }} aria-label="Close notification">×</button>
-      <span class="toast-progress" aria-hidden="true"></span>
     </div>
   {/if}
 

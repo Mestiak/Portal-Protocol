@@ -7837,27 +7837,6 @@ html.mode-compact .nav-btn {
 @media (prefers-reduced-motion: reduce) {
   .log-card { animation: none; }
 }
-/* ─── Toast progress bar ──────────────────────────────────────────────── */
-.pp-status-pill { position: relative; overflow: hidden; }
-.toast-progress {
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  height: 2px;
-  width: 100%;
-  background: var(--accent, #6366f1);
-  transform-origin: left;
-  animation: toast-progress 3.2s linear forwards;
-  opacity: 0.7;
-}
-@keyframes toast-progress {
-  from { transform: scaleX(1); }
-  to { transform: scaleX(0); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .toast-progress { animation: none; display: none; }
-}
-
 .card:hover, .history-row:hover, .log-card:hover {
   transform: translateY(-1px);
   transition: transform 0.15s ease;
