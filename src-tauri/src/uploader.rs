@@ -2421,8 +2421,6 @@ fn schedule_processing_check(
                                             || name == "Healed"
                                             || name.to_lowercase().contains("healed")
                                             || name.contains("100%") && name.contains("1%")
-                                            || name == "70% - 1%"
-                                            || name == "40% - 1%"
                                     })
                                 });
                         if has_healed {
