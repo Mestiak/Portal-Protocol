@@ -9417,7 +9417,7 @@ async function testWebhook(wh: any) {
         {/if}
       </div>
       {#if closeBackupDone}
-        <div class="confirm-modal-actions" transition:fade={{ duration: 200, delay: 100 }}>
+        <div class="confirm-modal-actions" transition:fade={{ duration: 200, delay: 100 }} style="justify-content:center;">
           <button type="button" class="confirm-btn danger close-backup-close" onclick={() => invoke("force_close_window").catch((e) => console.error(e))}>
             <i class="fa-solid fa-xmark" style="margin-right: 4px;"></i> Close
           </button>
