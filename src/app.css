@@ -7822,6 +7822,21 @@ html.mode-compact .nav-btn {
   border-radius: 4px;
 }
 
+/* ─── Card entrance stagger ────────────────────────────────────────────── */
+.log-card {
+  animation: card-enter 0.35s cubic-bezier(0.2, 0, 0, 1) both;
+}
+.log-card:nth-child(2) { animation-delay: 0.04s; }
+.log-card:nth-child(3) { animation-delay: 0.08s; }
+.log-card:nth-child(4) { animation-delay: 0.12s; }
+.log-card:nth-child(5) { animation-delay: 0.16s; }
+@keyframes card-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .log-card { animation: none; }
+}
 /* ─── Toast progress bar ──────────────────────────────────────────────── */
 .pp-status-pill { position: relative; overflow: hidden; }
 .toast-progress {
