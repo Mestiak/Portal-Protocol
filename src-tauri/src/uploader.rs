@@ -2715,19 +2715,56 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
         }
     }
 
-    let local_players_result = evtc_parser::parse_players(&file_bytes);
-    let boss_hp_left_local = evtc_parser::parse_boss_hp(&file_bytes);
-    let local_boss_id = evtc_parser::parse_boss_id(&file_bytes);
-    let local_wvw_map_id = evtc_parser::parse_wvw_map_id(&file_bytes);
-    // Active boss-fight duration (from first combat engagement event to boss death).
-    // Prioritized so that the provisional "while uploading" duration matches Elite
-    // Insights' trimmed duration as closely as possible.
-    let local_duration = evtc_parser::parse_boss_fight_duration(&file_bytes)
-        .or_else(|| evtc_parser::parse_full_fight_duration(&file_bytes))
-        .or_else(|| evtc_parser::parse_duration(&file_bytes));
-    let local_is_cm = evtc_parser::parse_is_cm(&file_bytes);
-    let local_is_lcm = evtc_parser::parse_is_lcm(&file_bytes);
-    let local_is_quick_play = evtc_parser::parse_is_quick_play(&file_bytes);
+    // Run all local EVTC parses inside catch_unwind so a panic on an oversized /
+    // pathological log degrades to a "Failed" card with an error message instead
+    // of crashing the whole app (P1).
+    let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let local_players_result = evtc_parser::parse_players(&file_bytes);
+        let boss_hp_left_local = evtc_parser::parse_boss_hp(&file_bytes);
+        let local_boss_id = evtc_parser::parse_boss_id(&file_bytes);
+        let local_wvw_map_id = evtc_parser::parse_wvw_map_id(&file_bytes);
+        let local_duration = evtc_parser::parse_boss_fight_duration(&file_bytes)
+            .or_else(|| evtc_parser::parse_full_fight_duration(&file_bytes))
+            .or_else(|| evtc_parser::parse_duration(&file_bytes));
+        let local_is_cm = evtc_parser::parse_is_cm(&file_bytes);
+        let local_is_lcm = evtc_parser::parse_is_lcm(&file_bytes);
+        let local_is_quick_play = evtc_parser::parse_is_quick_play(&file_bytes);
+        (
+            local_players_result,
+            boss_hp_left_local,
+            local_boss_id,
+            local_wvw_map_id,
+            local_duration,
+            local_is_cm,
+            local_is_lcm,
+            local_is_quick_play,
+        )
+    }));
+
+    let (
+        local_players_result,
+        boss_hp_left_local,
+        local_boss_id,
+        local_wvw_map_id,
+        local_duration,
+        local_is_cm,
+        local_is_lcm,
+        local_is_quick_play,
+    ) = match parsed {
+        Ok(v) => v,
+        Err(_) => {
+            diag.determine_cause();
+            record.status = "Failed".to_string();
+            record.diagnostics = Some(diag.clone());
+            record.error_msg = Some(
+                "Parsing failed on this log (likely too large or malformed). The app stayed alive; try re-uploading or splitting the log."
+                    .to_string(),
+            );
+            let _ = app.emit("upload-status", record.clone());
+            let _ = app.emit("upload-diagnostics", diag);
+            return;
+        }
+    };
 
     // Capture parse errors in diagnostics
     let local_players = match &local_players_result {
