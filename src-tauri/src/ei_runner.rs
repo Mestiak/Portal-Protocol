@@ -277,6 +277,7 @@ pub fn check_dotnet_runtime() -> Result<(), String> {
         // Ensure the Desktop runtime (not just core) is present for .NET 10.
         let out = Command::new("dotnet")
             .arg("--list-runtimes")
+            .creation_flags(0x08000000)
             .output()
             .ok();
         if let Some(o) = out {
