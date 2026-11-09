@@ -598,7 +598,7 @@
   getVersion().then((v) => { appVersion = v; }).catch(() => {});
 
   // Elite Insights version (manually updated when EI is bumped)
-  const EI_VERSION = "3.31.0.0";
+  const EI_VERSION = "0.32.0.0";
 
   // Update native window title with version when appVersion changes
   $effect(() => {
@@ -8481,7 +8481,7 @@ async function testWebhook(wh: any) {
           {/if}
         </div>
         <div class="version-row">
-          App: <strong>v{appVersion}</strong> · EI: <strong>{EI_VERSION}</strong>{#if updateAvailable} · Latest: <strong style="color: #34d399;">v{updateAvailable.version}</strong>{/if}
+          App: <strong>v{appVersion}</strong> · Elite Insights: <strong>{EI_VERSION}</strong>{#if updateAvailable} · Latest: <strong style="color: #34d399;">v{updateAvailable.version}</strong>{/if}
         </div>
       </div>
       </div>
