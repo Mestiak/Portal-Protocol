@@ -6893,7 +6893,7 @@ async function testWebhook(wh: any) {
     <button
       class="sidebar-toggle-btn"
       data-tauri-drag-region="false"
-      onpointerdown={(e) => { e.preventDefault(); sidebarOpen = !sidebarOpen; }}
+      onpointerdown={(e) => { e.preventDefault(); suppressDirtyToast = true; sidebarOpen = !sidebarOpen; }}
       title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
       aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
     >
