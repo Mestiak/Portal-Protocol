@@ -274,19 +274,28 @@ pub fn check_dotnet_runtime() -> Result<(), String> {
     #[cfg(windows)]
     cmd.creation_flags(0x08000000);
     if cmd.status().is_ok() {
-        return Ok(());
+        // Ensure the Desktop runtime (not just core) is present for .NET 10.
+        let out = Command::new("dotnet")
+            .arg("--list-runtimes")
+            .output()
+            .ok();
+        if let Some(o) = out {
+            let s = String::from_utf8_lossy(&o.stdout);
+            if s.contains("Microsoft.WindowsDesktop.App 10.") {
+                return Ok(());
+            }
+        }
     }
-    // Fallback: some installs expose the runtime without `dotnet` on PATH but
-    // with the shared framework directory present. Probe a known registration.
+    // Fallback: probe the shared framework directory.
     if let Some(local) = dirs_local_data_dir() {
-        let probe = local.join("Microsoft\\dotnet\\shared\\Microsoft.NETCore.App");
+        let probe = local.join("Microsoft\\dotnet\\shared\\Microsoft.WindowsDesktop.App");
         if probe.exists() {
             return Ok(());
         }
     }
     Err(
-        "Elite Insights needs the .NET 8 Desktop Runtime. Install it (free) from \
-         https://dotnet.microsoft.com/download/dotnet/8.0 — then restart Portal Protocol."
+        "Elite Insights needs the .NET 10 Desktop Runtime. Install it (free) from \
+         https://dotnet.microsoft.com/download/dotnet/10.0 — then restart Portal Protocol."
             .to_string(),
     )
 }
@@ -1578,7 +1587,7 @@ pub struct EiRuntimeStatus {
 pub fn check_ei_runtime() -> EiRuntimeStatus {
     EiRuntimeStatus {
         available: crate::ei_runner::check_dotnet_runtime().is_ok(),
-        download_url: "https://dotnet.microsoft.com/en-us/download/dotnet/8.0/runtime".to_string(),
+        download_url: "https://dotnet.microsoft.com/en-us/download/dotnet/10.0/runtime".to_string(),
     }
 }
 

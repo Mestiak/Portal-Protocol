@@ -634,7 +634,8 @@
           category: "🎨 UI & Settings",
           items: [
             { title: "Save Settings Toast", desc: "Toggling the sidebar and marking favorites / adding notes no longer triggers the 'Unsaved settings changes' toast." },
-            { title: "History Instant Updates", desc: "Favorite and note changes now reflect immediately on the rendered History card without needing a filter change or reload." }
+            { title: "History Instant Updates", desc: "Favorite and note changes now reflect immediately on the rendered History card without needing a filter change or reload." },
+            { title: ".NET 10 Runtime (Elite Insights)", desc: "The bundled Elite Insights parser now requires the free .NET 10 Desktop Runtime (upgraded from .NET 8). Install it from the link in the in-app notice to keep full local parsing; otherwise uploads fall back to dps.report." }
           ]
         }
       ]
@@ -1095,7 +1096,7 @@
             { title: "Added Individual HP Left for Statue of Darkness (Eyes)", desc: "Statue of Darkness now shows each eye's HP individually on a wipe — the Eye of Fate and the Eye of Judgment each get their own HP Left line (or 'Killed' at ~0%). They weren't being detected before, so the card showed nothing." },
             { title: "Added Individual HP Left for Voice & Claw", desc: "Voice & Claw now shows each of the two Fallen keepers' HP separately on a wipe — the Voice and the Claw each get their own HP Left line (or 'Killed' at ~0%)." },
             { title: "Added HP Left for Aetherblade Hideout", desc: "Aetherblade Hideout now shows the right boss's HP Left on a wipe. The fight has two phases, so it shows Captain Mai Trin's HP Left when you wipe on phase 1 (she stalls around 10% and never reaches 0), and Echo of Scarlet's HP Left once you push into phase 2 — so the card matches the boss you actually fell to." },
-            { title: "Local Parsing Now Prompts for .NET 8", desc: "Portal Protocol runs Elite Insights locally for richer log cards. EI is framework-dependent and needs the free .NET 8 Desktop Runtime. If it's missing, uploads still work (they fall back to dps.report) — and now the app shows a one-time notice with a direct download link so you can enable full local parsing. Dismiss it once and it stays gone." }
+            { title: "Local Parsing Now Prompts for .NET 10", desc: "Portal Protocol runs Elite Insights locally for richer log cards. EI is framework-dependent and needs the free .NET 10 Desktop Runtime. If it's missing, uploads still work (they fall back to dps.report) — and now the app shows a notice with a direct download link so you can enable full local parsing. Dismiss it once with 'Understood' and it stays gone." }
           ]
         }
       ]
@@ -7100,10 +7101,10 @@ async function testWebhook(wh: any) {
       <div style="display:flex; align-items:center; gap:10px; padding:9px 12px; margin-bottom:10px; background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.4); border-radius:8px; font-size:12px; color:rgba(255,255,255,0.9);">
         <i class="fa-solid fa-triangle-exclamation" style="color:#f59e0b; font-size:14px;"></i>
         <span style="flex:1;">
-          Local combat-log parsing (Elite Insights) needs the free <strong>.NET 8 Desktop Runtime</strong>. Without it, logs still upload but use dps.report instead of full local parsing.
+          Local combat-log parsing (Elite Insights) needs the free <strong>.NET 10 Desktop Runtime</strong>. Without it, logs still upload but use dps.report instead of full local parsing.
         </span>
-        <a href={eiRuntimeNotice.url} target="_blank" rel="noopener noreferrer" style="color:#fbbf24; font-weight:700; text-decoration:none; white-space:nowrap;">Get .NET 8 ↗</a>
-        <button type="button" onclick={dismissEiNotice} aria-label="Dismiss notice" style="background:none; border:none; color:rgba(255,255,255,0.6); font-size:16px; line-height:1; cursor:pointer; padding:0 2px;">×</button>
+        <a href={eiRuntimeNotice.url} target="_blank" rel="noopener noreferrer" style="color:#fbbf24; font-weight:700; text-decoration:none; white-space:nowrap;">Get .NET 10 ↗</a>
+        <button type="button" onclick={dismissEiNotice} aria-label="Understood" style="background:rgba(245,158,11,0.25); border:1px solid rgba(245,158,11,0.5); color:#fbbf24; font-size:12px; font-weight:600; padding:4px 10px; border-radius:6px; cursor:pointer; white-space:nowrap;">Understood</button>
       </div>
     {/if}
     {#if activeTab === "feed"}
