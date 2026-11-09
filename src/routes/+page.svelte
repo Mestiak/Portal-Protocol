@@ -3103,7 +3103,7 @@
   // Launch-time CM/LCM Mode-flag self-heal progress (Rust emits `repair_progress`).
   // repairProgress removed - repair badge feature deprecated
   // repairHideTimer removed - repair badge feature deprecated
-  // One-time notice shown when the user's machine lacks the .NET 8 Desktop
+  // One-time notice shown when the user's machine lacks the .NET 10 Desktop
   // Runtime the bundled Elite Insights needs. Without it, local parsing falls
   // back to dps.report (uploads still work, but cards aren't from EI).
   let eiRuntimeNotice = $state<{ url: string } | null>(null);
@@ -4304,7 +4304,7 @@
       ) {
         showPatchNotesModal = true;
       }
-      // One-time notice: if the bundled Elite Insights can't run (missing .NET 8
+      // One-time notice: if the bundled Elite Insights can't run (missing .NET 10
       // Desktop Runtime), uploads still work but fall back to dps.report. Only
       // show when not already dismissed this app version.
       if (localStorage.getItem("ei_runtime_notice_dotnet10_dismissed") !== "1") {
