@@ -609,7 +609,7 @@
 
   // Patch notes versions registry (newest first). `image` is an optional
   // screenshot bundled in /static, shown above the notes in the modal + history panel.
-  type PatchNoteItem = { title: string; desc: string };
+  type PatchNoteItem = { title: string; desc: string; url?: string };
   type PatchNoteCategory = { category: string; items: PatchNoteItem[] };
   type PatchNoteVersion = { version: string; date: string; image?: string; notes: PatchNoteCategory[] };
   const PATCH_NOTES_DATA: PatchNoteVersion[] = [
@@ -635,7 +635,7 @@
           items: [
             { title: "Save Settings Toast", desc: "Toggling the sidebar and marking favorites / adding notes no longer triggers the 'Unsaved settings changes' toast." },
             { title: "History Instant Updates", desc: "Favorite and note changes now reflect immediately on the rendered History card without needing a filter change or reload." },
-            { title: ".NET 10 Runtime (Elite Insights)", desc: "The bundled Elite Insights parser now requires the free .NET 10 Desktop Runtime (upgraded from .NET 8). Install it from https://dotnet.microsoft.com/en-us/download/dotnet/10.0 to keep full local parsing; otherwise uploads fall back to dps.report." }
+            { title: ".NET 10 Runtime (Elite Insights)", desc: "The bundled Elite Insights parser now requires the free .NET 10 Desktop Runtime (upgraded from .NET 8). Install it to keep full local parsing; otherwise uploads fall back to dps.report.", url: "https://dotnet.microsoft.com/en-us/download/dotnet/10.0" }
           ]
         }
       ]
@@ -8458,7 +8458,7 @@ async function testWebhook(wh: any) {
                       <ul style="list-style: none; margin: 0; padding: 0 0 0 4px; display: flex; flex-direction: column; gap: 6px;">
                         {#each category.items as item}
                           <li style="font-size: 11px; line-height: 1.5; color: rgba(255,255,255,0.8);">
-                            <strong style="color: var(--text);">{item.title}:</strong> {item.desc}
+                            <strong style="color: var(--text);">{item.title}:</strong> {item.desc}{#if item.url} <a href={item.url} target="_blank" rel="noopener noreferrer" style="color:#fbbf24; font-weight:600; text-decoration:underline;">Download .NET 10 ↗</a>{/if}
                           </li>
                         {/each}
                       </ul>
@@ -9494,7 +9494,7 @@ async function testWebhook(wh: any) {
                     <span class="patch-item-bullet">•</span>
                     <div class="patch-item-content">
                       <strong class="patch-item-title">{item.title}</strong>
-                      <p class="patch-item-desc">{item.desc}</p>
+                      <p class="patch-item-desc">{item.desc}{#if item.url} <a href={item.url} target="_blank" rel="noopener noreferrer" style="color:#fbbf24; font-weight:600; text-decoration:underline;">Download .NET 10 ↗</a>{/if}</p>
                     </div>
                   </div>
                 {/each}
