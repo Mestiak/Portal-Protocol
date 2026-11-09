@@ -7788,7 +7788,7 @@ async function testWebhook(wh: any) {
 
             <div class="form-group" style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 16px; margin-top: 8px;">
               <div class="form-checkbox" style="margin-bottom: 8px;">
-                <button type="button" class="action-btn" title={wingman_enabled ? "Disable Wingman uploads" : "Enable Wingman uploads"} style="display: inline-flex; align-items: center; gap: 6px; min-width: 240px; justify-content: center; background: {wingman_enabled ? 'var(--accent)' : 'rgba(255,255,255,0.08)'}; color: {wingman_enabled ? '#fff' : 'var(--foreground)'}; border: 1px solid {wingman_enabled ? 'var(--accent)' : 'var(--border)'}; box-shadow: {wingman_enabled ? '0 0 12px color-mix(in srgb, var(--accent) 45%, transparent)' : 'none'}; transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease; border-radius: 8px;" onclick={() => (wingman_enabled = !wingman_enabled)}>
+                <button type="button" class="action-btn" title={wingman_enabled ? "Disable Wingman uploads" : "Enable Wingman uploads"} style="display: inline-flex; align-items: center; gap: 6px; min-width: 240px; justify-content: center; background: {wingman_enabled ? 'var(--accent)' : 'rgba(255,255,255,0.08)'}; color: {wingman_enabled ? '#fff' : 'var(--foreground)'}; border: 1px solid {wingman_enabled ? 'var(--accent)' : 'var(--border)'}; box-shadow: {wingman_enabled ? '0 0 12px color-mix(in srgb, var(--accent) 45%, transparent)' : 'none'}; transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease; border-radius: 8px;" onclick={() => { wingman_enabled = !wingman_enabled; if (!wingman_enabled) { wingmanQueue = []; wingmanQueueRunning = false; wingmanDrawerOpen = false; } }}>
                   <span style="position: relative; display: inline-flex; align-items: center;">
                     <img src="/wingman_icon.png" alt="" style="width: 16px; height: 16px; vertical-align: middle;" />
                   </span>
@@ -8793,7 +8793,7 @@ async function testWebhook(wh: any) {
         {/if}
       {/if}
 
-      {#if wingmanQueue.length > 0}
+      {#if wingmanQueue.length > 0 && wingman_enabled}
         <button
           class="sb-queue-pill"
           aria-expanded={wingmanDrawerOpen}
