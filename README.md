@@ -132,7 +132,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for more details.
 
 ## Community
 
-- 💬 [Discord](https://github.com/Mestiak/Portal-Protocol/issues) — questions & feedback
 - 🐛 [Issues](https://github.com/Mestiak/Portal-Protocol/issues) — bug reports & feature requests
 - ⭐ Star the repo if you find it useful!
 
