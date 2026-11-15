@@ -597,7 +597,7 @@
   let appVersion = $state<string>("…");
   getVersion().then((v) => { appVersion = v; }).catch(() => {});
 
-  // Elite Insights version (manually updated when EI is bumped)
+  // Elite Insights release version (kept in sync when the bundled EI is bumped).
   const EI_VERSION = "0.32.0.0";
 
   // Update native window title with version when appVersion changes

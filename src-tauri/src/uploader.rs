@@ -1310,6 +1310,14 @@ pub struct UploadRecord {
     pub dragonvoid_add_evidence: Option<crate::evtc_parser::DragonvoidAddEvidence>,
     #[serde(default)]
     pub cerus_empowered_stacks: Option<u32>,
+    /// EI `EILogID` (authoritative encounter id from the local EI parse).
+    /// Resolved via `crate::ei_ids::log_id_name`. None when EI did not run.
+    #[serde(default)]
+    pub ei_log_id: Option<i64>,
+    /// EI `eliteInsightsVersion` reported by the local parse. Lets Settings
+    /// show the actual parser version instead of a hard-coded constant.
+    #[serde(default)]
+    pub ei_version: Option<String>,
     /// Favorite flag — user can star logs for quick filtering.
     /// None = not favorited (default), Some(true) = favorited.
     #[serde(default)]
@@ -1678,7 +1686,7 @@ pub async fn repair_history_cm_flags(app: AppHandle) {
                     for entry in buffs {
                         if let Some(arr) = entry.as_array() {
                             if let Some(id) = arr.first().and_then(|v| v.as_u64()) {
-                                if [77676u32, 79492].contains(&(id as u32)) {
+                                if crate::ei_ids::QUICK_PLAY_BUFF_IDS.contains(&(id as u32)) {
                                     rec.is_quick_play = Some(true);
                                     break;
                                 }
@@ -2382,7 +2390,7 @@ fn schedule_processing_check(
                             for entry in buffs {
                                 if let Some(arr) = entry.as_array() {
                                     if let Some(id) = arr.first().and_then(|v| v.as_u64()) {
-                                        if [77676u32, 79492].contains(&(id as u32)) {
+                                        if crate::ei_ids::QUICK_PLAY_BUFF_IDS.contains(&(id as u32)) {
                                             rec.is_quick_play = Some(true);
                                             break;
                                         }
@@ -2654,6 +2662,8 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
         ura_health_regen: None,
         ei_done: None,
         upload_done: None,
+        ei_log_id: None,
+        ei_version: None,
         is_favorite: None,
     };
 
@@ -3496,7 +3506,7 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                                     for entry in buffs {
                                         if let Some(arr) = entry.as_array() {
                                             if let Some(id) = arr.first().and_then(|v| v.as_u64()) {
-                                                if [77676u32, 79492].contains(&(id as u32)) {
+                                                if crate::ei_ids::QUICK_PLAY_BUFF_IDS.contains(&(id as u32)) {
                                                     record.is_quick_play = Some(true);
                                                     break;
                                                 }
@@ -5549,6 +5559,8 @@ pub async fn test_webhook(webhook: DiscordWebhook) -> Result<String, String> {
         ura_health_regen: None,
         ei_done: None,
         upload_done: None,
+        ei_log_id: None,
+        ei_version: None,
     };
     let mention_str = if !webhook.mention_roles.is_empty() {
         let tokens: Vec<&str> = webhook
@@ -6529,6 +6541,8 @@ mod discord_embed_tests {
             ura_health_regen: None,
             ei_done: None,
             upload_done: None,
+            ei_log_id: None,
+            ei_version: None,
             kaineng_phases: None,
             is_favorite: None,
         }

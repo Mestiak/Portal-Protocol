@@ -639,6 +639,8 @@ pub fn load_history(app: &AppHandle) -> Vec<crate::uploader::UploadRecord> {
                         local_fallback: row.get::<_, Option<i64>>(46).ok().flatten().map(|v| v != 0).unwrap_or(false),
                         dragonvoid_add_evidence: row.get::<_, Option<String>>(47).ok().flatten().and_then(|s| serde_json::from_str(&s).ok()),
                         cerus_empowered_stacks: row.get::<_, Option<i64>>(48).ok().flatten().map(|v| v as u32),
+                        ei_log_id: None,
+                        ei_version: None,
                         is_favorite: row.get::<_, Option<i64>>(49).ok().flatten().map(|v| v != 0),
                     })
                 });

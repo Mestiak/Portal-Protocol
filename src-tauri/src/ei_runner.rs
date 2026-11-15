@@ -775,6 +775,31 @@ fn old_lions_court_phase_normal(
     }
 }
 
+/// Read CM/LCM from EI's per-phase flags. Only phases with
+/// `phaseType == "Encounter"` carry authoritative mode flags (see
+/// GW2EIJSON/JsonPhase.cs: IsCM / IsLegendaryCM).
+/// Returns (is_cm, is_lcm); None when EI exposes no flags.
+fn ei_phase_cm_flags(ei: &Value) -> (Option<bool>, Option<bool>) {
+    let mut cm: Option<bool> = None;
+    let mut lcm: Option<bool> = None;
+    let phases = match ei.get("phases").and_then(|v| v.as_array()) {
+        Some(p) => p,
+        None => return (None, None),
+    };
+    for phase in phases {
+        if phase.get("phaseType").and_then(|v| v.as_str()) != Some("Encounter") {
+            continue;
+        }
+        if let Some(v) = phase.get("isCM").and_then(|v| v.as_bool()) {
+            cm = Some(cm.unwrap_or(false) || v);
+        }
+        if let Some(v) = phase.get("isLegendaryCM").and_then(|v| v.as_bool()) {
+            lcm = Some(lcm.unwrap_or(false) || v);
+        }
+    }
+    (cm, lcm)
+}
+
 /// Map a locally-parsed EI `Value` onto the log-card fields of an `UploadRecord`.
 /// This is the core of "the final log card should be from EI": boss name, mode
 /// (CM/LCM), kill/wipe verdict, HP left, players, duration and thumbnail are all
@@ -839,31 +864,67 @@ pub fn enrich_record_from_ei(record: &mut crate::uploader::UploadRecord, ei: &Va
             }
         }
     }
-    // Mode flags: trust the local EVTC parse (health-threshold) for CM-eligible
-    // bosses — it takes priority over dps.report's isCM, which can be stale for
-    // newer encounters (e.g. Vloxx CM). Only fill from EI when local parse was
-    // inconclusive (None) or for non-CM-eligible bosses.
-    // Harvest Temple (Dragonvoid) has BOTH Normal and CM modes; the local parser
-    // detects which via dragon MaxHealthUpdate thresholds. EI also reports isCM
-    // correctly, so fall through to the EI branch below when local is None.
-    if let Some(cm) = ei.get("isCM").and_then(|v| v.as_bool()) {
+    // EI's authoritative encounter id and parser version (diagnostics / Settings).
+    if let Some(id) = ei.get("EILogID").and_then(|v| v.as_i64()) {
+        record.ei_log_id = Some(id);
+        if record.boss_name.is_none() {
+            if let Some(name) = crate::ei_ids::log_id_name(id as u32) {
+                record.boss_name = Some(name.to_string());
+            }
+        }
+    }
+    if let Some(v) = ei.get("eliteInsightsVersion").and_then(|v| v.as_str()) {
+        if !v.is_empty() {
+            record.ei_version = Some(v.to_string());
+        }
+    }
+    // Mode flags: EI's per-phase `isCM` / `isLegendaryCM` are authoritative —
+    // they come from the real encounter logic (JsonPhase.cs). Fall back to the
+    // top-level flags, then leave None so the local EVTC parser can fill it in.
+    let (phase_cm, phase_lcm) = ei_phase_cm_flags(ei);
+    if let Some(cm) = phase_cm {
+        // EI says CM: trust it. EI says not-CM: only fill when we have nothing.
+        if cm || record.is_cm.is_none() {
+            record.is_cm = Some(cm);
+        }
+    } else if let Some(cm) = ei.get("isCM").and_then(|v| v.as_bool()) {
         if record.is_cm.is_none() {
             record.is_cm = Some(cm);
         }
+    } else if record.is_cm.is_none() {
+        // Last EI-side signal: a target whose species id is a known CM variant
+        // (e.g. DecimaCM 26867) — see ei_ids::CM_SPECIES_IDS.
+        let species_says_cm = ei
+            .get("targets")
+            .and_then(|t| t.as_array())
+            .map(|arr| {
+                arr.iter().any(|t| {
+                    t.get("id")
+                        .and_then(|v| v.as_i64())
+                        .map(|id| crate::ei_ids::is_cm_species(id as u32))
+                        .unwrap_or(false)
+                })
+            })
+            .unwrap_or(false);
+        if species_says_cm {
+            record.is_cm = Some(true);
+        }
     }
-    // LCM detection: EI doesn't always expose isLegendaryCM for Ura.
-    // Trust local EVTC parse (HP threshold detection) over EI for Ura.
-    let ei_says_lcm = ei
-        .get("isLegendaryCM")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
+    let ei_says_lcm = phase_lcm.unwrap_or_else(|| {
+        ei.get("isLegendaryCM")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    });
     let name_says_lcm = is_legendary_cm(ei);
     let local_says_lcm = record.is_lcm == Some(true);
 
-    // Preserve local LCM detection (from EVTC HP threshold) unless EI explicitly denies it.
-    // EI's JSON for Ura doesn't include maxHealth, so local parse is more reliable.
+    // LCM implies CM; set LCM when any source (EI phase flags, EI top-level,
+    // fight name, local HP threshold) reports it.
     if ei_says_lcm || name_says_lcm || local_says_lcm {
         record.is_lcm = Some(true);
+        if record.is_cm.is_none() {
+            record.is_cm = Some(true);
+        }
     }
     // Quick Play: EI does not expose a dedicated boolean. QP is detected via the
     // Quickplay Boost / Quickplay Morale instance buffs (IDs 77676, 79492), which
@@ -872,7 +933,7 @@ pub fn enrich_record_from_ei(record: &mut crate::uploader::UploadRecord, ei: &Va
     // serialized in the EI JSON output — only in the HTML template.)
     // IMPORTANT: QP is only valid for specific strikes and fractals. Check the boss
     // name against the allowlist so we never tag a non-QP boss as Quick Play.
-    let qp_buff_ids: &[u32] = &[77676, 79492];
+    let qp_buff_ids: &[u32] = crate::ei_ids::QUICK_PLAY_BUFF_IDS;
     let qp_allowed_bosses = [
         "aetherbladelet",
         "cliffside",
@@ -1899,6 +1960,47 @@ mod tests {
         assert_eq!(phases[1].targets.len(), 3);
         assert_eq!(phases[1].targets[2].key, "theritualist");
         assert_eq!(phases[1].targets[2].hp_left, Some(50.0));
+    }
+
+    #[test]
+    fn ei_phase_cm_flags_reads_encounter_phases_only() {
+        // Only PhaseType == "Encounter" phases carry authoritative flags.
+        let ei = json!({
+            "phases": [
+                {"name": "Full Fight", "phaseType": "TimeFrame", "isCM": false},
+                {"name": "Ura", "phaseType": "Encounter", "isCM": true, "isLegendaryCM": true}
+            ]
+        });
+        let (cm, lcm) = ei_phase_cm_flags(&ei);
+        assert_eq!(cm, Some(true));
+        assert_eq!(lcm, Some(true));
+    }
+
+    #[test]
+    fn ei_phase_cm_flags_none_when_no_encounter_phase() {
+        let ei = json!({
+            "phases": [
+                {"name": "Full Fight", "phaseType": "TimeFrame", "isCM": true}
+            ]
+        });
+        assert_eq!(ei_phase_cm_flags(&ei), (None, None));
+    }
+
+    #[test]
+    fn enrich_prefers_ei_phase_cm_over_local_false() {
+        // Local parse said Normal (Some(false)); EI phase flags say CM.
+        let ei = json!({
+            "bossName": "Godscream Ura",
+            "phases": [
+                {"name": "Ura", "phaseType": "Encounter", "isCM": true, "isLegendaryCM": false}
+            ]
+        });
+        let mut record = crate::uploader::UploadRecord::default();
+        record.boss_name = Some("Godscream Ura".to_string());
+        record.is_cm = Some(false);
+        enrich_record_from_ei(&mut record, &ei);
+        assert_eq!(record.is_cm, Some(true));
+        assert_eq!(record.is_lcm, None);
     }
 
     #[test]

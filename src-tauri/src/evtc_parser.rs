@@ -2186,7 +2186,7 @@ pub fn parse_is_quick_play(bytes: &[u8]) -> Option<bool> {
         }
     }
 
-    let quickplay_buffs = [77676u32, 79492];
+    let quickplay_buffs = crate::ei_ids::QUICK_PLAY_BUFF_IDS;
     for i in 0..event_count {
         let base = events_base + i * event_sz;
         if base + 60 > data.len() {

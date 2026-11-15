@@ -5,6 +5,7 @@
 mod config;
 mod db;
 mod history_filter;
+mod ei_ids;
 mod ei_runner;
 mod evtc_parser;
 mod uploader;
