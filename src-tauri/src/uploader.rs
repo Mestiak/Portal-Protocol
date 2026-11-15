@@ -6140,12 +6140,23 @@ pub async fn get_log_full(app: AppHandle, permalink: String) -> Result<LogFull, 
             if rec.url.as_deref() == Some(permalink.as_str()) {
                 let mut rec_copy = rec.clone();
                 let mut changed = false;
-                if api_cm.is_some() && rec_copy.is_cm != api_cm {
+                // Mode flags set by EI enrichment at upload time are authoritative.
+                // This manual refresh only fills missing values or upgrades to
+                // CM/LCM — it never downgrades an existing CM/LCM flag (dps.report
+                // does not reliably report Ura LCM, which previously flipped the
+                // card back to CM).
+                if rec_copy.is_cm.is_none() {
                     rec_copy.is_cm = api_cm;
                     changed = true;
+                } else if api_cm == Some(true) && rec_copy.is_cm != Some(true) {
+                    rec_copy.is_cm = Some(true);
+                    changed = true;
                 }
-                if rec_copy.is_lcm != Some(api_lcm) {
+                if rec_copy.is_lcm.is_none() {
                     rec_copy.is_lcm = Some(api_lcm);
+                    changed = true;
+                } else if api_lcm && rec_copy.is_lcm != Some(true) {
+                    rec_copy.is_lcm = Some(true);
                     changed = true;
                 }
                 if let Some(ref local_players) = rec_copy.players.clone() {
