@@ -3446,50 +3446,54 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
                             // on the local name — so using the post-overwrite name here
                             // would wrongly mark Vloxx CM as non-eligible and clobber the
                             // local health-threshold detection.
-                            if record.is_convergence == Some(true) {
-                                record.is_cm = Some(local_is_cm.unwrap_or(false));
-                            } else if let Some(v) = api_cm {
-                                if v {
-                                    record.is_cm = Some(true);
+                            // EI enrichment (when it ran) is authoritative for CM/LCM —
+                            // do not let the dps.report metadata path clobber it.
+                            if record.ei_done != Some(true) {
+                                if record.is_convergence == Some(true) {
+                                    record.is_cm = Some(local_is_cm.unwrap_or(false));
+                                } else if let Some(v) = api_cm {
+                                    if v {
+                                        record.is_cm = Some(true);
+                                    } else {
+                                        record.is_cm =
+                                            Some(pre_api_cm_eligible && local_is_cm.unwrap_or(false));
+                                    }
                                 } else {
                                     record.is_cm =
                                         Some(pre_api_cm_eligible && local_is_cm.unwrap_or(false));
                                 }
-                            } else {
-                                record.is_cm =
-                                    Some(pre_api_cm_eligible && local_is_cm.unwrap_or(false));
-                            }
 
-                            // LCM — only Ura (raid) and Temple of Febe (strike) are LCM-eligible.
-                            // The dps.report API is authoritative for LCM (it returns
-                            // "Legendary Challenge Mode" reliably). Prefer it; fall back to the
-                            // local parse only when the API is unreachable (e.g. 503).
-                            // NOTE: do NOT use `local_is_lcm.or(api_lcm)` — Option::or short-circuits,
-                            // so a local `Some(false)` would discard a correct API `Some(true)`.
-                            let api_lcm = enc
-                                .get("isLegendaryCm")
-                                .or_else(|| enc.get("isLegendary"))
-                                .or_else(|| enc.get("isLegendaryChallenge"))
-                                .or_else(|| enc.get("legendaryChallenge"))
-                                .and_then(|v| v.as_bool());
-                            let lcm_eligible = record.is_convergence == Some(true)
-                                || boss_lcm_eligible(&pre_api_clean);
-                            record.is_lcm = if record.is_convergence == Some(true) {
-                                local_is_lcm
-                            } else if lcm_eligible {
-                                // If either source says LCM, use LCM (Ura: EI doesn't
-                                // expose isLegendaryCM, so local parse is authoritative).
-                                if api_lcm == Some(true) || local_is_lcm == Some(true) {
-                                    Some(true)
-                                } else if api_lcm == Some(false) && local_is_lcm == Some(false) {
-                                    Some(false)
+                                // LCM — only Ura (raid) and Temple of Febe (strike) are LCM-eligible.
+                                // The dps.report API is authoritative for LCM (it returns
+                                // "Legendary Challenge Mode" reliably). Prefer it; fall back to the
+                                // local parse only when the API is unreachable (e.g. 503).
+                                // NOTE: do NOT use `local_is_lcm.or(api_lcm)` — Option::or short-circuits,
+                                // so a local `Some(false)` would discard a correct API `Some(true)`.
+                                let api_lcm = enc
+                                    .get("isLegendaryCm")
+                                    .or_else(|| enc.get("isLegendary"))
+                                    .or_else(|| enc.get("isLegendaryChallenge"))
+                                    .or_else(|| enc.get("legendaryChallenge"))
+                                    .and_then(|v| v.as_bool());
+                                let lcm_eligible = record.is_convergence == Some(true)
+                                    || boss_lcm_eligible(&pre_api_clean);
+                                record.is_lcm = if record.is_convergence == Some(true) {
+                                    local_is_lcm
+                                } else if lcm_eligible {
+                                    // If either source says LCM, use LCM (Ura: EI doesn't
+                                    // expose isLegendaryCM, so local parse is authoritative).
+                                    if api_lcm == Some(true) || local_is_lcm == Some(true) {
+                                        Some(true)
+                                    } else if api_lcm == Some(false) && local_is_lcm == Some(false) {
+                                        Some(false)
+                                    } else {
+                                        // One is None, use whichever is Some
+                                        api_lcm.or(local_is_lcm)
+                                    }
                                 } else {
-                                    // One is None, use whichever is Some
-                                    api_lcm.or(local_is_lcm)
-                                }
-                            } else {
-                                Some(false)
-                            };
+                                    Some(false)
+                                };
+                            }
 
                             // Quick Play: fall back to dps.report's instance-buff list
                             // only when the local EVTC buff-scan and EI enrich both came
