@@ -111,10 +111,14 @@ fn encounter_type(log: &UploadRecord) -> &'static str {
         return "convergence";
     }
     let c = clean(boss);
-    if ["sorrow", "demonknight", "dreadwing", "hellsister", "umbriel", "convergenceouternayos", "vloxx"].contains(&c.as_str()) {
+    // Vloxx has BOTH a Strike (Nexus of Eternity) and a Convergence variant.
+    // Only the Convergence is a convergence — the strike must fall through to
+    // the strike default below. `is_convergence` above already handles the
+    // convergence case.
+    if ["sorrow", "demonknight", "dreadwing", "hellsister", "umbriel", "convergenceouternayos"].contains(&c.as_str()) {
         return "convergence";
     }
-    if ["greer", "greerthebightbringer", "greertheblightbringer", "decima", "decimathestormsinger", "ura", "urathesteamshrieker", "convergencemountbalrior", "vloxx"].contains(&c.as_str()) {
+    if ["greer", "greerthebightbringer", "greertheblightbringer", "decima", "decimathestormsinger", "ura", "urathesteamshrieker", "convergencemountbalrior"].contains(&c.as_str()) {
         if c == "convergencemountbalrior" || log.num_players.unwrap_or(0) > 10 {
             return "convergence";
         }
@@ -349,5 +353,20 @@ mod tests {
         assert!(passes_filters(&rec(Some(true), Some(true)), &filters("lcm")));
         assert!(!passes_filters(&rec(Some(true), Some(false)), &filters("lcm")));
         assert!(!passes_filters(&rec(Some(false), Some(false)), &filters("lcm")));
+    }
+
+    #[test]
+    fn vloxx_strike_is_strike_convergence_is_convergence() {
+        // Vloxx (Nexus of Eternity) strike: is_convergence = false → strike.
+        let mut strike = rec(Some(true), Some(false));
+        strike.boss_name = Some("Vloxx".into());
+        strike.is_convergence = Some(false);
+        assert_eq!(encounter_type(&strike), "strike");
+
+        // Vloxx convergence: is_convergence = true → convergence.
+        let mut conv = rec(Some(true), Some(false));
+        conv.boss_name = Some("Vloxx".into());
+        conv.is_convergence = Some(true);
+        assert_eq!(encounter_type(&conv), "convergence");
     }
 }
