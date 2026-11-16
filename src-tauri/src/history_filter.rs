@@ -176,7 +176,8 @@ fn passes_filters(log: &UploadRecord, f: &HistoryFilters) -> bool {
     if let Some(m) = f.cm_mode.as_deref() {
         match m {
             "cm" => {
-                if log.is_cm != Some(true) {
+                // CM only (exclude LCM) — matches the Analytics mode filter.
+                if log.is_cm != Some(true) || log.is_lcm == Some(true) {
                     return false;
                 }
             }
@@ -306,4 +307,47 @@ if f.has_notes == Some(true) {
         }
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::uploader::UploadRecord;
+
+    fn rec(is_cm: Option<bool>, is_lcm: Option<bool>) -> UploadRecord {
+        UploadRecord {
+            file_name: "x.evtc".into(),
+            file_path: "x".into(),
+            timestamp: "2026-01-01 00:00:00".into(),
+            status: "Completed".into(),
+            boss_name: Some("Ura".into()),
+            is_cm,
+            is_lcm,
+            ..Default::default()
+        }
+    }
+
+    fn filters(cm: &str) -> HistoryFilters {
+        HistoryFilters {
+            cm_mode: Some(cm.into()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn cm_filter_excludes_lcm() {
+        // CM-only log passes the CM filter.
+        assert!(passes_filters(&rec(Some(true), Some(false)), &filters("cm")));
+        // LCM log does NOT pass the CM filter (CM = CM-only).
+        assert!(!passes_filters(&rec(Some(true), Some(true)), &filters("cm")));
+        // Normal log does not pass.
+        assert!(!passes_filters(&rec(Some(false), Some(false)), &filters("cm")));
+    }
+
+    #[test]
+    fn lcm_filter_is_strict() {
+        assert!(passes_filters(&rec(Some(true), Some(true)), &filters("lcm")));
+        assert!(!passes_filters(&rec(Some(true), Some(false)), &filters("lcm")));
+        assert!(!passes_filters(&rec(Some(false), Some(false)), &filters("lcm")));
+    }
 }

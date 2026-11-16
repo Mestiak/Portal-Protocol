@@ -2796,7 +2796,7 @@
     }
 
     if (f.cmMode !== "all") {
-      if (f.cmMode === "cm" && log.is_cm !== true) return false;
+      if (f.cmMode === "cm" && (log.is_cm !== true || log.is_lcm === true)) return false;
       if (f.cmMode === "lcm" && log.is_lcm !== true) return false;
       if (f.cmMode === "normal" && (log.is_cm === true || log.is_lcm === true || log.is_quick_play === true)) return false;
       if (f.cmMode === "quickplay" && log.is_quick_play !== true) return false;
