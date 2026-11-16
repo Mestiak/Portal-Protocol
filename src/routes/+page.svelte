@@ -5196,8 +5196,6 @@
           squad_plans: $state.snapshot(squadPlans),
         }
       });
-      suppressDirty = true;
-      sessions = [...sessions];
     } catch (err) {
       console.error("Failed to save config:", err);
     }
@@ -5610,7 +5608,10 @@ async function testWebhook(wh: any) {
     wingman_enabled; wingman_account; use_backup_dps; max_concurrent_uploads;
     watch_stability_delay_ms; watch_poll_interval_ms; max_upload_retries; min_log_seconds;
     reduce_motion; hide_on_startup; wvw_enabled; accent; compact_mode; app_font;
-    JSON.stringify(sessions);
+    // Sessions/folders are excluded: every folder operation persists immediately
+    // via persistConfig(), so watching sessions here would fire the autosave
+    // effect (and its "Unsaved settings changes" toast) for a move that is
+    // already saved.
     JSON.stringify(gw2_accounts);
     JSON.stringify(discord_webhooks);
     if (!configLoaded) return;
