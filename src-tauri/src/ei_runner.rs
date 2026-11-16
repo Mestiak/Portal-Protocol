@@ -865,7 +865,8 @@ pub fn enrich_record_from_ei(record: &mut crate::uploader::UploadRecord, ei: &Va
         }
     }
     // EI's authoritative encounter id and parser version (diagnostics / Settings).
-    if let Some(id) = ei.get("EILogID").and_then(|v| v.as_i64()) {
+    // EI serializes with camelCase, so the key is `eiLogID`.
+    if let Some(id) = ei.get("eiLogID").and_then(|v| v.as_i64()) {
         record.ei_log_id = Some(id);
         if record.boss_name.is_none() {
             if let Some(name) = crate::ei_ids::log_id_name(id as u32) {
@@ -1984,6 +1985,20 @@ mod tests {
             ]
         });
         assert_eq!(ei_phase_cm_flags(&ei), (None, None));
+    }
+
+    #[test]
+    fn enrich_reads_ei_log_id_camel_case() {
+        // EI serializes with camelCase: the key is `eiLogID`, not `EILogID`.
+        let ei = json!({
+            "bossName": "Nexus of Eternity",
+            "eiLogID": 263682,
+            "eliteInsightsVersion": "3.33.0.0"
+        });
+        let mut record = crate::uploader::UploadRecord::default();
+        enrich_record_from_ei(&mut record, &ei);
+        assert_eq!(record.ei_log_id, Some(263682));
+        assert_eq!(record.ei_version.as_deref(), Some("3.33.0.0"));
     }
 
     #[test]
