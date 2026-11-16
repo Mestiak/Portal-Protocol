@@ -614,6 +614,27 @@
   type PatchNoteVersion = { version: string; date: string; image?: string; notes: PatchNoteCategory[] };
   const PATCH_NOTES_DATA: PatchNoteVersion[] = [
     {
+      version: "0.8.1",
+      date: "November 2026",
+      notes: [
+        {
+          category: "🎮 Bosses & Encounters",
+          items: [
+            { title: "Elite Insights Updated to 3.33.0.0", desc: "Better boss recognition and updated damage numbers for the latest balance patch." },
+            { title: "Better Challenge Mode Detection", desc: "Challenge Mode and Legendary Challenge Mode are now read straight from Elite Insights, so each log shows the right mode more often." },
+            { title: "CM and LCM Filters Separated", desc: "The CM filter shows only Challenge Mode logs, and the LCM filter shows only Legendary Challenge Mode logs." },
+            { title: "Vloxx Strike vs. Convergence", desc: "Vloxx (Nexus of Eternity) strike logs now show under Strikes, and the Vloxx Convergence shows under Convergences." }
+          ]
+        },
+        {
+          category: "🎨 UI & Settings",
+          items: [
+            { title: "Folder Moves", desc: "Moving logs into folders or subfolders no longer pops up the 'settings saved' message." }
+          ]
+        }
+      ]
+    },
+    {
       version: "0.8.0",
       date: "November 2026",
       notes: [
