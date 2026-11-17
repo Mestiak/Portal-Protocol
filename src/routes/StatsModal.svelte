@@ -4,8 +4,8 @@
 
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
-  import { extractMechanics, type MechanicReport } from "$lib/mechanicParser";
-  import { fmt, fmtPct, fmtTime } from "$lib/format";
+  import { extractMechanics, type MechanicReport } from "#lib/mechanicParser";
+  import { fmt, fmtPct, fmtTime } from "#lib/format";
   import { slide } from "svelte/transition";
   import { cubicInOut } from "svelte/easing";
   import CerusDashboard from "./CerusDashboard.svelte";

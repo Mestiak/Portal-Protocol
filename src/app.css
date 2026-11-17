@@ -4799,7 +4799,7 @@ html.reduce-motion .session-pill {
 }
 
 .wh-field input:focus,
-..wh-url:focus,
+.wh-url:focus,
 .wh-thread:focus,
 .wh-role-label:focus,
 .wh-role-id:focus {
