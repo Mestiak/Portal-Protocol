@@ -2979,7 +2979,9 @@
     const pad = (n: number) => String(n).padStart(2, "0");
     const name = `Session ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
     captureSession = { id: crypto.randomUUID(), name, state: "collecting", logPaths: [] };
-    sessionColor = "#6366f1";
+    // Default the subfolder color to the current accent (falls back to indigo
+    // when the accent is still the unresolved "var(--accent)" placeholder).
+    sessionColor = accent.startsWith("#") ? accent : "#6366f1";
     persistCaptureSession();
   }
   function pauseCaptureSession() {
@@ -2991,6 +2993,11 @@
   function capturedLogs(): UploadRecord[] {
     if (!captureSession) return [];
     const set = new Set(captureSession.logPaths);
+    // Resolve against the full history first: the Feed is capped/pruned, so a
+    // captured log may have scrolled out of `uploads` and would otherwise be
+    // silently dropped when filing.
+    const fromHistory = allHistory.filter(h => set.has(h.file_path));
+    if (fromHistory.length > 0) return fromHistory;
     return uploads.filter(u => set.has(u.file_path));
   }
   // End a Capture Session: file captured logs into a Folder as a new subfolder
@@ -3025,6 +3032,16 @@
         persistCaptureSession();
       },
     };
+  }
+  // End the session WITHOUT filing: keep the collected logs in the Feed and
+  // just stop capturing. Lets the user stop a session without being forced to
+  // file it somewhere.
+  function discardCaptureSession() {
+    captureSession = null;
+    persistCaptureSession();
+    pickerModal = null;
+    creatingNewFolderInPicker = false;
+    showToast("Capture session ended — logs left in the Feed.", "success");
   }
 
   // ─── Session / History State ─────────────────────────────────────────
@@ -7179,7 +7196,7 @@ async function testWebhook(wh: any) {
               <i class="fa-solid fa-circle-dot" style="margin-right: 4px;"></i> Start Session
             </button>
           {:else}
-            <div class="session-pill" class:paused={captureSession.state === "paused"}>
+            <div class="session-pill" class:paused={captureSession.state === "paused"} style={`--session-color: ${sessionColor}`}>
               <span class="session-shimmer"></span>
               <i class="fa-solid {captureSession.state === 'paused' ? 'fa-pause' : 'fa-record-vinyl'}"></i>
               <span class="session-name">{captureSession.name}</span>
@@ -9245,6 +9262,16 @@ async function testWebhook(wh: any) {
             </button>
           {/each}
         {/if}
+      {/if}
+
+      {#if pm.title === "File Session To…" && captureSession}
+        <div class="picker-session-footer">
+          <span class="picker-session-hint">{pm.logs.length} log{pm.logs.length > 1 ? "s" : ""} will be filed into a new subfolder</span>
+          <div class="picker-session-actions">
+            <button class="creator-btn cancel" onclick={() => { pickerModal = null; creatingNewFolderInPicker = false; }}>Cancel</button>
+            <button class="creator-btn danger" onclick={discardCaptureSession}>Don't Save</button>
+          </div>
+        </div>
       {/if}
     </div>
   </div>

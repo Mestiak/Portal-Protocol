@@ -2112,6 +2112,7 @@ input:focus {
 
 /* Animated shimmer pill in the Feed header */
 .session-pill {
+  --session-color: var(--accent);
   position: relative;
   overflow: hidden;
   display: inline-flex;
@@ -2122,10 +2123,16 @@ input:focus {
   font-size: 12px;
   font-weight: 600;
   color: #fff;
-  background: linear-gradient(100deg, #6366f1, #8b5cf6, #6366f1);
+  background: linear-gradient(100deg, var(--session-color), color-mix(in srgb, var(--session-color) 62%, #fff), var(--session-color));
   background-size: 220% 100%;
   animation: session-pill-shimmer 2.4s linear infinite;
-  border: 1px solid color-mix(in srgb, #a78bfa 55%, transparent);
+  border: 1px solid color-mix(in srgb, var(--session-color) 65%, #fff);
+  transition: border-color .25s ease, box-shadow .25s ease, transform .15s ease, filter .3s ease;
+}
+
+.session-pill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--session-color) 40%, transparent);
 }
 
 .session-pill.paused {
@@ -2133,6 +2140,7 @@ input:focus {
   background-size: 220% 100%;
   animation: session-pill-shimmer 2.4s linear infinite;
   border-color: #475569;
+  filter: grayscale(.45);
 }
 
 .session-pill .session-name {
@@ -2170,6 +2178,7 @@ input:focus {
 .log-card.session-captured {
   border-color: color-mix(in srgb, var(--accent) 70%, transparent);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent), 0 0 14px color-mix(in srgb, var(--accent) 30%, transparent);
+  transition: border-color .25s ease, box-shadow .25s ease;
 }
 
 .log-card.session-captured::after {
@@ -2189,7 +2198,7 @@ html.reduce-motion .log-card.session-captured::after {
 }
 
 html.reduce-motion .session-pill {
-  background: var(--accent);
+  background: var(--session-color);
 }
 
 /* End-Session rename + color editor inside the PickerModal */
@@ -2238,6 +2247,11 @@ html.reduce-motion .session-pill {
   border-radius: 50%;
   border: none;
   cursor: pointer;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+
+.color-dot-btn:hover {
+  transform: scale(1.18);
 }
 
 .color-dot-btn.selected {
@@ -5873,6 +5887,38 @@ html.reduce-motion .session-pill {
   line-height: 1.6;
   text-align: center;
   padding: 14px 6px;
+}
+
+/* End-Session footer (Cancel / Don't Save) */
+.picker-session-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.picker-session-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.picker-session-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.creator-btn.danger {
+  background: color-mix(in srgb, var(--fail) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--fail) 40%, transparent);
+  color: #fca5a5;
+}
+
+.creator-btn.danger:hover {
+  background: color-mix(in srgb, var(--fail) 26%, transparent);
 }
 
 /* ── Subfolder creation modal (mirrors vl/picker modal language) ── */
