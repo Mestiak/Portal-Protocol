@@ -20,7 +20,11 @@
   import SquadPlanCard from "./SquadPlanCard.svelte";
   import { PROFESSIONS, ELITE_SPEC_ICONS, SPEC_CORE, PROFESSION_GROUPS } from "../lib/professionData";
   import { type SquadPlan, newPlan, newFolder, newRoster, findPlan, upsertPlan, removePlan, resolveWingLabel, normalizeSquadPlans } from "../lib/squadPlanner";
+  import { APP_FONTS, DEFAULT_FONT_ID, fontStack, ensureGoogleFontsLink } from "../lib/fonts";
   import "../app.css";
+
+  // Load the webfonts as soon as the UI starts, independent of config load.
+  ensureGoogleFontsLink();
 
   // Preset accent colors for the Appearance palette (click = instant re-skin).
   const ACCENT_PRESETS = [
@@ -214,7 +218,7 @@
   let hide_on_startup = $state(false);
   let compact_mode = $state(false);
   let accent = $state("var(--accent)");
-  let app_font = $state("inter-outfit");
+  let app_font = $state(DEFAULT_FONT_ID);
   let sidebarOpen = $state(true);
   let activeMenuCard = $state<string | null>(null);
   let gw2_accounts = $state<any[]>([]);
@@ -5580,7 +5584,8 @@ async function testWebhook(wh: any) {
       applyCompactMode(compact_mode);
       accent = config.accent || "var(--accent)";
       applyAccent(accent);
-      app_font = config.app_font || "inter-outfit";
+      app_font = APP_FONTS.some((f) => f.id === config.app_font) ? (config.app_font as string) : DEFAULT_FONT_ID;
+      ensureGoogleFontsLink();
       applyFont(app_font);
       sidebarOpen = config.app_sidebar_open ?? true;
       sessions = (config.sessions ?? []).map((s: any) => ({
@@ -5710,15 +5715,7 @@ async function testWebhook(wh: any) {
 
   function applyFont(fontName: string) {
     if (typeof document === "undefined") return;
-    // Remove existing font classes
-    const classes = Array.from(document.documentElement.classList);
-    for (const c of classes) {
-      if (c.startsWith("font-")) {
-        document.documentElement.classList.remove(c);
-      }
-    }
-    // Add the new selected class
-    document.documentElement.classList.add(`font-${fontName}`);
+    document.documentElement.style.setProperty("--font", fontStack(fontName));
   }
 
   function formatSize(bytes: number): string {
@@ -8148,11 +8145,9 @@ async function testWebhook(wh: any) {
             <div style="margin-top: 16px;">
               <label for="app-font-select" style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 6px;">Font Family</label>
               <select id="app-font-select" class="settings-select" bind:value={app_font} onchange={() => applyFont(app_font)}>
-                <option value="inter-outfit">Outfit &amp; Inter (Default)</option>
-                <option value="inter">Inter (Sleek Sans)</option>
-                <option value="outfit">Outfit (Rounded Elegant)</option>
-                <option value="system">System UI (Native)</option>
-                <option value="mono">Monospace (Terminal style)</option>
+                {#each APP_FONTS as f}
+                  <option value={f.id}>{f.label}</option>
+                {/each}
               </select>
               <span style="font-size: 10px; color: var(--text-muted);">Change the typography layout of the uploader application.</span>
             </div>

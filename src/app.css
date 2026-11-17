@@ -17,31 +17,10 @@
   --success: #10b981;
   --fail: #ef4444;
   --warn: #f59e0b;
-  --font: 'Outfit', 'Inter', system-ui, -apple-system, sans-serif;
+  --font: 'Outfit', system-ui, -apple-system, sans-serif;
   --radius: 10px;
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-smooth: cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-/* Font selection theme classes */
-html.font-inter-outfit {
-  --font: 'Outfit', 'Inter', system-ui, -apple-system, sans-serif;
-}
-
-html.font-inter {
-  --font: 'Inter', system-ui, -apple-system, sans-serif;
-}
-
-html.font-outfit {
-  --font: 'Outfit', system-ui, -apple-system, sans-serif;
-}
-
-html.font-system {
-  --font: system-ui, -apple-system, sans-serif;
-}
-
-html.font-mono {
-  --font: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
 }
 
 body {
