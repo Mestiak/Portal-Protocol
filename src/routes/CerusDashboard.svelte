@@ -9,10 +9,10 @@
   // Interaction state (accordions, hover, sort) lives HERE so each context gets
   // its own independent UI state. `activeTab` is controlled by the parent
   // (StatsModal sidebar, or the Mechanics tab's own sub-tab pills).
-  import { fmt, fmtPct, fmtTime } from "$lib/format";
+  import { fmt, fmtPct, fmtTime } from "#lib/format";
   import { slide } from "svelte/transition";
   import { cubicInOut } from "svelte/easing";
-  import type { MechanicReport } from "$lib/mechanicParser";
+  import type { MechanicReport } from "#lib/mechanicParser";
 
   let {
     report,
