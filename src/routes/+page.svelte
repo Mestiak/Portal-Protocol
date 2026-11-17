@@ -9157,7 +9157,10 @@ async function testWebhook(wh: any) {
       <!-- End-Session only: rename + pick subfolder color before filing -->
       {#if pm.title === "File Session To…" && captureSession}
         <div class="session-meta-edit">
-          <label class="session-meta-label" for="session-name-input">Subfolder name</label>
+          <div class="session-meta-label-row">
+            <label class="session-meta-label" for="session-name-input">Subfolder name</label>
+            <span class="session-name-count" class:near-limit={captureSession.name.length >= 50}>{captureSession.name.length}/60</span>
+          </div>
           <input
             id="session-name-input"
             class="session-name-input"
@@ -9166,11 +9169,13 @@ async function testWebhook(wh: any) {
             maxlength="60"
           />
           <span class="session-meta-label">Color</span>
-          <div class="color-picker-row">
+          <div class="color-picker-row" role="radiogroup" aria-label="Subfolder color">
             {#each FOLDER_PALETTE as p}
               <button
                 class="color-dot-btn"
                 class:selected={sessionColor === p.hex}
+                role="radio"
+                aria-checked={sessionColor === p.hex}
                 aria-label={`Choose ${p.name}`}
                 title={p.name}
                 onclick={() => (sessionColor = p.hex)}
@@ -9181,6 +9186,7 @@ async function testWebhook(wh: any) {
               type="color"
               class="sf-color-input"
               aria-label="Custom color"
+              title="Custom color"
               value={sessionColor}
               oninput={(e) => { sessionColor = (e.currentTarget as HTMLInputElement).value; }}
               style="width:18px; height:18px; padding:0; border:none; background:none; cursor:pointer;"
@@ -9200,6 +9206,7 @@ async function testWebhook(wh: any) {
           {#if sf.id !== pm.excludeSubFolderId}
             <button class="picker-item" onclick={() => pm.onPick(sf.id)}>
               <span class="folder-dot" style="color: {swatchHex(sf.color)};">●</span> {sf.name}
+              <span class="picker-item-count">{sf.logs.length}</span>
             </button>
           {/if}
         {/each}
@@ -9218,11 +9225,13 @@ async function testWebhook(wh: any) {
               onkeydown={(e) => { if (e.key === "Enter" && newSessionName.trim()) { const id = createSession(); creatingNewFolderInPicker = false; if (id) pm.onPick(id); } }}
             />
             <span class="session-meta-label">Color</span>
-            <div class="color-picker-row">
+            <div class="color-picker-row" role="radiogroup" aria-label="Folder color">
               {#each FOLDER_PALETTE as p}
                 <button
                   class="color-dot-btn"
                   class:selected={newSessionColor === p.hex}
+                  role="radio"
+                  aria-checked={newSessionColor === p.hex}
                   aria-label={`Choose ${p.name}`}
                   title={p.name}
                   onclick={() => (newSessionColor = p.hex)}
@@ -9233,6 +9242,7 @@ async function testWebhook(wh: any) {
                 type="color"
                 class="sf-color-input"
                 aria-label="Custom color"
+                title="Custom color"
                 value={newSessionColor}
                 oninput={(e) => { newSessionColor = (e.currentTarget as HTMLInputElement).value; }}
                 style="width:18px; height:18px; padding:0; border:none; background:none; cursor:pointer;"
@@ -9257,8 +9267,10 @@ async function testWebhook(wh: any) {
             <i class="fa-solid fa-folder-plus"></i> Create new folder
           </button>
           {#each sessions as s}
+            {@const folderLogCount = s.logs.length + (s.subfolders ?? []).reduce((n, sf) => n + sf.logs.length, 0)}
             <button class="picker-item" onclick={() => pm.onPick(s.id)}>
               <span class="folder-dot" style="color: {swatchHex(s.color)};">●</span> {s.name}
+              <span class="picker-item-count">{folderLogCount}</span>
             </button>
           {/each}
         {/if}
@@ -9269,7 +9281,7 @@ async function testWebhook(wh: any) {
           <span class="picker-session-hint">{pm.logs.length} log{pm.logs.length > 1 ? "s" : ""} will be filed into a new subfolder</span>
           <div class="picker-session-actions">
             <button class="creator-btn cancel" onclick={() => { pickerModal = null; creatingNewFolderInPicker = false; }}>Cancel</button>
-            <button class="creator-btn danger" onclick={discardCaptureSession}>Don't Save</button>
+            <button class="creator-btn danger" title="Ends the session — logs stay in the Feed" onclick={discardCaptureSession}>Don't Save</button>
           </div>
         </div>
       {/if}

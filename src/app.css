@@ -2233,6 +2233,24 @@ html.reduce-motion .session-pill {
 
 .session-name-input:focus {
   border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.session-meta-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.session-name-count {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.session-name-count.near-limit {
+  color: var(--warn);
 }
 
 .color-picker-row {
@@ -2259,7 +2277,13 @@ html.reduce-motion .session-pill {
 }
 
 .color-dot-btn.selected {
-  box-shadow: 0 0 0 2px #fff;
+  animation: color-dot-pop .18s ease;
+}
+
+@keyframes color-dot-pop {
+  0% { transform: scale(.78); }
+  60% { transform: scale(1.16); }
+  100% { transform: scale(1); }
 }
 
 /* ─── Accent palette swatches (Appearance & System) ─── */
@@ -2841,6 +2865,13 @@ html.reduce-motion .session-pill {
   cursor: pointer;
   padding: 4px 10px;
   font-size: 11px;
+}
+
+.creator-btn.cancel:hover,
+.cancel:hover {
+  background: color-mix(in srgb, #fff 13%, transparent);
+  color: var(--text);
+  border-color: color-mix(in srgb, #fff 22%, transparent);
 }
 
 .btn-beta {
@@ -5876,13 +5907,44 @@ html.reduce-motion .session-pill {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+  position: relative;
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease, transform .12s ease;
+}
+
+.picker-item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 3px;
+  border-radius: 2px;
+  background: transparent;
+  transition: background-color .15s ease;
 }
 
 .picker-item:hover {
   background: color-mix(in srgb, var(--accent) 16%, transparent);
   border-color: color-mix(in srgb, var(--accent) 40%, transparent);
   transform: translateY(-1px);
+}
+
+.picker-item:hover::before {
+  background: var(--accent);
+}
+
+.picker-item:active {
+  transform: translateY(0) scale(.985);
+}
+
+.picker-item-count {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, .06);
+  border-radius: 9px;
+  padding: 1px 7px;
 }
 
 .picker-empty {
@@ -6067,6 +6129,11 @@ html.reduce-motion .session-pill {
 .sf-color-input::-webkit-color-swatch {
   border: none;
   border-radius: 5px;
+}
+
+.sf-color-input:hover,
+.sf-color-input:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 .sf-custom-label {
