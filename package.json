@@ -17,6 +17,9 @@
     "download-ei": "node scripts/download_ei.cjs"
   },
   "license": "MIT",
+  "engines": {
+    "node": ">=22.17"
+  },
   "dependencies": {
     "@fortawesome/fontawesome-free": "^7.3.0",
     "@tauri-apps/api": "^2.12.5",
