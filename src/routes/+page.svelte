@@ -2945,6 +2945,10 @@
   } | null;
   let captureSession = $state<CaptureSession>(null);
   let sessionColor = $state("var(--accent)");
+  // Draft shown/edited in the end modal; only applied when the session is filed.
+  let sessionDraftName = $state("");
+  // Element to restore focus to after the end modal closes.
+  let sessionReturnFocus: HTMLElement | null = null;
   let showConfirmDelete = $state(false)
   let pendingDeleteSubFolder = $state<{ sessionId: string; subFolderId: string; name: string } | null>(null)
   let pendingDeleteWh = $state<string | null>(null)
@@ -3000,6 +3004,37 @@
     if (fromHistory.length > 0) return fromHistory;
     return uploads.filter(u => set.has(u.file_path));
   }
+  // Distinct boss names for the "what will be filed" summary in the end modal.
+  function distinctBossNames(logs: UploadRecord[]): string[] {
+    const seen: string[] = [];
+    for (const l of logs) {
+      const n = l.boss_name?.trim();
+      if (n && !seen.includes(n)) seen.push(n);
+    }
+    return seen;
+  }
+  function restoreSessionFocus() {
+    const el = sessionReturnFocus;
+    sessionReturnFocus = null;
+    try { el?.focus?.(); } catch { /* element may be gone */ }
+  }
+  function closePickerModal() {
+    pickerModal = null;
+    creatingNewFolderInPicker = false;
+    restoreSessionFocus();
+  }
+  // Arrow-key navigation through the folder/subfolder list in the picker modal.
+  function pickerKeydown(e: KeyboardEvent) {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    const items = Array.from(document.querySelectorAll<HTMLElement>('.picker-modal .picker-item'));
+    if (items.length === 0) return;
+    e.preventDefault();
+    const idx = items.indexOf(document.activeElement as HTMLElement);
+    const next = e.key === 'ArrowDown'
+      ? (idx + 1) % items.length
+      : (idx <= 0 ? items.length - 1 : idx - 1);
+    items[next]?.focus();
+  }
   // End a Capture Session: file captured logs into a Folder as a new subfolder
   // (Option A). Reuses the existing unified PickerModal + createSubFolder +
   // addWingLogsToSession so behaviour matches the Folders feature exactly.
@@ -3011,6 +3046,8 @@
       persistCaptureSession();
       return;
     }
+    sessionDraftName = captureSession.name;
+    sessionReturnFocus = (document.activeElement as HTMLElement | null) ?? null;
     pickerModal = {
       title: "File Session To…",
       logs,
@@ -3020,9 +3057,15 @@
         // `target` is the chosen Folder (session) id. Create a subfolder named
         // after this capture session (editable in the modal), with the chosen
         // color, then drop the logs into it.
-        createSubFolder(targetFolderId as unknown as string, captureSession!.name, sessionColor);
         const folder = sessions.find(s => s.id === targetFolderId);
-        const sub = folder?.subfolders?.find(sf => sf.name === captureSession!.name);
+        const name = sessionDraftName.trim() || captureSession!.name;
+        // Duplicate guard: don't silently create two subfolders with one name.
+        if (folder?.subfolders?.some(sf => sf.name.toLowerCase() === name.toLowerCase())) {
+          showToast(`"${name}" already exists in ${folder.name} — pick another name.`);
+          return;
+        }
+        createSubFolder(targetFolderId as unknown as string, name, sessionColor);
+        const sub = folder?.subfolders?.find(sf => sf.name === name);
         if (sub) addWingLogsToSession(folder!.id, logs, sub.id);
         // Logs now live in the Folder — drop them from the Feed view.
         const paths = new Set(captureSession!.logPaths);
@@ -3030,6 +3073,11 @@
         persistFeed();
         captureSession = null;
         persistCaptureSession();
+        closePickerModal();
+        showToast(
+          `Filed ${logs.length} log${logs.length > 1 ? "s" : ""} into ${folder?.name ?? "a folder"} / ${name}.`,
+          "success",
+        );
       },
     };
   }
@@ -3039,8 +3087,7 @@
   function discardCaptureSession() {
     captureSession = null;
     persistCaptureSession();
-    pickerModal = null;
-    creatingNewFolderInPicker = false;
+    closePickerModal();
     showToast("Capture session ended — logs left in the Feed.", "success");
   }
 
@@ -9141,11 +9188,12 @@ async function testWebhook(wh: any) {
 
 {#if pickerModal}
   {@const pm = pickerModal}
-  <div class="picker-modal-overlay" role="button" tabindex="0" aria-label="Close" onclick={(e) => { if (e.target === e.currentTarget) { pickerModal = null; creatingNewFolderInPicker = false; } }} onkeydown={(e) => { if (e.key === 'Escape') { pickerModal = null; creatingNewFolderInPicker = false; } }}>
-    <div class="picker-modal" role="dialog" aria-modal="true">
+  {@const bossNames = distinctBossNames(pm.logs)}
+  <div class="picker-modal-overlay" role="button" tabindex="0" aria-label="Close" onclick={(e) => { if (e.target === e.currentTarget) closePickerModal(); }} onkeydown={(e) => { if (e.key === 'Escape') closePickerModal(); }}>
+    <div class="picker-modal" role="dialog" aria-modal="true" tabindex="-1" onkeydown={pickerKeydown}>
       <div class="picker-modal-head">
         <div class="picker-modal-title"><i class="fa-solid fa-folder-open"></i> {pm.title}</div>
-        <button class="picker-modal-close" onclick={() => { pickerModal = null; creatingNewFolderInPicker = false; }} aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+        <button class="picker-modal-close" onclick={closePickerModal} aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
       </div>
 
       {#if pm.logs.length > 1}
@@ -9153,20 +9201,27 @@ async function testWebhook(wh: any) {
       {:else if pm.logs[0]?.boss_name}
         <div class="picker-modal-sub">{pm.logs[0].boss_name}</div>
       {/if}
+      {#if bossNames.length}
+        <div class="picker-modal-bosses" title={bossNames.join(", ")}>
+          {bossNames.slice(0, 4).join(" · ")}{bossNames.length > 4 ? ` +${bossNames.length - 4} more` : ""}
+        </div>
+      {/if}
 
       <!-- End-Session only: rename + pick subfolder color before filing -->
       {#if pm.title === "File Session To…" && captureSession}
         <div class="session-meta-edit">
           <div class="session-meta-label-row">
             <label class="session-meta-label" for="session-name-input">Subfolder name</label>
-            <span class="session-name-count" class:near-limit={captureSession.name.length >= 50}>{captureSession.name.length}/60</span>
+            <span class="session-name-count" class:near-limit={sessionDraftName.length >= 50}>{sessionDraftName.length}/60</span>
           </div>
           <input
             id="session-name-input"
             class="session-name-input"
-            bind:value={captureSession.name}
+            bind:value={sessionDraftName}
             placeholder="Session name…"
             maxlength="60"
+            use:focusOnMount
+            onkeydown={(e) => { if (e.key === "Enter") { e.preventDefault(); document.querySelector<HTMLElement>(".picker-modal .picker-item")?.focus(); } }}
           />
           <span class="session-meta-label">Color</span>
           <div class="color-picker-row" role="radiogroup" aria-label="Subfolder color">
@@ -9191,6 +9246,15 @@ async function testWebhook(wh: any) {
               oninput={(e) => { sessionColor = (e.currentTarget as HTMLInputElement).value; }}
               style="width:18px; height:18px; padding:0; border:none; background:none; cursor:pointer;"
             />
+          </div>
+          <div class="sf-preview">
+            <span class="sf-preview-label">Preview</span>
+            <span class="subfolder-tab" style="pointer-events: none;">
+              <span class="tab-label">
+                <i class="fa-solid fa-folder folder-glyph" style="color: {swatchHex(sessionColor)};"></i>
+                {sessionDraftName.trim() || "New Subfolder"}
+              </span>
+            </span>
           </div>
         </div>
       {/if}
@@ -9258,7 +9322,11 @@ async function testWebhook(wh: any) {
             </div>
           </div>
         {:else if sessions.length === 0}
-          <div class="picker-empty">No folders created yet.<br/>Create one below to file this session.</div>
+          <div class="picker-empty">
+            <i class="fa-solid fa-folder-open"></i>
+            <p class="picker-empty-title">No folders yet</p>
+            <p class="picker-empty-hint">Create a folder to file this session into.</p>
+          </div>
           <button class="picker-item picker-create-btn" onclick={() => { creatingNewFolderInPicker = true; }}>
             <i class="fa-solid fa-folder-plus"></i> Create Folder
           </button>
@@ -9280,7 +9348,7 @@ async function testWebhook(wh: any) {
         <div class="picker-session-footer">
           <span class="picker-session-hint">{pm.logs.length} log{pm.logs.length > 1 ? "s" : ""} will be filed into a new subfolder</span>
           <div class="picker-session-actions">
-            <button class="creator-btn cancel" onclick={() => { pickerModal = null; creatingNewFolderInPicker = false; }}>Cancel</button>
+            <button class="creator-btn cancel" onclick={closePickerModal}>Cancel</button>
             <button class="creator-btn danger" title="Ends the session — logs stay in the Feed" onclick={discardCaptureSession}>Don't Save</button>
           </div>
         </div>

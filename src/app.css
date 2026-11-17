@@ -5874,6 +5874,15 @@ html.reduce-motion .session-pill {
   letter-spacing: .02em;
 }
 
+.picker-modal-bosses {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: -6px 0 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .picker-modal-close {
   background: color-mix(in srgb, #fff 6%, transparent);
   border: 1px solid var(--border);
@@ -5953,6 +5962,23 @@ html.reduce-motion .session-pill {
   line-height: 1.6;
   text-align: center;
   padding: 14px 6px;
+}
+
+.picker-empty i {
+  display: block;
+  font-size: 22px;
+  margin-bottom: 6px;
+  color: color-mix(in srgb, var(--text-muted) 70%, transparent);
+}
+
+.picker-empty-title {
+  margin: 0 0 2px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.picker-empty-hint {
+  margin: 0;
 }
 
 /* End-Session footer (Cancel / Don't Save) */
