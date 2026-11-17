@@ -1376,6 +1376,8 @@
   // group), Feed Save to Session.
   type PickerModal = {
     title: string;
+    // Which flow opened the modal — drives the header/footer extras.
+    flow: "move" | "save" | "session";
     logs: UploadRecord[];
     sessionId: string | null;   // owning session for Move (subfolder list); null for Save
     excludeSubFolderId: string | null;
@@ -1386,6 +1388,7 @@
   function openMovePicker(log: UploadRecord, sessionId: string, excludeSubFolderId: string | null, onPick: (targetSubFolderId: string | null) => void) {
     pickerModal = {
       title: "Move Log To…",
+      flow: "move",
       logs: [log],
       sessionId,
       excludeSubFolderId,
@@ -1396,6 +1399,7 @@
   function openMoveGroupPicker(logs: UploadRecord[], excludeSubFolderId: string | null, onPick: (targetSubFolderId: string | null) => void) {
     pickerModal = {
       title: "Move Group To…",
+      flow: "move",
       logs,
       sessionId: activeSessionId,
       excludeSubFolderId,
@@ -1406,6 +1410,7 @@
   function openSavePicker(logs: UploadRecord[], onPick: (sessionId: string) => void) {
     pickerModal = {
       title: logs.length > 1 ? "Save Logs To…" : "Save Log To…",
+      flow: "save",
       logs,
       sessionId: null,
       excludeSubFolderId: null,
@@ -3050,6 +3055,7 @@
     sessionReturnFocus = (document.activeElement as HTMLElement | null) ?? null;
     pickerModal = {
       title: "File Session To…",
+      flow: "session",
       logs,
       sessionId: null,
       excludeSubFolderId: null,
@@ -9062,30 +9068,7 @@ async function testWebhook(wh: any) {
         use:focusOnMount
       />
 
-      <span class="sf-field-label" role="group" aria-label="Subfolder color">Color</span>
-      <div class="sf-swatches">
-        {#each FOLDER_PALETTE as p}
-          <button
-            class="sf-swatch"
-            class:selected={newSubFolderColor === p.hex}
-            aria-label={`Use ${p.name}`}
-            title={p.name}
-            style={`background:${p.hex};`}
-            onclick={() => newSubFolderColor = p.hex}
-          ></button>
-        {/each}
-      </div>
-      <div class="sf-custom-color">
-        <input
-          type="color"
-          class="sf-color-input"
-          aria-label="Custom color"
-          value={newSubFolderColor}
-          oninput={(e) => { newSubFolderColor = (e.currentTarget as HTMLInputElement).value; }}
-        />
-        <span class="sf-custom-label">Custom</span>
-        <span class="sf-custom-hex">{newSubFolderColor.toUpperCase()}</span>
-      </div>
+      {@render swatchPicker({ label: "Subfolder color", selected: newSubFolderColor, hex: newSubFolderColor, onSelect: (hex) => newSubFolderColor = hex, onCustom: (hex) => newSubFolderColor = hex })}
 
       <div class="sf-preview">
         <span class="sf-preview-label">Preview</span>
@@ -9105,6 +9088,72 @@ async function testWebhook(wh: any) {
     </div>
   </div>
 {/if}
+
+<!-- Colour palette used by the folder/session modals (swatch grid + custom input) -->
+{#snippet swatchPicker({ label, selected, hex, onSelect, onCustom }: {
+  label: string;
+  selected: string;
+  hex: string;
+  onSelect: (hex: string) => void;
+  onCustom: (hex: string) => void;
+})}
+  <span class="sf-field-label" role="group" aria-label={label}>Color</span>
+  <div class="sf-swatches">
+    {#each FOLDER_PALETTE as p}
+      <button
+        class="sf-swatch"
+        class:selected={selected === p.hex}
+        aria-label={`Use ${p.name}`}
+        title={p.name}
+        style={`background:${p.hex};`}
+        onclick={() => onSelect(p.hex)}
+      ></button>
+    {/each}
+  </div>
+  <div class="sf-custom-color">
+    <input
+      type="color"
+      class="sf-color-input"
+      aria-label="Custom color"
+      value={selected}
+      oninput={(e) => onCustom((e.currentTarget as HTMLInputElement).value)}
+    />
+    <span class="sf-custom-label">Custom</span>
+    <span class="sf-custom-hex">{hex.toUpperCase()}</span>
+  </div>
+{/snippet}
+
+<!-- Compact dot palette used by the end-session and inline create-folder forms -->
+{#snippet colorDotPicker({ label, selected, onSelect, onCustom }: {
+  label: string;
+  selected: string;
+  onSelect: (hex: string) => void;
+  onCustom: (hex: string) => void;
+})}
+  <div class="color-picker-row" role="radiogroup" aria-label={label}>
+    {#each FOLDER_PALETTE as p}
+      <button
+        class="color-dot-btn"
+        class:selected={selected === p.hex}
+        role="radio"
+        aria-checked={selected === p.hex}
+        aria-label={`Choose ${p.name}`}
+        title={p.name}
+        onclick={() => onSelect(p.hex)}
+        style={`width: 18px; height: 18px; border-radius: 50%; border: ${selected === p.hex ? '2px solid white' : 'none'}; cursor: pointer; background: ${p.hex};`}
+      ></button>
+    {/each}
+    <input
+      type="color"
+      class="sf-color-input"
+      aria-label="Custom color"
+      title="Custom color"
+      value={selected}
+      oninput={(e) => onCustom((e.currentTarget as HTMLInputElement).value)}
+      style="width:18px; height:18px; padding:0; border:none; background:none; cursor:pointer;"
+    />
+  </div>
+{/snippet}
 
 {#if newFolderModalOpen}
   <div class="subfolder-modal-overlay" role="button" tabindex="0" aria-label="Cancel" onclick={(e) => { if (e.target === e.currentTarget) { newFolderModalOpen = false; editFolderId = null; } }} onkeydown={(e) => { if (e.key === 'Escape') { newFolderModalOpen = false; editFolderId = null; } }}>
@@ -9140,30 +9189,7 @@ async function testWebhook(wh: any) {
         />
       {/if}
 
-      <span class="sf-field-label" role="group" aria-label="Folder color">Color</span>
-      <div class="sf-swatches">
-        {#each FOLDER_PALETTE as p}
-          <button
-            class="sf-swatch"
-            class:selected={(editFolderId ? editFolderColor : newSessionColor) === p.hex}
-            aria-label={`Use ${p.name}`}
-            title={p.name}
-            style={`background:${p.hex};`}
-            onclick={() => { if (editFolderId) editFolderColor = p.hex; else newSessionColor = p.hex; }}
-          ></button>
-        {/each}
-      </div>
-      <div class="sf-custom-color">
-        <input
-          type="color"
-          class="sf-color-input"
-          aria-label="Custom color"
-          value={editFolderId ? editFolderColor : newSessionColor}
-          oninput={(e) => { const v = (e.currentTarget as HTMLInputElement).value; if (editFolderId) editFolderColor = v; else newSessionColor = v; }}
-        />
-        <span class="sf-custom-label">Custom</span>
-        <span class="sf-custom-hex">{(editFolderId ? editFolderColor : newSessionColor).toUpperCase()}</span>
-      </div>
+      {@render swatchPicker({ label: "Folder color", selected: editFolderId ? editFolderColor : newSessionColor, hex: editFolderId ? editFolderColor : newSessionColor, onSelect: (hex) => { if (editFolderId) editFolderColor = hex; else newSessionColor = hex; }, onCustom: (hex) => { if (editFolderId) editFolderColor = hex; else newSessionColor = hex; } })}
 
       <div class="sf-preview">
         <span class="sf-preview-label">Preview</span>
@@ -9208,7 +9234,7 @@ async function testWebhook(wh: any) {
       {/if}
 
       <!-- End-Session only: rename + pick subfolder color before filing -->
-      {#if pm.title === "File Session To…" && captureSession}
+      {#if pm.flow === "session" && captureSession}
         <div class="session-meta-edit">
           <div class="session-meta-label-row">
             <label class="session-meta-label" for="session-name-input">Subfolder name</label>
@@ -9224,29 +9250,7 @@ async function testWebhook(wh: any) {
             onkeydown={(e) => { if (e.key === "Enter") { e.preventDefault(); document.querySelector<HTMLElement>(".picker-modal .picker-item")?.focus(); } }}
           />
           <span class="session-meta-label">Color</span>
-          <div class="color-picker-row" role="radiogroup" aria-label="Subfolder color">
-            {#each FOLDER_PALETTE as p}
-              <button
-                class="color-dot-btn"
-                class:selected={sessionColor === p.hex}
-                role="radio"
-                aria-checked={sessionColor === p.hex}
-                aria-label={`Choose ${p.name}`}
-                title={p.name}
-                onclick={() => (sessionColor = p.hex)}
-                style={`width: 18px; height: 18px; border-radius: 50%; border: ${sessionColor === p.hex ? '2px solid white' : 'none'}; cursor: pointer; background: ${p.hex};`}
-              ></button>
-            {/each}
-            <input
-              type="color"
-              class="sf-color-input"
-              aria-label="Custom color"
-              title="Custom color"
-              value={sessionColor}
-              oninput={(e) => { sessionColor = (e.currentTarget as HTMLInputElement).value; }}
-              style="width:18px; height:18px; padding:0; border:none; background:none; cursor:pointer;"
-            />
-          </div>
+          {@render colorDotPicker({ label: "Subfolder color", selected: sessionColor, onSelect: (hex) => sessionColor = hex, onCustom: (hex) => sessionColor = hex })}
           <div class="sf-preview">
             <span class="sf-preview-label">Preview</span>
             <span class="subfolder-tab" style="pointer-events: none;">
@@ -9289,29 +9293,7 @@ async function testWebhook(wh: any) {
               onkeydown={(e) => { if (e.key === "Enter" && newSessionName.trim()) { const id = createSession(); creatingNewFolderInPicker = false; if (id) pm.onPick(id); } }}
             />
             <span class="session-meta-label">Color</span>
-            <div class="color-picker-row" role="radiogroup" aria-label="Folder color">
-              {#each FOLDER_PALETTE as p}
-                <button
-                  class="color-dot-btn"
-                  class:selected={newSessionColor === p.hex}
-                  role="radio"
-                  aria-checked={newSessionColor === p.hex}
-                  aria-label={`Choose ${p.name}`}
-                  title={p.name}
-                  onclick={() => (newSessionColor = p.hex)}
-                  style={`width: 18px; height: 18px; border-radius: 50%; border: ${newSessionColor === p.hex ? '2px solid white' : 'none'}; cursor: pointer; background: ${p.hex};`}
-                ></button>
-              {/each}
-              <input
-                type="color"
-                class="sf-color-input"
-                aria-label="Custom color"
-                title="Custom color"
-                value={newSessionColor}
-                oninput={(e) => { newSessionColor = (e.currentTarget as HTMLInputElement).value; }}
-                style="width:18px; height:18px; padding:0; border:none; background:none; cursor:pointer;"
-              />
-            </div>
+            {@render colorDotPicker({ label: "Folder color", selected: newSessionColor, onSelect: (hex) => newSessionColor = hex, onCustom: (hex) => newSessionColor = hex })}
             <div class="picker-create-actions">
               <button
                 class="creator-btn confirm"
@@ -9344,7 +9326,7 @@ async function testWebhook(wh: any) {
         {/if}
       {/if}
 
-      {#if pm.title === "File Session To…" && captureSession}
+      {#if pm.flow === "session" && captureSession}
         <div class="picker-session-footer">
           <span class="picker-session-hint">{pm.logs.length} log{pm.logs.length > 1 ? "s" : ""} will be filed into a new subfolder</span>
           <div class="picker-session-actions">
