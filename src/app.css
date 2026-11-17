@@ -17,31 +17,10 @@
   --success: #10b981;
   --fail: #ef4444;
   --warn: #f59e0b;
-  --font: 'Outfit', 'Inter', system-ui, -apple-system, sans-serif;
+  --font: 'Outfit', system-ui, -apple-system, sans-serif;
   --radius: 10px;
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-smooth: cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-/* Font selection theme classes */
-html.font-inter-outfit {
-  --font: 'Outfit', 'Inter', system-ui, -apple-system, sans-serif;
-}
-
-html.font-inter {
-  --font: 'Inter', system-ui, -apple-system, sans-serif;
-}
-
-html.font-outfit {
-  --font: 'Outfit', system-ui, -apple-system, sans-serif;
-}
-
-html.font-system {
-  --font: system-ui, -apple-system, sans-serif;
-}
-
-html.font-mono {
-  --font: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
 }
 
 body {
@@ -2133,6 +2112,7 @@ input:focus {
 
 /* Animated shimmer pill in the Feed header */
 .session-pill {
+  --session-color: var(--accent);
   position: relative;
   overflow: hidden;
   display: inline-flex;
@@ -2143,10 +2123,16 @@ input:focus {
   font-size: 12px;
   font-weight: 600;
   color: #fff;
-  background: linear-gradient(100deg, #6366f1, #8b5cf6, #6366f1);
+  background: linear-gradient(100deg, var(--session-color), color-mix(in srgb, var(--session-color) 62%, #fff), var(--session-color));
   background-size: 220% 100%;
   animation: session-pill-shimmer 2.4s linear infinite;
-  border: 1px solid color-mix(in srgb, #a78bfa 55%, transparent);
+  border: 1px solid color-mix(in srgb, var(--session-color) 65%, #fff);
+  transition: border-color .25s ease, box-shadow .25s ease, transform .15s ease, filter .3s ease;
+}
+
+.session-pill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--session-color) 40%, transparent);
 }
 
 .session-pill.paused {
@@ -2154,6 +2140,7 @@ input:focus {
   background-size: 220% 100%;
   animation: session-pill-shimmer 2.4s linear infinite;
   border-color: #475569;
+  filter: grayscale(.45);
 }
 
 .session-pill .session-name {
@@ -2191,6 +2178,7 @@ input:focus {
 .log-card.session-captured {
   border-color: color-mix(in srgb, var(--accent) 70%, transparent);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent), 0 0 14px color-mix(in srgb, var(--accent) 30%, transparent);
+  transition: border-color .25s ease, box-shadow .25s ease;
 }
 
 .log-card.session-captured::after {
@@ -2210,7 +2198,7 @@ html.reduce-motion .log-card.session-captured::after {
 }
 
 html.reduce-motion .session-pill {
-  background: var(--accent);
+  background: var(--session-color);
 }
 
 /* End-Session rename + color editor inside the PickerModal */
@@ -2245,24 +2233,76 @@ html.reduce-motion .session-pill {
 
 .session-name-input:focus {
   border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.session-meta-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.session-name-count {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.session-name-count.near-limit {
+  color: var(--warn);
 }
 
 .color-picker-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   align-items: center;
+}
+
+/* Inline Create-Folder form inside the picker modal */
+.picker-create-folder {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  margin: 0 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, #fff 3%, transparent);
+}
+
+.picker-create-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 6px;
 }
 
 .color-dot-btn {
   width: 18px;
   height: 18px;
+  padding: 0;
+  box-sizing: border-box;
+  flex: 0 0 auto;
   border-radius: 50%;
   border: none;
   cursor: pointer;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+
+.color-dot-btn:hover {
+  transform: scale(1.18);
 }
 
 .color-dot-btn.selected {
-  box-shadow: 0 0 0 2px #fff;
+  animation: color-dot-pop .18s ease;
+}
+
+@keyframes color-dot-pop {
+  0% { transform: scale(.78); }
+  60% { transform: scale(1.16); }
+  100% { transform: scale(1); }
 }
 
 /* ─── Accent palette swatches (Appearance & System) ─── */
@@ -2844,6 +2884,13 @@ html.reduce-motion .session-pill {
   cursor: pointer;
   padding: 4px 10px;
   font-size: 11px;
+}
+
+.creator-btn.cancel:hover,
+.cancel:hover {
+  background: color-mix(in srgb, #fff 13%, transparent);
+  color: var(--text);
+  border-color: color-mix(in srgb, #fff 22%, transparent);
 }
 
 .btn-beta {
@@ -5846,6 +5893,15 @@ html.reduce-motion .session-pill {
   letter-spacing: .02em;
 }
 
+.picker-modal-bosses {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: -6px 0 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .picker-modal-close {
   background: color-mix(in srgb, #fff 6%, transparent);
   border: 1px solid var(--border);
@@ -5879,7 +5935,20 @@ html.reduce-motion .session-pill {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+  position: relative;
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease, transform .12s ease;
+}
+
+.picker-item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 3px;
+  border-radius: 2px;
+  background: transparent;
+  transition: background-color .15s ease;
 }
 
 .picker-item:hover {
@@ -5888,12 +5957,79 @@ html.reduce-motion .session-pill {
   transform: translateY(-1px);
 }
 
+.picker-item:hover::before {
+  background: var(--accent);
+}
+
+.picker-item:active {
+  transform: translateY(0) scale(.985);
+}
+
+.picker-item-count {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, .06);
+  border-radius: 9px;
+  padding: 1px 7px;
+}
+
 .picker-empty {
   font-size: 12px;
   color: var(--text-muted);
   line-height: 1.6;
   text-align: center;
   padding: 14px 6px;
+}
+
+.picker-empty i {
+  display: block;
+  font-size: 22px;
+  margin-bottom: 6px;
+  color: color-mix(in srgb, var(--text-muted) 70%, transparent);
+}
+
+.picker-empty-title {
+  margin: 0 0 2px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.picker-empty-hint {
+  margin: 0;
+}
+
+/* End-Session footer (Cancel / Don't Save) */
+.picker-session-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.picker-session-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.picker-session-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.creator-btn.danger {
+  background: color-mix(in srgb, var(--fail) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--fail) 40%, transparent);
+  color: #fca5a5;
+}
+
+.creator-btn.danger:hover {
+  background: color-mix(in srgb, var(--fail) 26%, transparent);
 }
 
 /* ── Subfolder creation modal (mirrors vl/picker modal language) ── */
@@ -6028,6 +6164,7 @@ html.reduce-motion .session-pill {
   border-radius: 8px;
   background: none;
   cursor: pointer;
+  flex: 0 0 auto;
 }
 
 .sf-color-input::-webkit-color-swatch-wrapper {
@@ -6037,6 +6174,11 @@ html.reduce-motion .session-pill {
 .sf-color-input::-webkit-color-swatch {
   border: none;
   border-radius: 5px;
+}
+
+.sf-color-input:hover,
+.sf-color-input:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 .sf-custom-label {

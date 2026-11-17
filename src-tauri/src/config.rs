@@ -254,7 +254,7 @@ pub struct AppConfig {
 }
 
 fn default_app_font() -> String {
-    "inter-outfit".to_string()
+    "outfit".to_string()
 }
 
 /// Default log-cache retention (matches the old hard-coded cap).

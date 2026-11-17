@@ -20,7 +20,11 @@
   import SquadPlanCard from "./SquadPlanCard.svelte";
   import { PROFESSIONS, ELITE_SPEC_ICONS, SPEC_CORE, PROFESSION_GROUPS } from "../lib/professionData";
   import { type SquadPlan, newPlan, newFolder, newRoster, findPlan, upsertPlan, removePlan, resolveWingLabel, normalizeSquadPlans } from "../lib/squadPlanner";
+  import { APP_FONTS, DEFAULT_FONT_ID, fontStack, ensureGoogleFontsLink } from "../lib/fonts";
   import "../app.css";
+
+  // Load the webfonts as soon as the UI starts, independent of config load.
+  ensureGoogleFontsLink();
 
   // Preset accent colors for the Appearance palette (click = instant re-skin).
   const ACCENT_PRESETS = [
@@ -214,7 +218,7 @@
   let hide_on_startup = $state(false);
   let compact_mode = $state(false);
   let accent = $state("var(--accent)");
-  let app_font = $state("inter-outfit");
+  let app_font = $state(DEFAULT_FONT_ID);
   let sidebarOpen = $state(true);
   let activeMenuCard = $state<string | null>(null);
   let gw2_accounts = $state<any[]>([]);
@@ -613,6 +617,29 @@
   type PatchNoteCategory = { category: string; items: PatchNoteItem[] };
   type PatchNoteVersion = { version: string; date: string; image?: string; notes: PatchNoteCategory[] };
   const PATCH_NOTES_DATA: PatchNoteVersion[] = [
+    {
+      version: "0.8.2",
+      date: "November 2026",
+      notes: [
+        {
+          category: "🎨 Appearance",
+          items: [
+            { title: "More Fonts", desc: "A bigger font selection — Outfit, Inter, DM Sans, Manrope, Space Grotesk, Fredoka, a terminal-style font, or your system font." },
+            { title: "Font Picker Fixed", desc: "Every font in the list now actually applies. The terminal-style option used to fall back to a plain system font, and one option looked identical to the default." },
+            { title: "Quieter Settings", desc: "Changing the font saves right away and no longer pops up the 'settings saved' message." }
+          ]
+        },
+        {
+          category: "📁 Capture Session",
+          items: [
+            { title: "Easier End-of-Session Filing", desc: "When you end a session, the app shows exactly what will be filed — the boss names, not just a number — and lets you rename the subfolder and pick its colour with a live preview." },
+            { title: "Don't Save", desc: "You can end a session without filing it. The logs simply stay in your Uploads Feed." },
+            { title: "Duplicate Name Warning", desc: "If a subfolder with that name already exists in the folder, the app warns you instead of quietly creating a second one." },
+            { title: "Keyboard Support", desc: "The filing window works without the mouse — it focuses the name field, Enter jumps to the folder list, and the arrow keys move between folders." }
+          ]
+        }
+      ]
+    },
     {
       version: "0.8.1",
       date: "November 2026",
@@ -1358,6 +1385,8 @@
   // group), Feed Save to Session.
   type PickerModal = {
     title: string;
+    // Which flow opened the modal — drives the header/footer extras.
+    flow: "move" | "save" | "session";
     logs: UploadRecord[];
     sessionId: string | null;   // owning session for Move (subfolder list); null for Save
     excludeSubFolderId: string | null;
@@ -1368,6 +1397,7 @@
   function openMovePicker(log: UploadRecord, sessionId: string, excludeSubFolderId: string | null, onPick: (targetSubFolderId: string | null) => void) {
     pickerModal = {
       title: "Move Log To…",
+      flow: "move",
       logs: [log],
       sessionId,
       excludeSubFolderId,
@@ -1378,6 +1408,7 @@
   function openMoveGroupPicker(logs: UploadRecord[], excludeSubFolderId: string | null, onPick: (targetSubFolderId: string | null) => void) {
     pickerModal = {
       title: "Move Group To…",
+      flow: "move",
       logs,
       sessionId: activeSessionId,
       excludeSubFolderId,
@@ -1388,6 +1419,7 @@
   function openSavePicker(logs: UploadRecord[], onPick: (sessionId: string) => void) {
     pickerModal = {
       title: logs.length > 1 ? "Save Logs To…" : "Save Log To…",
+      flow: "save",
       logs,
       sessionId: null,
       excludeSubFolderId: null,
@@ -2917,8 +2949,8 @@
 
   // ─── Capture Session (live "raid night" collector, distinct from Folders) ──
   // A Capture Session tags every NEW Feed log while active, then on End files
-  // them into a Folder subfolder. Persisted to capture_session.json so it
-  // survives an app restart mid-session. Fully separate from config.sessions.
+  // them into a Folder subfolder. Persisted to localStorage so it survives an
+  // app restart mid-session. Fully separate from config.sessions.
   type CaptureSession = {
     id: string;
     name: string;
@@ -2927,6 +2959,10 @@
   } | null;
   let captureSession = $state<CaptureSession>(null);
   let sessionColor = $state("var(--accent)");
+  // Draft shown/edited in the end modal; only applied when the session is filed.
+  let sessionDraftName = $state("");
+  // Element to restore focus to after the end modal closes.
+  let sessionReturnFocus: HTMLElement | null = null;
   let showConfirmDelete = $state(false)
   let pendingDeleteSubFolder = $state<{ sessionId: string; subFolderId: string; name: string } | null>(null)
   let pendingDeleteWh = $state<string | null>(null)
@@ -2947,7 +2983,16 @@
   function loadCaptureSession() {
     try {
       const raw = localStorage.getItem("capture_session");
-      if (raw) captureSession = JSON.parse(raw);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      // Only adopt a well-formed session; a corrupt/old payload is discarded.
+      if (
+        parsed && typeof parsed.id === "string" && typeof parsed.name === "string" &&
+        (parsed.state === "collecting" || parsed.state === "paused") &&
+        Array.isArray(parsed.logPaths)
+      ) {
+        captureSession = parsed;
+      }
     } catch { /* ignore corrupt */ }
   }
   function persistCaptureSession() {
@@ -2961,7 +3006,9 @@
     const pad = (n: number) => String(n).padStart(2, "0");
     const name = `Session ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
     captureSession = { id: crypto.randomUUID(), name, state: "collecting", logPaths: [] };
-    sessionColor = "#6366f1";
+    // Default the subfolder color to the current accent (falls back to indigo
+    // when the accent is still the unresolved "var(--accent)" placeholder).
+    sessionColor = accent.startsWith("#") ? accent : "#6366f1";
     persistCaptureSession();
   }
   function pauseCaptureSession() {
@@ -2973,7 +3020,46 @@
   function capturedLogs(): UploadRecord[] {
     if (!captureSession) return [];
     const set = new Set(captureSession.logPaths);
-    return uploads.filter(u => set.has(u.file_path));
+    // Union of History and the Feed, de-duped by path. The Feed is capped/pruned
+    // and History can lag a just-captured log, so either source alone can be
+    // incomplete — merging both is what makes filing lossless.
+    const out: UploadRecord[] = [];
+    const seen = new Set<string>();
+    for (const h of allHistory) if (set.has(h.file_path) && !seen.has(h.file_path)) { seen.add(h.file_path); out.push(h); }
+    for (const u of uploads)    if (set.has(u.file_path) && !seen.has(u.file_path)) { seen.add(u.file_path); out.push(u); }
+    return out;
+  }
+  // Distinct boss names for the "what will be filed" summary in the end modal.
+  function distinctBossNames(logs: UploadRecord[]): string[] {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const l of logs) {
+      const n = l.boss_name?.trim();
+      if (n && !seen.has(n)) { seen.add(n); out.push(n); }
+    }
+    return out;
+  }
+  function restoreSessionFocus() {
+    const el = sessionReturnFocus;
+    sessionReturnFocus = null;
+    try { el?.focus?.(); } catch { /* element may be gone */ }
+  }
+  function closePickerModal() {
+    pickerModal = null;
+    creatingNewFolderInPicker = false;
+    restoreSessionFocus();
+  }
+  // Arrow-key navigation through the folder/subfolder list in the picker modal.
+  function pickerKeydown(e: KeyboardEvent) {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    const items = Array.from(document.querySelectorAll<HTMLElement>('.picker-modal .picker-item'));
+    if (items.length === 0) return;
+    e.preventDefault();
+    const idx = items.indexOf(document.activeElement as HTMLElement);
+    const next = e.key === 'ArrowDown'
+      ? (idx + 1) % items.length
+      : (idx <= 0 ? items.length - 1 : idx - 1);
+    items[next]?.focus();
   }
   // End a Capture Session: file captured logs into a Folder as a new subfolder
   // (Option A). Reuses the existing unified PickerModal + createSubFolder +
@@ -2984,10 +3070,14 @@
     if (logs.length === 0) {
       captureSession = null;
       persistCaptureSession();
+      showToast("No logs were captured — session ended.");
       return;
     }
+    sessionDraftName = captureSession.name;
+    sessionReturnFocus = (document.activeElement as HTMLElement | null) ?? null;
     pickerModal = {
       title: "File Session To…",
+      flow: "session",
       logs,
       sessionId: null,
       excludeSubFolderId: null,
@@ -2995,9 +3085,15 @@
         // `target` is the chosen Folder (session) id. Create a subfolder named
         // after this capture session (editable in the modal), with the chosen
         // color, then drop the logs into it.
-        createSubFolder(targetFolderId as unknown as string, captureSession!.name, sessionColor);
         const folder = sessions.find(s => s.id === targetFolderId);
-        const sub = folder?.subfolders?.find(sf => sf.name === captureSession!.name);
+        const name = sessionDraftName.trim() || captureSession!.name;
+        // Duplicate guard: don't silently create two subfolders with one name.
+        if (folder?.subfolders?.some(sf => sf.name.toLowerCase() === name.toLowerCase())) {
+          showToast(`"${name}" already exists in ${folder.name} — pick another name.`);
+          return;
+        }
+        createSubFolder(targetFolderId as unknown as string, name, sessionColor, false);
+        const sub = folder?.subfolders?.find(sf => sf.name === name);
         if (sub) addWingLogsToSession(folder!.id, logs, sub.id);
         // Logs now live in the Folder — drop them from the Feed view.
         const paths = new Set(captureSession!.logPaths);
@@ -3005,8 +3101,22 @@
         persistFeed();
         captureSession = null;
         persistCaptureSession();
+        closePickerModal();
+        showToast(
+          `Filed ${logs.length} log${logs.length > 1 ? "s" : ""} into ${folder?.name ?? "a folder"} / ${name}.`,
+          "success",
+        );
       },
     };
+  }
+  // End the session WITHOUT filing: keep the collected logs in the Feed and
+  // just stop capturing. Lets the user stop a session without being forced to
+  // file it somewhere.
+  function discardCaptureSession() {
+    captureSession = null;
+    persistCaptureSession();
+    closePickerModal();
+    showToast("Capture session ended — logs left in the Feed.", "success");
   }
 
   // ─── Session / History State ─────────────────────────────────────────
@@ -3540,7 +3650,6 @@
     newSessionName = "";
     persistConfig();
     newFolderModalOpen = false;
-    newSessionColor = "#14b8a6";
     return newSession.id;
   }
 
@@ -5408,25 +5517,31 @@ async function testWebhook(wh: any) {
     }
   }
 
-  function createSubFolder(sessionId: string, name: string, color: string) {
-    if (!name.trim()) return;
+  // Create a subfolder. Returns false (without creating) when the name is empty
+  // or the folder already has a subfolder with that name.
+  function createSubFolder(sessionId: string, name: string, color: string, highlight = true): boolean {
+    const trimmed = name.trim();
+    if (!trimmed) return false;
     const session = sessions.find(s => s.id === sessionId);
-    if (session) {
-      if (!session.subfolders) session.subfolders = [];
-      const newSub = {
-        id: crypto.randomUUID(),
-        name: name.trim(),
-        color,
-        logs: []
-      };
-      session.subfolders = [...session.subfolders, newSub];
-      sessions = [...sessions];
-      persistConfig();
+    if (!session) return false;
+    if (!session.subfolders) session.subfolders = [];
+    if (session.subfolders.some(sf => sf.name.toLowerCase() === trimmed.toLowerCase())) return false;
+    const newSub = {
+      id: crypto.randomUUID(),
+      name: trimmed.substring(0, 60),
+      color,
+      logs: []
+    };
+    session.subfolders = [...session.subfolders, newSub];
+    sessions = [...sessions];
+    persistConfig();
+    if (highlight) {
       creatingSubFolderId = newSub.id;
       setTimeout(() => { if (creatingSubFolderId === newSub.id) creatingSubFolderId = null; }, 900);
     }
     newSubFolderName = "";
     isCreatingSubFolder = false;
+    return true;
   }
 
   function deleteSubFolder(sessionId: string, subFolderId: string) {
@@ -5451,7 +5566,7 @@ async function testWebhook(wh: any) {
     if (session?.subfolders) {
       const sf = session.subfolders.find(s => s.id === subFolderId);
       if (sf && name.trim()) {
-        sf.name = name.trim().substring(0, 32);
+        sf.name = name.trim().substring(0, 60);
         sessions = [...sessions];
         persistConfig();
       }
@@ -5580,7 +5695,8 @@ async function testWebhook(wh: any) {
       applyCompactMode(compact_mode);
       accent = config.accent || "var(--accent)";
       applyAccent(accent);
-      app_font = config.app_font || "inter-outfit";
+      app_font = APP_FONTS.some((f) => f.id === config.app_font) ? (config.app_font as string) : DEFAULT_FONT_ID;
+      ensureGoogleFontsLink();
       applyFont(app_font);
       sidebarOpen = config.app_sidebar_open ?? true;
       sessions = (config.sessions ?? []).map((s: any) => ({
@@ -5628,11 +5744,11 @@ async function testWebhook(wh: any) {
     auto_upload; autostart; sound_notifications; desktop_notifications;
     wingman_enabled; wingman_account; use_backup_dps; max_concurrent_uploads;
     watch_stability_delay_ms; watch_poll_interval_ms; max_upload_retries; min_log_seconds;
-    reduce_motion; hide_on_startup; wvw_enabled; accent; compact_mode; app_font;
-    // Sessions/folders are excluded: every folder operation persists immediately
-    // via persistConfig(), so watching sessions here would fire the autosave
-    // effect (and its "Unsaved settings changes" toast) for a move that is
-    // already saved.
+    reduce_motion; hide_on_startup; wvw_enabled; accent; compact_mode;
+    // Sessions/folders and the font are excluded: each persists immediately
+    // (folder ops and the font dropdown call persistConfig() directly), so
+    // watching them here would fire the autosave effect (and its "Unsaved
+    // settings changes" toast) for a change that is already saved.
     JSON.stringify(gw2_accounts);
     JSON.stringify(discord_webhooks);
     if (!configLoaded) return;
@@ -5710,15 +5826,7 @@ async function testWebhook(wh: any) {
 
   function applyFont(fontName: string) {
     if (typeof document === "undefined") return;
-    // Remove existing font classes
-    const classes = Array.from(document.documentElement.classList);
-    for (const c of classes) {
-      if (c.startsWith("font-")) {
-        document.documentElement.classList.remove(c);
-      }
-    }
-    // Add the new selected class
-    document.documentElement.classList.add(`font-${fontName}`);
+    document.documentElement.style.setProperty("--font", fontStack(fontName));
   }
 
   function formatSize(bytes: number): string {
@@ -7168,7 +7276,7 @@ async function testWebhook(wh: any) {
               <i class="fa-solid fa-circle-dot" style="margin-right: 4px;"></i> Start Session
             </button>
           {:else}
-            <div class="session-pill" class:paused={captureSession.state === "paused"}>
+            <div class="session-pill" class:paused={captureSession.state === "paused"} style={`--session-color: ${sessionColor}`}>
               <span class="session-shimmer"></span>
               <i class="fa-solid {captureSession.state === 'paused' ? 'fa-pause' : 'fa-record-vinyl'}"></i>
               <span class="session-name">{captureSession.name}</span>
@@ -7481,7 +7589,7 @@ async function testWebhook(wh: any) {
             </div>
             <div style="display: flex; flex-direction: column; gap: 5px;">
               <span style="font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.6);">Custom Header Text</span>
-              <textarea placeholder="e.g. Raid night logs! @everyone..." bind:value={customFormatterHeader} style="width: 100%; height: 50px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #fff; padding: 6px 10px; font-size: 11px; resize: none; font-family: sans-serif; box-sizing: border-box; outline: none; transition: border-color 0.15s;"></textarea>
+              <textarea placeholder="e.g. Raid night logs! @everyone..." bind:value={customFormatterHeader} style="width: 100%; height: 50px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #fff; padding: 6px 10px; font-size: 11px; resize: none; font-family: var(--font); box-sizing: border-box; outline: none; transition: border-color 0.15s;"></textarea>
             </div>
             <div style="display: flex; flex-direction: column; gap: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.04); padding: 10px; border-radius: 8px;">
               <span style="font-size: 10px; font-weight: 700; color: rgba(255,255,255,0.4); margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px;">Include Info</span>
@@ -8147,12 +8255,10 @@ async function testWebhook(wh: any) {
             </div>
             <div style="margin-top: 16px;">
               <label for="app-font-select" style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 6px;">Font Family</label>
-              <select id="app-font-select" class="settings-select" bind:value={app_font} onchange={() => applyFont(app_font)}>
-                <option value="inter-outfit">Outfit &amp; Inter (Default)</option>
-                <option value="inter">Inter (Sleek Sans)</option>
-                <option value="outfit">Outfit (Rounded Elegant)</option>
-                <option value="system">System UI (Native)</option>
-                <option value="mono">Monospace (Terminal style)</option>
+              <select id="app-font-select" class="settings-select" bind:value={app_font} onchange={(e) => { app_font = (e.currentTarget as HTMLSelectElement).value; applyFont(app_font); persistConfig(); }}>
+                {#each APP_FONTS as f}
+                  <option value={f.id}>{f.label}</option>
+                {/each}
               </select>
               <span style="font-size: 10px; color: var(--text-muted);">Change the typography layout of the uploader application.</span>
             </div>
@@ -8596,7 +8702,7 @@ async function testWebhook(wh: any) {
                   <button class="tab-label" onclick={() => subFolderId = sf.id} ondblclick={(e) => { e.stopPropagation(); renamingSubFolderId = sf.id; renameSubFolderValue = sf.name; }}>
                     <i class="fa-solid fa-folder folder-glyph" style="color: {swatchHex(sf.color)};"></i>
                     {#if renamingSubFolderId === sf.id}
-                      <input class="tab-rename-input" bind:value={renameSubFolderValue} onkeydown={(e) => { e.stopPropagation(); if (e.key === 'Enter') renameSubFolder(activeSession.id, sf.id, renameSubFolderValue); if (e.key === 'Escape') { renamingSubFolderId = null; renameSubFolderValue = ''; } }} onblur={() => renameSubFolder(activeSession.id, sf.id, renameSubFolderValue)} />
+                      <input class="tab-rename-input" maxlength="60" bind:value={renameSubFolderValue} onkeydown={(e) => { e.stopPropagation(); if (e.key === 'Enter') renameSubFolder(activeSession.id, sf.id, renameSubFolderValue); if (e.key === 'Escape') { renamingSubFolderId = null; renameSubFolderValue = ''; } }} onblur={() => renameSubFolder(activeSession.id, sf.id, renameSubFolderValue)} />
                     {:else}
                       {sf.name}
                     {/if}
@@ -8651,7 +8757,7 @@ async function testWebhook(wh: any) {
               </div>
               <div style="display: flex; flex-direction: column; gap: 5px;">
                 <span style="font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.6);">Custom Header Text</span>
-                <textarea placeholder="e.g. Raid night logs! @everyone..." bind:value={customFormatterHeader} style="width: 100%; height: 50px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #fff; padding: 6px 10px; font-size: 11px; resize: none; font-family: sans-serif; box-sizing: border-box; outline: none; transition: border-color 0.15s;"></textarea>
+                <textarea placeholder="e.g. Raid night logs! @everyone..." bind:value={customFormatterHeader} style="width: 100%; height: 50px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #fff; padding: 6px 10px; font-size: 11px; resize: none; font-family: var(--font); box-sizing: border-box; outline: none; transition: border-color 0.15s;"></textarea>
               </div>
               <div style="display: flex; flex-direction: column; gap: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.04); padding: 10px; border-radius: 8px;">
                 <span style="font-size: 10px; font-weight: 700; color: rgba(255,255,255,0.4); margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px;">Include Info</span>
@@ -8985,34 +9091,11 @@ async function testWebhook(wh: any) {
         type="text"
         placeholder="Subfolder name..."
         bind:value={newSubFolderName}
-        onkeydown={(e) => { e.stopPropagation(); if (e.key === 'Enter') createSubFolder(activeSession.id, newSubFolderName, newSubFolderColor); if (e.key === 'Escape') { isCreatingSubFolder = false; newSubFolderName = ''; } }}
+        onkeydown={(e) => { e.stopPropagation(); if (e.key === 'Enter') { if (!newSubFolderName.trim()) return; if (!createSubFolder(activeSession.id, newSubFolderName, newSubFolderColor)) showToast(`"${newSubFolderName.trim()}" already exists in ${activeSession.name}.`); } if (e.key === 'Escape') { isCreatingSubFolder = false; newSubFolderName = ''; } }}
         use:focusOnMount
       />
 
-      <span class="sf-field-label" role="group" aria-label="Subfolder color">Color</span>
-      <div class="sf-swatches">
-        {#each FOLDER_PALETTE as p}
-          <button
-            class="sf-swatch"
-            class:selected={newSubFolderColor === p.hex}
-            aria-label={`Use ${p.name}`}
-            title={p.name}
-            style={`background:${p.hex};`}
-            onclick={() => newSubFolderColor = p.hex}
-          ></button>
-        {/each}
-      </div>
-      <div class="sf-custom-color">
-        <input
-          type="color"
-          class="sf-color-input"
-          aria-label="Custom color"
-          value={newSubFolderColor}
-          oninput={(e) => { newSubFolderColor = (e.currentTarget as HTMLInputElement).value; }}
-        />
-        <span class="sf-custom-label">Custom</span>
-        <span class="sf-custom-hex">{newSubFolderColor.toUpperCase()}</span>
-      </div>
+      {@render swatchPicker({ label: "Subfolder color", selected: newSubFolderColor, hex: newSubFolderColor, onSelect: (hex) => newSubFolderColor = hex, onCustom: (hex) => newSubFolderColor = hex })}
 
       <div class="sf-preview">
         <span class="sf-preview-label">Preview</span>
@@ -9027,11 +9110,77 @@ async function testWebhook(wh: any) {
 
       <div class="subfolder-modal-actions">
         <button class="creator-btn cancel btn-neutral" onclick={() => { isCreatingSubFolder = false; newSubFolderName = ''; }}>Cancel</button>
-        <button class="creator-btn save" disabled={!newSubFolderName.trim()} onclick={() => createSubFolder(activeSession.id, newSubFolderName, newSubFolderColor)}>Create</button>
+        <button class="creator-btn save" disabled={!newSubFolderName.trim()} onclick={() => { if (!createSubFolder(activeSession.id, newSubFolderName, newSubFolderColor)) showToast(`"${newSubFolderName.trim()}" already exists in ${activeSession.name}.`); }}>Create</button>
       </div>
     </div>
   </div>
 {/if}
+
+<!-- Colour palette used by the folder/session modals (swatch grid + custom input) -->
+{#snippet swatchPicker({ label, selected, hex, onSelect, onCustom }: {
+  label: string;
+  selected: string;
+  hex: string;
+  onSelect: (hex: string) => void;
+  onCustom: (hex: string) => void;
+})}
+  <span class="sf-field-label" role="group" aria-label={label}>Color</span>
+  <div class="sf-swatches">
+    {#each FOLDER_PALETTE as p}
+      <button
+        class="sf-swatch"
+        class:selected={selected === p.hex}
+        aria-label={`Use ${p.name}`}
+        title={p.name}
+        style={`background:${p.hex};`}
+        onclick={() => onSelect(p.hex)}
+      ></button>
+    {/each}
+  </div>
+  <div class="sf-custom-color">
+    <input
+      type="color"
+      class="sf-color-input"
+      aria-label="Custom color"
+      value={selected}
+      oninput={(e) => onCustom((e.currentTarget as HTMLInputElement).value)}
+    />
+    <span class="sf-custom-label">Custom</span>
+    <span class="sf-custom-hex">{hex.toUpperCase()}</span>
+  </div>
+{/snippet}
+
+<!-- Compact dot palette used by the end-session and inline create-folder forms -->
+{#snippet colorDotPicker({ label, selected, onSelect, onCustom }: {
+  label: string;
+  selected: string;
+  onSelect: (hex: string) => void;
+  onCustom: (hex: string) => void;
+})}
+  <div class="color-picker-row" role="radiogroup" aria-label={label}>
+    {#each FOLDER_PALETTE as p}
+      <button
+        class="color-dot-btn"
+        class:selected={selected === p.hex}
+        role="radio"
+        aria-checked={selected === p.hex}
+        aria-label={`Choose ${p.name}`}
+        title={p.name}
+        onclick={() => onSelect(p.hex)}
+        style={`width: 18px; height: 18px; border-radius: 50%; border: ${selected === p.hex ? '2px solid white' : 'none'}; cursor: pointer; background: ${p.hex};`}
+      ></button>
+    {/each}
+    <input
+      type="color"
+      class="sf-color-input"
+      aria-label="Custom color"
+      title="Custom color"
+      value={selected}
+      oninput={(e) => onCustom((e.currentTarget as HTMLInputElement).value)}
+      style="width:18px; height:18px; padding:0; border:none; background:none; cursor:pointer;"
+    />
+  </div>
+{/snippet}
 
 {#if newFolderModalOpen}
   <div class="subfolder-modal-overlay" role="button" tabindex="0" aria-label="Cancel" onclick={(e) => { if (e.target === e.currentTarget) { newFolderModalOpen = false; editFolderId = null; } }} onkeydown={(e) => { if (e.key === 'Escape') { newFolderModalOpen = false; editFolderId = null; } }}>
@@ -9067,30 +9216,7 @@ async function testWebhook(wh: any) {
         />
       {/if}
 
-      <span class="sf-field-label" role="group" aria-label="Folder color">Color</span>
-      <div class="sf-swatches">
-        {#each FOLDER_PALETTE as p}
-          <button
-            class="sf-swatch"
-            class:selected={(editFolderId ? editFolderColor : newSessionColor) === p.hex}
-            aria-label={`Use ${p.name}`}
-            title={p.name}
-            style={`background:${p.hex};`}
-            onclick={() => { if (editFolderId) editFolderColor = p.hex; else newSessionColor = p.hex; }}
-          ></button>
-        {/each}
-      </div>
-      <div class="sf-custom-color">
-        <input
-          type="color"
-          class="sf-color-input"
-          aria-label="Custom color"
-          value={editFolderId ? editFolderColor : newSessionColor}
-          oninput={(e) => { const v = (e.currentTarget as HTMLInputElement).value; if (editFolderId) editFolderColor = v; else newSessionColor = v; }}
-        />
-        <span class="sf-custom-label">Custom</span>
-        <span class="sf-custom-hex">{(editFolderId ? editFolderColor : newSessionColor).toUpperCase()}</span>
-      </div>
+      {@render swatchPicker({ label: "Folder color", selected: editFolderId ? editFolderColor : newSessionColor, hex: editFolderId ? editFolderColor : newSessionColor, onSelect: (hex) => { if (editFolderId) editFolderColor = hex; else newSessionColor = hex; }, onCustom: (hex) => { if (editFolderId) editFolderColor = hex; else newSessionColor = hex; } })}
 
       <div class="sf-preview">
         <span class="sf-preview-label">Preview</span>
@@ -9115,56 +9241,57 @@ async function testWebhook(wh: any) {
 
 {#if pickerModal}
   {@const pm = pickerModal}
-  <div class="picker-modal-overlay" role="button" tabindex="0" aria-label="Close" onclick={(e) => { if (e.target === e.currentTarget) { pickerModal = null; creatingNewFolderInPicker = false; } }} onkeydown={(e) => { if (e.key === 'Escape') { pickerModal = null; creatingNewFolderInPicker = false; } }}>
-    <div class="picker-modal" role="dialog" aria-modal="true">
+  {@const bossNames = distinctBossNames(pm.logs)}
+  <div class="picker-modal-overlay" role="button" tabindex="0" aria-label="Close" onclick={(e) => { if (e.target === e.currentTarget) closePickerModal(); }} onkeydown={(e) => { if (e.key === 'Escape') closePickerModal(); }}>
+    <div class="picker-modal" role="dialog" aria-modal="true" tabindex="-1" onkeydown={pickerKeydown}>
       <div class="picker-modal-head">
         <div class="picker-modal-title"><i class="fa-solid fa-folder-open"></i> {pm.title}</div>
-        <button class="picker-modal-close" onclick={() => { pickerModal = null; creatingNewFolderInPicker = false; }} aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+        <button class="picker-modal-close" onclick={closePickerModal} aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
       </div>
 
       {#if pm.logs.length > 1}
         <div class="picker-modal-sub">{pm.logs.length} logs selected</div>
+        {#if bossNames.length}
+          <div class="picker-modal-bosses" title={bossNames.join(", ")}>
+            {bossNames.slice(0, 4).join(" · ")}{bossNames.length > 4 ? ` +${bossNames.length - 4} more` : ""}
+          </div>
+        {/if}
       {:else if pm.logs[0]?.boss_name}
         <div class="picker-modal-sub">{pm.logs[0].boss_name}</div>
       {/if}
 
       <!-- End-Session only: rename + pick subfolder color before filing -->
-      {#if pm.title === "File Session To…" && captureSession}
+      {#if pm.flow === "session" && captureSession}
         <div class="session-meta-edit">
-          <label class="session-meta-label" for="session-name-input">Subfolder name</label>
+          <div class="session-meta-label-row">
+            <label class="session-meta-label" for="session-name-input">Subfolder name</label>
+            <span class="session-name-count" class:near-limit={sessionDraftName.length >= 50}>{sessionDraftName.length}/60</span>
+          </div>
           <input
             id="session-name-input"
             class="session-name-input"
-            bind:value={captureSession.name}
+            bind:value={sessionDraftName}
             placeholder="Session name…"
             maxlength="60"
+            use:focusOnMount
+            onkeydown={(e) => { if (e.key === "Enter") { e.preventDefault(); document.querySelector<HTMLElement>(".picker-modal .picker-item")?.focus(); } }}
           />
           <span class="session-meta-label">Color</span>
-          <div class="color-picker-row">
-            {#each FOLDER_PALETTE as p}
-              <button
-                class="color-dot-btn"
-                class:selected={sessionColor === p.hex}
-                aria-label={`Choose ${p.name}`}
-                title={p.name}
-                onclick={() => (sessionColor = p.hex)}
-                style={`width: 18px; height: 18px; border-radius: 50%; border: ${sessionColor === p.hex ? '2px solid white' : 'none'}; cursor: pointer; background: ${p.hex};`}
-              ></button>
-            {/each}
-            <input
-              type="color"
-              class="sf-color-input"
-              aria-label="Custom color"
-              value={sessionColor}
-              oninput={(e) => { sessionColor = (e.currentTarget as HTMLInputElement).value; }}
-              style="width:18px; height:18px; padding:0; border:none; background:none; cursor:pointer;"
-            />
+          {@render colorDotPicker({ label: "Subfolder color", selected: sessionColor, onSelect: (hex) => sessionColor = hex, onCustom: (hex) => sessionColor = hex })}
+          <div class="sf-preview">
+            <span class="sf-preview-label">Preview</span>
+            <span class="subfolder-tab" style="pointer-events: none;">
+              <span class="tab-label">
+                <i class="fa-solid fa-folder folder-glyph" style="color: {swatchHex(sessionColor)};"></i>
+                {sessionDraftName.trim() || "New Subfolder"}
+              </span>
+            </span>
           </div>
         </div>
       {/if}
 
       <!-- Move flow: pick a target subfolder (or [Main Folder]) -->
-      {#if pm.title.startsWith("Move")}
+      {#if pm.flow === "move"}
         {#if pm.excludeSubFolderId != null}
           <button class="picker-item" onclick={() => pm.onPick(null)}>
             📂 [Main Folder]
@@ -9174,6 +9301,7 @@ async function testWebhook(wh: any) {
           {#if sf.id !== pm.excludeSubFolderId}
             <button class="picker-item" onclick={() => pm.onPick(sf.id)}>
               <span class="folder-dot" style="color: {swatchHex(sf.color)};">●</span> {sf.name}
+              <span class="picker-item-count">{sf.logs.length}</span>
             </button>
           {/if}
         {/each}
@@ -9189,29 +9317,11 @@ async function testWebhook(wh: any) {
               bind:value={newSessionName}
               placeholder="Folder name…"
               maxlength="32"
+              use:focusOnMount
               onkeydown={(e) => { if (e.key === "Enter" && newSessionName.trim()) { const id = createSession(); creatingNewFolderInPicker = false; if (id) pm.onPick(id); } }}
             />
             <span class="session-meta-label">Color</span>
-            <div class="color-picker-row">
-              {#each FOLDER_PALETTE as p}
-                <button
-                  class="color-dot-btn"
-                  class:selected={newSessionColor === p.hex}
-                  aria-label={`Choose ${p.name}`}
-                  title={p.name}
-                  onclick={() => (newSessionColor = p.hex)}
-                  style={`width: 18px; height: 18px; border-radius: 50%; border: ${newSessionColor === p.hex ? '2px solid white' : 'none'}; cursor: pointer; background: ${p.hex};`}
-                ></button>
-              {/each}
-              <input
-                type="color"
-                class="sf-color-input"
-                aria-label="Custom color"
-                value={newSessionColor}
-                oninput={(e) => { newSessionColor = (e.currentTarget as HTMLInputElement).value; }}
-                style="width:18px; height:18px; padding:0; border:none; background:none; cursor:pointer;"
-              />
-            </div>
+            {@render colorDotPicker({ label: "Folder color", selected: newSessionColor, onSelect: (hex) => newSessionColor = hex, onCustom: (hex) => newSessionColor = hex })}
             <div class="picker-create-actions">
               <button
                 class="creator-btn confirm"
@@ -9222,7 +9332,11 @@ async function testWebhook(wh: any) {
             </div>
           </div>
         {:else if sessions.length === 0}
-          <div class="picker-empty">No folders created yet.<br/>Create one below to file this session.</div>
+          <div class="picker-empty">
+            <i class="fa-solid fa-folder-open"></i>
+            <p class="picker-empty-title">No folders yet</p>
+            <p class="picker-empty-hint">Create a folder to file this session into.</p>
+          </div>
           <button class="picker-item picker-create-btn" onclick={() => { creatingNewFolderInPicker = true; }}>
             <i class="fa-solid fa-folder-plus"></i> Create Folder
           </button>
@@ -9231,11 +9345,23 @@ async function testWebhook(wh: any) {
             <i class="fa-solid fa-folder-plus"></i> Create new folder
           </button>
           {#each sessions as s}
+            {@const folderLogCount = s.logs.length + (s.subfolders ?? []).reduce((n, sf) => n + sf.logs.length, 0)}
             <button class="picker-item" onclick={() => pm.onPick(s.id)}>
               <span class="folder-dot" style="color: {swatchHex(s.color)};">●</span> {s.name}
+              <span class="picker-item-count">{folderLogCount}</span>
             </button>
           {/each}
         {/if}
+      {/if}
+
+      {#if pm.flow === "session" && captureSession}
+        <div class="picker-session-footer">
+          <span class="picker-session-hint">{pm.logs.length} log{pm.logs.length > 1 ? "s" : ""} will be filed into a new subfolder</span>
+          <div class="picker-session-actions">
+            <button class="creator-btn cancel" onclick={closePickerModal}>Cancel</button>
+            <button class="creator-btn danger" title="Ends the session — logs stay in the Feed" onclick={discardCaptureSession}>Don't Save</button>
+          </div>
+        </div>
       {/if}
     </div>
   </div>
