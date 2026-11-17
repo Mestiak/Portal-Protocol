@@ -2940,8 +2940,8 @@
 
   // ─── Capture Session (live "raid night" collector, distinct from Folders) ──
   // A Capture Session tags every NEW Feed log while active, then on End files
-  // them into a Folder subfolder. Persisted to capture_session.json so it
-  // survives an app restart mid-session. Fully separate from config.sessions.
+  // them into a Folder subfolder. Persisted to localStorage so it survives an
+  // app restart mid-session. Fully separate from config.sessions.
   type CaptureSession = {
     id: string;
     name: string;
@@ -2974,7 +2974,16 @@
   function loadCaptureSession() {
     try {
       const raw = localStorage.getItem("capture_session");
-      if (raw) captureSession = JSON.parse(raw);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      // Only adopt a well-formed session; a corrupt/old payload is discarded.
+      if (
+        parsed && typeof parsed.id === "string" && typeof parsed.name === "string" &&
+        (parsed.state === "collecting" || parsed.state === "paused") &&
+        Array.isArray(parsed.logPaths)
+      ) {
+        captureSession = parsed;
+      }
     } catch { /* ignore corrupt */ }
   }
   function persistCaptureSession() {
@@ -3002,21 +3011,24 @@
   function capturedLogs(): UploadRecord[] {
     if (!captureSession) return [];
     const set = new Set(captureSession.logPaths);
-    // Resolve against the full history first: the Feed is capped/pruned, so a
-    // captured log may have scrolled out of `uploads` and would otherwise be
-    // silently dropped when filing.
-    const fromHistory = allHistory.filter(h => set.has(h.file_path));
-    if (fromHistory.length > 0) return fromHistory;
-    return uploads.filter(u => set.has(u.file_path));
+    // Union of History and the Feed, de-duped by path. The Feed is capped/pruned
+    // and History can lag a just-captured log, so either source alone can be
+    // incomplete — merging both is what makes filing lossless.
+    const out: UploadRecord[] = [];
+    const seen = new Set<string>();
+    for (const h of allHistory) if (set.has(h.file_path) && !seen.has(h.file_path)) { seen.add(h.file_path); out.push(h); }
+    for (const u of uploads)    if (set.has(u.file_path) && !seen.has(u.file_path)) { seen.add(u.file_path); out.push(u); }
+    return out;
   }
   // Distinct boss names for the "what will be filed" summary in the end modal.
   function distinctBossNames(logs: UploadRecord[]): string[] {
-    const seen: string[] = [];
+    const seen = new Set<string>();
+    const out: string[] = [];
     for (const l of logs) {
       const n = l.boss_name?.trim();
-      if (n && !seen.includes(n)) seen.push(n);
+      if (n && !seen.has(n)) { seen.add(n); out.push(n); }
     }
-    return seen;
+    return out;
   }
   function restoreSessionFocus() {
     const el = sessionReturnFocus;
@@ -3049,6 +3061,7 @@
     if (logs.length === 0) {
       captureSession = null;
       persistCaptureSession();
+      showToast("No logs were captured — session ended.");
       return;
     }
     sessionDraftName = captureSession.name;
@@ -3070,7 +3083,7 @@
           showToast(`"${name}" already exists in ${folder.name} — pick another name.`);
           return;
         }
-        createSubFolder(targetFolderId as unknown as string, name, sessionColor);
+        createSubFolder(targetFolderId as unknown as string, name, sessionColor, false);
         const sub = folder?.subfolders?.find(sf => sf.name === name);
         if (sub) addWingLogsToSession(folder!.id, logs, sub.id);
         // Logs now live in the Folder — drop them from the Feed view.
@@ -3628,7 +3641,6 @@
     newSessionName = "";
     persistConfig();
     newFolderModalOpen = false;
-    newSessionColor = "#14b8a6";
     return newSession.id;
   }
 
@@ -5496,25 +5508,31 @@ async function testWebhook(wh: any) {
     }
   }
 
-  function createSubFolder(sessionId: string, name: string, color: string) {
-    if (!name.trim()) return;
+  // Create a subfolder. Returns false (without creating) when the name is empty
+  // or the folder already has a subfolder with that name.
+  function createSubFolder(sessionId: string, name: string, color: string, highlight = true): boolean {
+    const trimmed = name.trim();
+    if (!trimmed) return false;
     const session = sessions.find(s => s.id === sessionId);
-    if (session) {
-      if (!session.subfolders) session.subfolders = [];
-      const newSub = {
-        id: crypto.randomUUID(),
-        name: name.trim(),
-        color,
-        logs: []
-      };
-      session.subfolders = [...session.subfolders, newSub];
-      sessions = [...sessions];
-      persistConfig();
+    if (!session) return false;
+    if (!session.subfolders) session.subfolders = [];
+    if (session.subfolders.some(sf => sf.name.toLowerCase() === trimmed.toLowerCase())) return false;
+    const newSub = {
+      id: crypto.randomUUID(),
+      name: trimmed.substring(0, 60),
+      color,
+      logs: []
+    };
+    session.subfolders = [...session.subfolders, newSub];
+    sessions = [...sessions];
+    persistConfig();
+    if (highlight) {
       creatingSubFolderId = newSub.id;
       setTimeout(() => { if (creatingSubFolderId === newSub.id) creatingSubFolderId = null; }, 900);
     }
     newSubFolderName = "";
     isCreatingSubFolder = false;
+    return true;
   }
 
   function deleteSubFolder(sessionId: string, subFolderId: string) {
@@ -5539,7 +5557,7 @@ async function testWebhook(wh: any) {
     if (session?.subfolders) {
       const sf = session.subfolders.find(s => s.id === subFolderId);
       if (sf && name.trim()) {
-        sf.name = name.trim().substring(0, 32);
+        sf.name = name.trim().substring(0, 60);
         sessions = [...sessions];
         persistConfig();
       }
@@ -8675,7 +8693,7 @@ async function testWebhook(wh: any) {
                   <button class="tab-label" onclick={() => subFolderId = sf.id} ondblclick={(e) => { e.stopPropagation(); renamingSubFolderId = sf.id; renameSubFolderValue = sf.name; }}>
                     <i class="fa-solid fa-folder folder-glyph" style="color: {swatchHex(sf.color)};"></i>
                     {#if renamingSubFolderId === sf.id}
-                      <input class="tab-rename-input" bind:value={renameSubFolderValue} onkeydown={(e) => { e.stopPropagation(); if (e.key === 'Enter') renameSubFolder(activeSession.id, sf.id, renameSubFolderValue); if (e.key === 'Escape') { renamingSubFolderId = null; renameSubFolderValue = ''; } }} onblur={() => renameSubFolder(activeSession.id, sf.id, renameSubFolderValue)} />
+                      <input class="tab-rename-input" maxlength="60" bind:value={renameSubFolderValue} onkeydown={(e) => { e.stopPropagation(); if (e.key === 'Enter') renameSubFolder(activeSession.id, sf.id, renameSubFolderValue); if (e.key === 'Escape') { renamingSubFolderId = null; renameSubFolderValue = ''; } }} onblur={() => renameSubFolder(activeSession.id, sf.id, renameSubFolderValue)} />
                     {:else}
                       {sf.name}
                     {/if}
@@ -9064,7 +9082,7 @@ async function testWebhook(wh: any) {
         type="text"
         placeholder="Subfolder name..."
         bind:value={newSubFolderName}
-        onkeydown={(e) => { e.stopPropagation(); if (e.key === 'Enter') createSubFolder(activeSession.id, newSubFolderName, newSubFolderColor); if (e.key === 'Escape') { isCreatingSubFolder = false; newSubFolderName = ''; } }}
+        onkeydown={(e) => { e.stopPropagation(); if (e.key === 'Enter') { if (!newSubFolderName.trim()) return; if (!createSubFolder(activeSession.id, newSubFolderName, newSubFolderColor)) showToast(`"${newSubFolderName.trim()}" already exists in ${activeSession.name}.`); } if (e.key === 'Escape') { isCreatingSubFolder = false; newSubFolderName = ''; } }}
         use:focusOnMount
       />
 
@@ -9083,7 +9101,7 @@ async function testWebhook(wh: any) {
 
       <div class="subfolder-modal-actions">
         <button class="creator-btn cancel btn-neutral" onclick={() => { isCreatingSubFolder = false; newSubFolderName = ''; }}>Cancel</button>
-        <button class="creator-btn save" disabled={!newSubFolderName.trim()} onclick={() => createSubFolder(activeSession.id, newSubFolderName, newSubFolderColor)}>Create</button>
+        <button class="creator-btn save" disabled={!newSubFolderName.trim()} onclick={() => { if (!createSubFolder(activeSession.id, newSubFolderName, newSubFolderColor)) showToast(`"${newSubFolderName.trim()}" already exists in ${activeSession.name}.`); }}>Create</button>
       </div>
     </div>
   </div>
@@ -9264,7 +9282,7 @@ async function testWebhook(wh: any) {
       {/if}
 
       <!-- Move flow: pick a target subfolder (or [Main Folder]) -->
-      {#if pm.title.startsWith("Move")}
+      {#if pm.flow === "move"}
         {#if pm.excludeSubFolderId != null}
           <button class="picker-item" onclick={() => pm.onPick(null)}>
             📂 [Main Folder]
@@ -9290,6 +9308,7 @@ async function testWebhook(wh: any) {
               bind:value={newSessionName}
               placeholder="Folder name…"
               maxlength="32"
+              use:focusOnMount
               onkeydown={(e) => { if (e.key === "Enter" && newSessionName.trim()) { const id = createSession(); creatingNewFolderInPicker = false; if (id) pm.onPick(id); } }}
             />
             <span class="session-meta-label">Color</span>
