@@ -7478,7 +7478,7 @@ async function testWebhook(wh: any) {
             </div>
             <div style="display: flex; flex-direction: column; gap: 5px;">
               <span style="font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.6);">Custom Header Text</span>
-              <textarea placeholder="e.g. Raid night logs! @everyone..." bind:value={customFormatterHeader} style="width: 100%; height: 50px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #fff; padding: 6px 10px; font-size: 11px; resize: none; font-family: sans-serif; box-sizing: border-box; outline: none; transition: border-color 0.15s;"></textarea>
+              <textarea placeholder="e.g. Raid night logs! @everyone..." bind:value={customFormatterHeader} style="width: 100%; height: 50px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #fff; padding: 6px 10px; font-size: 11px; resize: none; font-family: var(--font); box-sizing: border-box; outline: none; transition: border-color 0.15s;"></textarea>
             </div>
             <div style="display: flex; flex-direction: column; gap: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.04); padding: 10px; border-radius: 8px;">
               <span style="font-size: 10px; font-weight: 700; color: rgba(255,255,255,0.4); margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px;">Include Info</span>
@@ -8646,7 +8646,7 @@ async function testWebhook(wh: any) {
               </div>
               <div style="display: flex; flex-direction: column; gap: 5px;">
                 <span style="font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.6);">Custom Header Text</span>
-                <textarea placeholder="e.g. Raid night logs! @everyone..." bind:value={customFormatterHeader} style="width: 100%; height: 50px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #fff; padding: 6px 10px; font-size: 11px; resize: none; font-family: sans-serif; box-sizing: border-box; outline: none; transition: border-color 0.15s;"></textarea>
+                <textarea placeholder="e.g. Raid night logs! @everyone..." bind:value={customFormatterHeader} style="width: 100%; height: 50px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #fff; padding: 6px 10px; font-size: 11px; resize: none; font-family: var(--font); box-sizing: border-box; outline: none; transition: border-color 0.15s;"></textarea>
               </div>
               <div style="display: flex; flex-direction: column; gap: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.04); padding: 10px; border-radius: 8px;">
                 <span style="font-size: 10px; font-weight: 700; color: rgba(255,255,255,0.4); margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px;">Include Info</span>
