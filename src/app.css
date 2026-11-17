@@ -2237,6 +2237,7 @@ html.reduce-motion .session-pill {
 
 .color-picker-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   align-items: center;
 }
@@ -2244,6 +2245,9 @@ html.reduce-motion .session-pill {
 .color-dot-btn {
   width: 18px;
   height: 18px;
+  padding: 0;
+  box-sizing: border-box;
+  flex: 0 0 auto;
   border-radius: 50%;
   border: none;
   cursor: pointer;
@@ -6053,6 +6057,7 @@ html.reduce-motion .session-pill {
   border-radius: 8px;
   background: none;
   cursor: pointer;
+  flex: 0 0 auto;
 }
 
 .sf-color-input::-webkit-color-swatch-wrapper {
