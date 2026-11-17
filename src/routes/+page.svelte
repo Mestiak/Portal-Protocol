@@ -618,6 +618,20 @@
   type PatchNoteVersion = { version: string; date: string; image?: string; notes: PatchNoteCategory[] };
   const PATCH_NOTES_DATA: PatchNoteVersion[] = [
     {
+      version: "0.8.2",
+      date: "November 2026",
+      notes: [
+        {
+          category: "🎨 Appearance",
+          items: [
+            { title: "More Fonts", desc: "A bigger font selection — Outfit, Inter, DM Sans, Manrope, Space Grotesk, Fredoka, a terminal-style font, or your system font." },
+            { title: "Font Picker Fixed", desc: "Every font in the list now actually applies. The terminal-style option used to fall back to a plain system font, and one option looked identical to the default." },
+            { title: "Quieter Settings", desc: "Changing the font saves right away and no longer pops up the 'settings saved' message." }
+          ]
+        }
+      ]
+    },
+    {
       version: "0.8.1",
       date: "November 2026",
       notes: [
