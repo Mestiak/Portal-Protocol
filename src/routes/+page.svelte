@@ -628,6 +628,15 @@
             { title: "Font Picker Fixed", desc: "Every font in the list now actually applies. The terminal-style option used to fall back to a plain system font, and one option looked identical to the default." },
             { title: "Quieter Settings", desc: "Changing the font saves right away and no longer pops up the 'settings saved' message." }
           ]
+        },
+        {
+          category: "📁 Capture Session",
+          items: [
+            { title: "Easier End-of-Session Filing", desc: "When you end a session, the app shows exactly what will be filed — the boss names, not just a number — and lets you rename the subfolder and pick its colour with a live preview." },
+            { title: "Don't Save", desc: "You can end a session without filing it. The logs simply stay in your Uploads Feed." },
+            { title: "Duplicate Name Warning", desc: "If a subfolder with that name already exists in the folder, the app warns you instead of quietly creating a second one." },
+            { title: "Keyboard Support", desc: "The filing window works without the mouse — it focuses the name field, Enter jumps to the folder list, and the arrow keys move between folders." }
+          ]
         }
       ]
     },
