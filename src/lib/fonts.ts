@@ -49,6 +49,12 @@ export const APP_FONTS: FontOption[] = [
     google: "Space+Grotesk:wght@400;500;600;700",
   },
   {
+    id: "fredoka",
+    label: "Fredoka (Rounded Playful)",
+    stack: "'Fredoka', system-ui, -apple-system, sans-serif",
+    google: "Fredoka:wght@400;500;600;700",
+  },
+  {
     id: "jetbrains-mono",
     label: "JetBrains Mono (Terminal)",
     stack: "'JetBrains Mono', 'Fira Code', ui-monospace, monospace",
