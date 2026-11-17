@@ -5633,11 +5633,11 @@ async function testWebhook(wh: any) {
     auto_upload; autostart; sound_notifications; desktop_notifications;
     wingman_enabled; wingman_account; use_backup_dps; max_concurrent_uploads;
     watch_stability_delay_ms; watch_poll_interval_ms; max_upload_retries; min_log_seconds;
-    reduce_motion; hide_on_startup; wvw_enabled; accent; compact_mode; app_font;
-    // Sessions/folders are excluded: every folder operation persists immediately
-    // via persistConfig(), so watching sessions here would fire the autosave
-    // effect (and its "Unsaved settings changes" toast) for a move that is
-    // already saved.
+    reduce_motion; hide_on_startup; wvw_enabled; accent; compact_mode;
+    // Sessions/folders and the font are excluded: each persists immediately
+    // (folder ops and the font dropdown call persistConfig() directly), so
+    // watching them here would fire the autosave effect (and its "Unsaved
+    // settings changes" toast) for a change that is already saved.
     JSON.stringify(gw2_accounts);
     JSON.stringify(discord_webhooks);
     if (!configLoaded) return;
@@ -8144,7 +8144,7 @@ async function testWebhook(wh: any) {
             </div>
             <div style="margin-top: 16px;">
               <label for="app-font-select" style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 6px;">Font Family</label>
-              <select id="app-font-select" class="settings-select" bind:value={app_font} onchange={() => applyFont(app_font)}>
+              <select id="app-font-select" class="settings-select" bind:value={app_font} onchange={(e) => { app_font = (e.currentTarget as HTMLSelectElement).value; applyFont(app_font); persistConfig(); }}>
                 {#each APP_FONTS as f}
                   <option value={f.id}>{f.label}</option>
                 {/each}
