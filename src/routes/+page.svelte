@@ -9224,13 +9224,13 @@ async function testWebhook(wh: any) {
 
       {#if pm.logs.length > 1}
         <div class="picker-modal-sub">{pm.logs.length} logs selected</div>
+        {#if bossNames.length}
+          <div class="picker-modal-bosses" title={bossNames.join(", ")}>
+            {bossNames.slice(0, 4).join(" · ")}{bossNames.length > 4 ? ` +${bossNames.length - 4} more` : ""}
+          </div>
+        {/if}
       {:else if pm.logs[0]?.boss_name}
         <div class="picker-modal-sub">{pm.logs[0].boss_name}</div>
-      {/if}
-      {#if bossNames.length}
-        <div class="picker-modal-bosses" title={bossNames.join(", ")}>
-          {bossNames.slice(0, 4).join(" · ")}{bossNames.length > 4 ? ` +${bossNames.length - 4} more` : ""}
-        </div>
       {/if}
 
       <!-- End-Session only: rename + pick subfolder color before filing -->

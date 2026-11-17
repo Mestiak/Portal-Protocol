@@ -2260,6 +2260,25 @@ html.reduce-motion .session-pill {
   align-items: center;
 }
 
+/* Inline Create-Folder form inside the picker modal */
+.picker-create-folder {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  margin: 0 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, #fff 3%, transparent);
+}
+
+.picker-create-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
 .color-dot-btn {
   width: 18px;
   height: 18px;
