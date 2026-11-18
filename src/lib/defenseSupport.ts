@@ -45,6 +45,10 @@ export interface DefensePlayerStat {
   receivedCrowdControlDuration: number;
   stunBreak: number;
   removedStunDuration: number;
+  // Deaths: time into the phase (ms) plus the biggest damage sources that led to it
+  deathRecap: { deathTime: number; toKill: { src: string; id: number; damage: number; indirectDamage: boolean }[] }[];
+  // Per-second damage taken, indexed like every other per-phase array
+  damageTaken1S: number[];
 }
 
 export interface SupportPlayerStat {
@@ -151,6 +155,20 @@ export function extractDefenseSupport(raw: any): DefenseSupportStats | null {
         receivedCrowdControlDuration: num(d.receivedCrowdControlDuration),
         stunBreak: num(d.stunBreak),
         removedStunDuration: num(d.removedStunDuration),
+        deathRecap: (Array.isArray(p?.deathRecap) ? p.deathRecap : []).map((x: any) => ({
+          deathTime: num(x?.deathTime),
+          toKill: (Array.isArray(x?.toKill) ? x.toKill : [])
+            .slice()
+            .sort((a: any, b: any) => num(b?.damage) - num(a?.damage))
+            .slice(0, 3)
+            .map((k: any) => ({
+              src: str(k?.src),
+              id: num(k?.id),
+              damage: num(k?.damage),
+              indirectDamage: k?.indirectDamage === true,
+            })),
+        })),
+        damageTaken1S: (Array.isArray(p?.damageTaken1S) ? (p.damageTaken1S[phase] ?? []) : []).map(num),
       });
 
       const s = Array.isArray(p?.support) ? (p.support[phase] ?? {}) : {};

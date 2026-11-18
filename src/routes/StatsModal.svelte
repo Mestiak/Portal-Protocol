@@ -89,6 +89,8 @@
   let showBreakbars = $state(true);
   // ── Defense / Support tabs ──
   let defenseSupport = $state<DefenseSupportStats | null>(null);
+  // EI's skillMap ("s<id>" -> name) so death recaps can name the killing skill.
+  let skillNames = $state<Record<string, { name?: string; icon?: string }>>({});
   let showPer10Min = $state(false);       // scale damage numbers to a per-10-minute rate
   let defenseOpen = $state<string | null>(null); // player row expanded in the matrix
   let openOrbPhase = $state<string | null>(null); // Orbs tab: expanded per-phase leaderboard
@@ -498,6 +500,27 @@
       fmt(defenseSummary.barrier), axRows(defensePlayers, (p) => p.damageBarrier, (v) => fmt(v * dsRate))),
   ].filter((p) => p.hasData));
 
+  // Per-second damage taken, summed across the squad, with death markers.
+  let defenseTimeline = $derived.by(() => {
+    if (defensePlayers.length === 0) return null;
+    const series: number[] = [];
+    for (const p of defensePlayers) {
+      p.damageTaken1S.forEach((v, i) => { series[i] = (series[i] ?? 0) + v; });
+    }
+    if (series.length < 2) return null;
+    const max = Math.max(1, ...series);
+    const seconds = series.length - 1;
+    const deaths = defensePlayers
+      .flatMap((p) => p.deathRecap.map((d) => d.deathTime / 1000))
+      .filter((t) => t > 0 && t <= seconds)
+      .sort((a, b) => a - b);
+    return { points: series.map((v) => (v / max) * 100), seconds, deaths };
+  });
+
+  function axSkillName(id: number): string {
+    return (id > 0 && skillNames["s" + id]?.name) || "";
+  }
+
   // ── Support tab ──
   let supportPlayers = $derived<SupportPlayerStat[]>(
     defenseSupport ? (defenseSupport.support[selectedPhase] ?? []) : [],
@@ -634,6 +657,7 @@
       stats = res.stats;
       phaseStats = extractPhaseStats(res.raw, PHASE_BOON_META);
       defenseSupport = extractDefenseSupport(res.raw);
+      skillNames = ((res.raw as any)?.skillMap as Record<string, { name?: string; icon?: string }>) || {};
       const mech = extractMechanics(res.raw, res.stats.boss_name);
       mechanics = mech;
       statsCache.set(localPath, { stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport });
@@ -969,6 +993,7 @@
         stats = res.stats;
         phaseStats = extractPhaseStats(res.raw, PHASE_BOON_META);
         defenseSupport = extractDefenseSupport(res.raw);
+        skillNames = ((res.raw as any)?.skillMap as Record<string, { name?: string; icon?: string }>) || {};
         let mech = extractMechanics(res.raw, res.stats.boss_name);
         // If a local EVTC fallback is available, use it to fill in Revealed
         // source attribution that dps.report does not expose (skill/clone/
@@ -1538,6 +1563,22 @@
                 {/each}
               </div>
 
+              {#if defenseTimeline}
+                <div class="ds-block">
+                  <div class="ds-block-title">Damage taken over time <span class="ds-block-hint">✕ = a player died</span></div>
+                  <div class="ax-timeline">
+                    {#each defenseTimeline.points as pct}
+                      <i style="height:{pct}%"></i>
+                    {/each}
+                    {#each defenseTimeline.deaths as t}
+                      <span class="ax-timeline-death" style="left:{(t / defenseTimeline.seconds) * 100}%"
+                            title="died at {fmtTime(t)}">✕</span>
+                    {/each}
+                  </div>
+                  <div class="ax-timeline-scale"><span>0:00</span><span>{fmtTime(defenseTimeline.seconds)}</span></div>
+                </div>
+              {/if}
+
               <div class="ds-block">
                 <div class="ds-block-title">Mitigation matrix <span class="ds-block-hint">click a row for the damage breakdown</span></div>
                 <div class="ds-legend">
@@ -1580,6 +1621,23 @@
                               <div><span>Downed</span><b>{row.player.downCount}× {fmtTime(row.player.downDuration / 1000)}</b></div>
                               <div><span>Deaths</span><b>{row.player.deadCount}</b></div>
                             </div>
+                            {#if row.player.deathRecap.length > 0}
+                              <div class="ds-deaths">
+                                {#each row.player.deathRecap as d, i}
+                                  <div class="ds-death">
+                                    <b>{i + 1}.</b>
+                                    <span>died at {fmtTime(d.deathTime / 1000)}</span>
+                                    <span class="ds-death-src">
+                                      {#each d.toKill as k}
+                                        <span title={k.src + (k.indirectDamage ? " (indirect)" : "")}>
+                                          {axSkillName(k.id) || k.src}{k.damage > 0 ? ` · ${fmt(k.damage)}` : ""}
+                                        </span>
+                                      {/each}
+                                    </span>
+                                  </div>
+                                {/each}
+                              </div>
+                            {/if}
                           </td>
                         </tr>
                       {/if}
@@ -2376,6 +2434,27 @@
   .ds-detail { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 8px 0 2px; }
   .ds-detail div { display: flex; gap: 6px; font-size: 11px; color: var(--text-muted); }
   .ds-detail b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+  /* ── Damage timeline + death recap ── */
+  .ax-timeline {
+    position: relative; display: flex; align-items: flex-end; gap: 1px;
+    height: 44px; padding: 0 1px 2px;
+  }
+  .ax-timeline i {
+    flex: 1 1 0; min-width: 1px; display: block; border-radius: 1px;
+    background: color-mix(in srgb, var(--fail) 62%, transparent);
+  }
+  .ax-timeline-death {
+    position: absolute; top: -3px; transform: translateX(-50%);
+    font-size: 9px; font-style: normal; color: var(--fail);
+  }
+  .ax-timeline-scale { display: flex; justify-content: space-between; font-size: 9px; color: var(--text-muted); margin-top: 3px; }
+
+  .ds-deaths { display: flex; flex-direction: column; gap: 3px; padding-top: 8px; }
+  .ds-death { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; font-size: 10px; color: var(--text-muted); }
+  .ds-death > b { color: var(--fail); }
+  .ds-death-src { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; }
+  .ds-death-src span { color: var(--text); font-variant-numeric: tabular-nums; }
 
   /* ── Support: boons generated + detail table ── */
   .ax-boon-rows { display: flex; flex-direction: column; gap: 4px; }
