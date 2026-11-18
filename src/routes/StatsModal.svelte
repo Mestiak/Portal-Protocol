@@ -5,6 +5,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { extractMechanics, type MechanicReport } from "#lib/mechanicParser";
+  import { extractPhaseStats, type PhaseStat } from "#lib/phaseStats";
   import { fmt, fmtPct, fmtTime } from "#lib/format";
   import { slide } from "svelte/transition";
   import { cubicInOut } from "svelte/easing";
@@ -79,6 +80,12 @@
   // only): Shadows | Orbs | Empowered.
   type Tab = "statistics" | "boon" | "revealed" | "shadows" | "orbs" | "empowered";
   let activeTab = $state<Tab>("statistics");
+  // ── Phase breakdown ──
+  // EI stores every per-phase metric as a positional array indexed by phase, so one
+  // extractor covers every encounter; no per-boss wiring.
+  let phaseStats = $state<PhaseStat[] | null>(null);
+  let selectedPhase = $state(0);          // EI phase index; 0 = Full Fight
+  let showBreakbars = $state(true);
   let openOrbPhase = $state<string | null>(null); // Orbs tab: expanded per-phase leaderboard
 
   // Revealed feature flag: hide the tab + table until the feature is complete.
@@ -151,6 +158,8 @@
   });
 
   const BOON_BY_ID = new Map(ALL_BOONS.map(b => [b.id, b]));
+  // Boon metadata for the per-phase extractor (EI buff ids + stacking flags).
+  const PHASE_BOON_META = ALL_BOONS.map((b) => ({ id: b.id, name: b.label, stacks: b.stacks }));
 
   function profIcon(profession: string): string {
     const p = (profession || "").toLowerCase().replace(/\s+/g, "");
@@ -176,10 +185,94 @@
     }
   }
 
+  // Phases offered in the selector (breakbar phases can be toggled off).
+  let visiblePhases = $derived((phaseStats ?? []).filter((p) => showBreakbars || !p.isBreakbar));
+
+  // Players for the selected phase. `Full Fight` keeps the Rust-shaped whole-fight
+  // players; any other phase swaps in per-phase players of the same shape, so the
+  // table, sorting, subgroup totals and boon lookup all work unchanged.
+  let phasePlayers = $derived.by<PlayerStat[]>(() => {
+    if (!stats) return [];
+    if (selectedPhase === 0 || !phaseStats) return stats.players;
+    return phaseStats[selectedPhase]?.players ?? [];
+  });
+
+  // "Godscream Ura Breakbar 3" → "Brk 3" so a 10-phase fight still fits the chip row.
+  function shortPhaseName(name: string): string {
+    const m = name.match(/^(.*?)\s*Breakbar\s*(\d+)\s*$/i);
+    return m ? `Brk ${m[2]}` : name;
+  }
+
+  // Summary for the selected phase, used by the Statistics tab cards and the
+  // Cerus dashboard. `Full Fight` keeps the mechanic-reported values so the
+  // default view is unchanged.
+  let phaseSummary = $derived.by(() => {
+    const phase = phaseStats?.[selectedPhase];
+    const players = phasePlayers;
+    const dps =
+      selectedPhase === 0
+        ? (mechanics ? mechanics.summary.totalDps : (stats?.total_dps ?? 0))
+        : players.reduce((a, p) => a + p.dps, 0);
+    const cleave = players.reduce((a, p) => a + p.cleave_dps, 0);
+    const durationSec = selectedPhase === 0 ? (stats?.duration_sec ?? 0) : (phase?.durationSec ?? 0);
+    let avgBoon = mechanics ? mechanics.summary.avgBoonPct : 0;
+    if (selectedPhase !== 0 && players.length) {
+      let sum = 0, n = 0;
+      for (const b of ALL_BOONS) {
+        const vals = players.map((p) => boonFor(p, b.id)).filter((v): v is BoonStat => !!v);
+        if (!vals.length) continue;
+        sum += vals.reduce((a, x) => a + (b.stacks ? x.stacks : x.uptime_pct), 0) / vals.length;
+        n++;
+      }
+      if (n) avgBoon = sum / n;
+    }
+    return {
+      label: selectedPhase === 0 ? "Full Fight" : (phase?.name ?? `Phase ${selectedPhase + 1}`),
+      isFullFight: selectedPhase === 0,
+      dps,
+      cleave,
+      durationSec,
+      players: players.length,
+      avgBoon,
+    };
+  });
+
+  // A phase with no boss-target damage reads as "—" rather than a misleading 0.
+  function fmtPhase(v: number): string {
+    return v > 0 ? fmt(v) : "—";
+  }
+
+  // Boon uptime card value: "93.4%" or "—" when the phase has no data.
+  function fmtBoonPct(v: number): string {
+    return v > 0 ? `${fmtPct(v)}%` : "—";
+  }
+
+  // Non-EI fallback: parse the local file with the bundled Elite Insights, then
+  // refetch directly (bypassing the compact stats cache) so phases appear.
+  let parsingLocally = $state(false);
+  async function parseLocallyForPhases() {
+    if (!localPath || parsingLocally) return;
+    parsingLocally = true;
+    error = null;
+    try {
+      await invoke("run_local_ei_parse", { filePath: localPath });
+      const res = await invoke("get_local_log_full", { filePath: localPath }) as LogFull;
+      stats = res.stats;
+      phaseStats = extractPhaseStats(res.raw, PHASE_BOON_META);
+      const mech = extractMechanics(res.raw, res.stats.boss_name);
+      mechanics = mech;
+      statsCache.set(localPath, { stats: res.stats, mechanics: mech, phases: phaseStats });
+      try { await invoke("store_stats_cache", { filePath: localPath, data: { stats: res.stats, mechanics: mech, phases: phaseStats } }); } catch (e) {}
+    } catch (e: any) {
+      error = typeof e === "string" ? e : (e?.message || "Failed to parse locally");
+    } finally {
+      parsingLocally = false;
+    }
+  }
+
   // Players sorted by the active sort key (default DPS desc).
   let sortedPlayers = $derived.by(() => {
-    if (!stats) return [];
-    const arr = [...stats.players];
+    const arr = [...phasePlayers];
     arr.sort((a, b) => {
       let av: number | string, bv: number | string;
       switch (sortKey) {
@@ -206,7 +299,7 @@
     const mkAgg = (): Agg => ({ dps: 0, cleave: 0, count: 0, boonSum: new Map() });
     const map = new Map<number, Agg>();
     const tot = mkAgg();
-    for (const p of stats.players) {
+    for (const p of phasePlayers) {
       const g = map.get(p.group) || mkAgg();
       g.dps += p.dps; g.cleave += p.cleave_dps; g.count += 1;
       tot.dps += p.dps; tot.cleave += p.cleave_dps; tot.count += 1;
@@ -436,32 +529,36 @@
   }
 
   // Module-level cache so reopening a log is instant.
-  const statsCache = new Map<string, { stats: any; mechanics: any }>();
+  const statsCache = new Map<string, { stats: any; mechanics: any; phases?: PhaseStat[] | null }>();
   // concurrent fetches to dps.report — on a flaky WiFi link a burst of large
   // (30MB+) responses can saturate the link and drop the connection.
   let inflight: Promise<unknown> | null = null;
   $effect(() => {
     if (!permalink && !localPath) return;
     const cacheKey = localPath || permalink;
+    // Opening a different log resets the phase selection.
+    selectedPhase = 0;
     const cachedMem = statsCache.get(cacheKey);
     if (cachedMem) {
       stats = cachedMem.stats;
       mechanics = cachedMem.mechanics;
+      phaseStats = cachedMem.phases ?? null;
       loading = false;
       activeTab = "statistics";
       return;
     }
     if (inflight) return;
-    loading = true; error = null; stats = null; mechanics = null;
+    loading = true; error = null; stats = null; mechanics = null; phaseStats = null;
     activeTab = "statistics";
     inflight = (async () => {
       // Try compact cache first (instant)
       if (localPath) {
         try {
-          const cached = await invoke("load_stats_cache", { filePath: localPath }) as { stats: any; mechanics: any } | null;
+          const cached = await invoke("load_stats_cache", { filePath: localPath }) as { stats: any; mechanics: any; phases?: PhaseStat[] | null } | null;
           if (cached) {
             stats = cached.stats;
             mechanics = cached.mechanics;
+            phaseStats = cached.phases ?? null;
             loading = false;
             activeTab = "statistics";
             inflight = null;
@@ -493,6 +590,7 @@
           return;
         }
         stats = res.stats;
+        phaseStats = extractPhaseStats(res.raw, PHASE_BOON_META);
         let mech = extractMechanics(res.raw, res.stats.boss_name);
         // If a local EVTC fallback is available, use it to fill in Revealed
         // source attribution that dps.report does not expose (skill/clone/
@@ -557,9 +655,9 @@
           // Local merge skipped — no error to surface.
         }
         mechanics = mech;
-        statsCache.set(cacheKey, { stats: res.stats, mechanics: mech });
+        statsCache.set(cacheKey, { stats: res.stats, mechanics: mech, phases: phaseStats });
         if (localPath) {
-          try { await invoke("store_stats_cache", { filePath: localPath, data: { stats: res.stats, mechanics: mech } }); } catch (e) {}
+          try { await invoke("store_stats_cache", { filePath: localPath, data: { stats: res.stats, mechanics: mech, phases: phaseStats } }); } catch (e) {}
         }
         // Non-Cerus fights only get the Boon Uptime tab — skip Statistics.
         // Harvest Temple defaults to Revealed if break data is present.
@@ -700,31 +798,57 @@
         </nav>
 
         <!-- ── Content ── -->
+        {#snippet phaseBar()}
+          {#if phaseStats === null}
+            <div class="phase-fallback">
+              <span>Phase breakdown needs a local Elite Insights parse.</span>
+              {#if localPath}
+                <button class="phase-parse" onclick={parseLocallyForPhases} disabled={parsingLocally}>
+                  {parsingLocally ? "Parsing…" : "Parse locally"}
+                </button>
+              {:else}
+                <span class="phase-fallback-note">This log only has a dps.report link, so no per-phase data is available.</span>
+              {/if}
+            </div>
+          {:else if visiblePhases.length > 1}
+            <div class="phase-chips">
+              {#each visiblePhases as ph}
+                <button class="phase-chip" class:active={selectedPhase === ph.index}
+                        title={ph.name} onclick={() => selectedPhase = ph.index}>{shortPhaseName(ph.name)}</button>
+              {/each}
+              <label class="phase-brk"><input type="checkbox" bind:checked={showBreakbars} /> Breakbars</label>
+            </div>
+          {/if}
+        {/snippet}
         <div class="stats-content">
           {#if activeTab === "statistics"}
             <!-- STATISTICS -->
+            {@render phaseBar()}
             {#if mechanics && mechanics.boss === "Cerus"}
-              <CerusDashboard report={mechanics} activeTab="statistics" singleLog={true} durationSec={stats?.duration_sec ?? 0} />
+              <CerusDashboard report={mechanics} activeTab="statistics" singleLog={true} durationSec={stats?.duration_sec ?? 0} phaseSummary={phaseStats && phaseStats.length > 1 ? phaseSummary : null} />
             {:else}
               <!-- Generic combat summary (non-Cerus) -->
               <div class="stat-cards">
                 <div class="stat-card">
-                  <span class="stat-val">{fmt(mechanics ? mechanics.summary.totalDps : (stats ? stats.total_dps : 0))}</span>
+                  <span class="stat-val">{fmtPhase(phaseSummary.dps)}</span>
                   <span class="stat-label">Total DPS</span>
                 </div>
                 <div class="stat-card">
-                  <span class="stat-val">{fmt(stats ? stats.duration_sec : 0)}<span class="stat-unit">s</span></span>
+                  <span class="stat-val">{fmtPhase(phaseSummary.durationSec)}<span class="stat-unit">s</span></span>
                   <span class="stat-label">Fight Duration</span>
                 </div>
                 <div class="stat-card">
-                  <span class="stat-val">{stats ? stats.players.length : 0}</span>
+                  <span class="stat-val">{phaseSummary.players}</span>
                   <span class="stat-label">Players</span>
                 </div>
                 <div class="stat-card">
-                  <span class="stat-val">{fmtPct(mechanics ? mechanics.summary.avgBoonPct : 0)}<span class="stat-unit">%</span></span>
+                  <span class="stat-val">{fmtBoonPct(phaseSummary.avgBoon)}</span>
                   <span class="stat-label">Avg Boon Uptime</span>
                 </div>
               </div>
+              {#if !phaseSummary.isFullFight}
+                <div class="stat-phase-note">Showing <b>{phaseSummary.label}</b></div>
+              {/if}
               <div class="stat-note">No encounter-specific mechanics for this boss. See <b>Boon Uptime</b> for the per-player table.</div>
             {/if}
 
@@ -785,6 +909,7 @@
                 {/if}
           {:else if activeTab === "boon"}
             <!-- BOON UPTIME (table) -->
+            {@render phaseBar()}
             <div class="stats-toolbar">
               <span class="stats-hint">Drag column edges to resize · click headers to sort</span>
               <div class="subgroup-chips">
@@ -1433,6 +1558,37 @@
 
   /* ── Subgroup filter chips + per-group collapse ── */
   .subgroup-chips { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+  .phase-chips { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-bottom: 8px; }
+  .phase-chip {
+    font-size: 10px; font-weight: 700; letter-spacing: .03em; font-family: inherit;
+    color: var(--text-muted); background: color-mix(in srgb,#fff 5%,transparent);
+    border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; cursor: pointer;
+    transition: background-color .14s, color .14s, border-color .14s;
+  }
+  .phase-chip:hover { color: var(--text); }
+  .phase-chip.active {
+    color: #fff; background: color-mix(in srgb, var(--accent) 22%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  .phase-brk {
+    display: inline-flex; align-items: center; gap: 4px; margin-left: 4px;
+    font-size: 10px; font-weight: 700; letter-spacing: .03em; color: var(--text-muted);
+    cursor: pointer; user-select: none;
+  }
+  .phase-fallback {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin-bottom: 8px; font-size: 11px; color: var(--text-muted);
+  }
+  .phase-fallback-note { font-style: italic; }
+  .phase-parse {
+    font-size: 10px; font-weight: 700; letter-spacing: .03em; font-family: inherit;
+    color: #fff; background: color-mix(in srgb, var(--accent) 22%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+    border-radius: 6px; padding: 3px 8px; cursor: pointer;
+  }
+  .phase-parse:disabled { opacity: .6; cursor: default; }
+  .stat-phase-note { margin: 8px 0 0; font-size: 11px; color: var(--text-muted); }
+  .stat-phase-note b { color: var(--text); }
   .sg-chip {
     font-size: 10px; font-weight: 700; letter-spacing: .03em; font-family: inherit;
     color: var(--text-muted); background: color-mix(in srgb,#fff 5%,transparent);

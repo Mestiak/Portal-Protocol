@@ -13,6 +13,7 @@
 
 export interface PhaseBoonStat {
   id: number;
+  name: string;
   uptime_pct: number;
   stacks: number;
 }
@@ -41,9 +42,10 @@ export interface PhaseStat {
   players: PhasePlayerStat[];
 }
 
-/** Boon metadata the caller already holds (id + whether the boon stacks). */
+/** Boon metadata the caller already holds (id, label, whether the boon stacks). */
 export interface PhaseBoonMeta {
   id: number;
+  name?: string;
   stacks?: boolean;
 }
 
@@ -111,10 +113,22 @@ export function extractPhaseStats(raw: any, boonMeta: PhaseBoonMeta[] = []): Pha
         const id = num(buff?.id);
         if (wantedIds && !wantedIds.has(id)) continue;
         const buffData: any[] = Array.isArray(buff?.buffData) ? buff.buffData : [];
-        const uptime = num(buffData[index]?.uptime);
-        boons.push({ id, uptime_pct: uptime, stacks: metaById.get(id)?.stacks ? uptime : 0 });
-        if (id === QUICKNESS_ID) quickness = uptime;
-        if (id === ALACRITY_ID) alacrity = uptime;
+        const cell = buffData[index] ?? {};
+        // EI: `uptime` is the uptime % for non-stacking boons but the average
+        // stacks for stacking boons, where `presence` carries the uptime %.
+        const uptime = num(cell.uptime);
+        const presence = num(cell.presence);
+        const meta = metaById.get(id);
+        const stacking = meta?.stacks === true;
+        const uptimePct = stacking ? presence : uptime;
+        boons.push({
+          id,
+          name: meta?.name ?? "",
+          uptime_pct: uptimePct,
+          stacks: stacking ? uptime : 0,
+        });
+        if (id === QUICKNESS_ID) quickness = uptimePct;
+        if (id === ALACRITY_ID) alacrity = uptimePct;
       }
 
       return {

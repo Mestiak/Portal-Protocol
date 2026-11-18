@@ -19,11 +19,19 @@
     activeTab,
     singleLog = true,
     durationSec = 0,
+    phaseSummary = null,
   }: {
     report: MechanicReport;
     activeTab: "statistics" | "shadows" | "orbs" | "empowered";
     singleLog?: boolean;
     durationSec?: number;
+    phaseSummary?: {
+      label: string;
+      isFullFight: boolean;
+      dps: number;
+      cleave: number;
+      durationSec: number;
+    } | null;
   } = $props();
 
   // ── Accordion / badge interaction state (per-instance) ──
@@ -186,6 +194,14 @@
       <span class="stat-sub">Sum of Envy Wall Touches</span>
     </div>
   </div>
+  {#if phaseSummary}
+    <div class="phase-strip">
+      <span class="phase-strip-label">Phase <b>{phaseSummary.label}</b></span>
+      <span class="phase-strip-item">Squad DPS <b>{fmt(phaseSummary.dps)}</b></span>
+      <span class="phase-strip-item">Cleave <b>{fmt(phaseSummary.cleave)}</b></span>
+      <span class="phase-strip-item">Duration <b>{fmt(phaseSummary.durationSec)}s</b></span>
+    </div>
+  {/if}
   {#if timeline}
     <div class="timeline">
       <div class="timeline-title">Fight Timeline Chart</div>
@@ -582,6 +598,14 @@
   .stat-val .stat-unit { font-size: 14px; font-weight: 700; color: var(--text-muted); margin-left: 1px; }
   .stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
   .stat-sub { font-size: 10px; color: var(--text-muted); opacity: .8; }
+  .phase-strip {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    margin-top: 10px; padding: 6px 10px;
+    border-left: 2px solid var(--accent);
+    font-size: 11px; color: var(--text-muted);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+  }
+  .phase-strip b { color: var(--text); font-variant-numeric: tabular-nums; }
   .accent-cyan { color: #22d3ee; }
   .accent-purple { color: #a78bfa; }
   .accent-gold { color: #fbbf24; }
