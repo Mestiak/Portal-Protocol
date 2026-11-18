@@ -505,24 +505,13 @@
       fmt(defenseSummary.barrier), axRows(defensePlayers, (p) => p.damageBarrier, (v) => fmt(v * dsRate))),
   ].filter((p) => p.hasData));
 
-  // Per-second damage taken, summed across the squad, with death markers.
-  let defenseTimeline = $derived.by(() => {
-    if (defensePlayers.length === 0) return null;
-    const series: number[] = [];
-    for (const p of defensePlayers) {
-      // Optional: a malformed (pre-versioning) cached entry degrades to an
-      // empty series instead of throwing and taking the whole tab down.
-      p.damageTaken1S?.forEach((v, i) => { series[i] = (series[i] ?? 0) + v; });
-    }
-    if (series.length < 2) return null;
-    const max = Math.max(1, ...series);
-    const seconds = series.length - 1;
-    const deaths = defensePlayers
-      .flatMap((p) => p.deathRecap?.map((d) => d.deathTime / 1000) ?? [])
-      .filter((t) => t > 0 && t <= seconds)
-      .sort((a, b) => a - b);
-    return { points: series.map((v) => (v / max) * 100), seconds, deaths };
-  });
+  // Every death in the phase, in order, with the sources that led to it.
+  let defenseDeaths = $derived.by(() =>
+    defensePlayers
+      .flatMap((p) => p.deathRecap.map((d) => ({ player: p, time: d.deathTime / 1000, toKill: d.toKill })))
+      .filter((d) => d.time > 0)
+      .sort((a, b) => a.time - b.time),
+  );
 
   function axSkillName(id: number): string {
     return (id > 0 && skillNames["s" + id]?.name) || "";
@@ -1574,19 +1563,26 @@
                 {/each}
               </div>
 
-              {#if defenseTimeline}
+              {#if defenseDeaths.length > 0}
                 <div class="ds-block">
-                  <div class="ds-block-title">Damage taken over time <span class="ds-block-hint">✕ = a player died</span></div>
-                  <div class="ax-timeline">
-                    {#each defenseTimeline.points as pct}
-                      <i style="height:{pct}%"></i>
-                    {/each}
-                    {#each defenseTimeline.deaths as t}
-                      <span class="ax-timeline-death" style="left:{(t / defenseTimeline.seconds) * 100}%"
-                            title="died at {fmtTime(t)}">✕</span>
+                  <div class="ds-block-title">Deaths <span class="ds-block-hint">{defenseDeaths.length} in this phase</span></div>
+                  <div class="ax-death-feed">
+                    {#each defenseDeaths as d}
+                      <div class="ax-death-row">
+                        <span class="ax-death-time">{fmtTime(d.time)}</span>
+                        <img class="ax-row-icon" src={profIcon(d.player.profession)} alt={d.player.profession}
+                             onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                        <span class="ax-death-name" title={d.player.account}>{d.player.name}</span>
+                        <span class="ax-death-cause">
+                          {#each d.toKill as k}
+                            <span title={k.src + (k.indirectDamage ? " (indirect)" : "")}>
+                              {axSkillName(k.id) || k.src}{k.damage > 0 ? ` · ${fmt(k.damage)}` : ""}
+                            </span>
+                          {/each}
+                        </span>
+                      </div>
                     {/each}
                   </div>
-                  <div class="ax-timeline-scale"><span>0:00</span><span>{fmtTime(defenseTimeline.seconds)}</span></div>
                 </div>
               {/if}
 
@@ -1632,23 +1628,6 @@
                               <div><span>Downed</span><b>{row.player.downCount}× {fmtTime(row.player.downDuration / 1000)}</b></div>
                               <div><span>Deaths</span><b>{row.player.deadCount}</b></div>
                             </div>
-                            {#if row.player.deathRecap && row.player.deathRecap.length > 0}
-                              <div class="ds-deaths">
-                                {#each row.player.deathRecap as d, i}
-                                  <div class="ds-death">
-                                    <b>{i + 1}.</b>
-                                    <span>died at {fmtTime(d.deathTime / 1000)}</span>
-                                    <span class="ds-death-src">
-                                      {#each d.toKill as k}
-                                        <span title={k.src + (k.indirectDamage ? " (indirect)" : "")}>
-                                          {axSkillName(k.id) || k.src}{k.damage > 0 ? ` · ${fmt(k.damage)}` : ""}
-                                        </span>
-                                      {/each}
-                                    </span>
-                                  </div>
-                                {/each}
-                              </div>
-                            {/if}
                           </td>
                         </tr>
                       {/if}
@@ -2091,7 +2070,7 @@
 
   @media (prefers-reduced-motion: reduce) {
     .stats-modal { animation: none !important; }
-    .ax-hero-card, .ax-runner-card, .ax-panel, .ax-boon-row, .ds-block, .ax-row {
+    .ax-hero-card, .ax-runner-card, .ax-panel, .ax-boon-row, .ds-block, .ax-row, .ax-death-row {
       transition: none !important;
       transform: none !important;
     }
@@ -2446,26 +2425,22 @@
   .ds-detail div { display: flex; gap: 6px; font-size: 11px; color: var(--text-muted); }
   .ds-detail b { color: var(--text); font-variant-numeric: tabular-nums; }
 
-  /* ── Damage timeline + death recap ── */
-  .ax-timeline {
-    position: relative; display: flex; align-items: flex-end; gap: 1px;
-    height: 44px; padding: 0 1px 2px;
+  /* ── Death feed ── */
+  .ax-death-feed { display: flex; flex-direction: column; gap: 3px; }
+  .ax-death-row {
+    display: grid; grid-template-columns: 38px 16px 1fr; align-items: center;
+    gap: 6px; padding: 4px 8px; border-radius: 6px;
+    background: color-mix(in srgb, #fff 3%, transparent);
+    transition: background-color .14s, transform .18s var(--ease-smooth);
   }
-  .ax-timeline i {
-    flex: 1 1 0; min-width: 1px; display: block; border-radius: 1px;
-    background: color-mix(in srgb, var(--fail) 62%, transparent);
+  .ax-death-row:hover { background: color-mix(in srgb, #fff 6%, transparent); transform: translateX(2px); }
+  .ax-death-time { font-size: 10px; font-weight: 700; color: var(--fail); font-variant-numeric: tabular-nums; }
+  .ax-death-name { font-size: 11px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ax-death-cause {
+    grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 3px 10px;
+    font-size: 10px; color: var(--text-muted);
   }
-  .ax-timeline-death {
-    position: absolute; top: -3px; transform: translateX(-50%);
-    font-size: 9px; font-style: normal; color: var(--fail);
-  }
-  .ax-timeline-scale { display: flex; justify-content: space-between; font-size: 9px; color: var(--text-muted); margin-top: 3px; }
-
-  .ds-deaths { display: flex; flex-direction: column; gap: 3px; padding-top: 8px; }
-  .ds-death { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; font-size: 10px; color: var(--text-muted); }
-  .ds-death > b { color: var(--fail); }
-  .ds-death-src { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; }
-  .ds-death-src span { color: var(--text); font-variant-numeric: tabular-nums; }
+  .ax-death-cause span { color: var(--text); font-variant-numeric: tabular-nums; }
 
   /* ── Support: boons generated + detail table ── */
   .ax-boon-rows { display: flex; flex-direction: column; gap: 4px; }
