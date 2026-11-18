@@ -541,8 +541,7 @@
       strips: sum((p) => p.boonStrips),
       revives: sum((p) => p.resurrects),
       stunBreaks: sum((p) => p.stunBreak),
-      cc: sum((p) => p.appliedCrowdControl),
-      ccSeconds: sum((p) => p.appliedCrowdControlDuration) / 1000,
+      breakbar: sum((p) => p.breakbarDamage),
     };
   });
 
@@ -551,13 +550,13 @@
   // squad's best, so the weights mean what they say. A component nobody
   // produced (CC on a breakbar-free fight) scores 0 for everyone.
   const SUPPORT_SCORE_TIP =
-    "Support score = 40% cleanses on allies + 30% crowd control time + 20% revives + 10% boon " +
+    "Support score = 40% cleanses on allies + 30% breakbar damage (CC) + 20% revives + 10% boon " +
     "strips, each measured against the squad's best.";
 
   let supportScore = $derived.by(() => {
     const maxOf = (f: (p: SupportPlayerStat) => number) => Math.max(0, ...supportPlayers.map(f));
     const maxCleanses = maxOf((p) => p.condiCleanse);
-    const maxCC = maxOf((p) => p.appliedCrowdControlDuration);
+    const maxBreakbar = maxOf((p) => p.breakbarDamage);
     const maxRevives = maxOf((p) => p.resurrects);
     const maxStrips = maxOf((p) => p.boonStrips);
     const rel = (v: number, max: number) => (max > 0 ? v / max : 0);
@@ -565,7 +564,7 @@
       p.name,
       Math.round(100 * (
         0.40 * rel(p.condiCleanse, maxCleanses) +
-        0.30 * rel(p.appliedCrowdControlDuration, maxCC) +
+        0.30 * rel(p.breakbarDamage, maxBreakbar) +
         0.20 * rel(p.resurrects, maxRevives) +
         0.10 * rel(p.boonStrips, maxStrips)
       )),
@@ -593,7 +592,7 @@
       scoreTip: SUPPORT_SCORE_TIP,
       rows: [
         { label: "Cleanses", value: String(p.condiCleanse) },
-        { label: "CC applied", value: `${fmt(p.appliedCrowdControl)} · ${fmt(p.appliedCrowdControlDuration / 1000)}s` },
+        { label: "Breakbar damage", value: fmt(p.breakbarDamage) },
         { label: "Revives", value: String(p.resurrects) },
       ],
     };
@@ -619,10 +618,9 @@
   let supportPanels = $derived<AxPanel[]>([
     axPanel("cleanses", "Cleanses", "fa-solid fa-droplet", "conditions removed from allies",
       String(supportSummary.cleanses), axRows(supportPlayers, (p) => p.condiCleanse, (v) => fmt(v))),
-    axPanel("cc", "CC Applied", "fa-solid fa-hand", "CC events · seconds of control",
-      `${fmt(supportSummary.cc)} · ${fmt(supportSummary.ccSeconds)}s`,
-      axRows(supportPlayers, (p) => p.appliedCrowdControlDuration,
-        (v, p) => `${fmt(p.appliedCrowdControl)} · ${fmt(v / 1000)}s`)),
+    axPanel("breakbar", "Breakbar Damage", "fa-solid fa-hand", "CC bar damage dealt",
+      fmt(supportSummary.breakbar),
+      axRows(supportPlayers, (p) => p.breakbarDamage, (v) => fmt(v))),
     axPanel("strips", "Boon Strips", "fa-solid fa-bolt", "enemy boons removed",
       String(supportSummary.strips), axRows(supportPlayers, (p) => p.boonStrips, (v) => fmt(v))),
     axPanel("revives", "Revives", "fa-solid fa-heart-pulse", "players resurrected",
@@ -1705,7 +1703,7 @@
                 <table class="ax-table">
                   <thead>
                     <tr>
-                      <th>#</th><th>Player</th><th>Score</th><th>Cleanses</th><th>CC</th>
+                      <th>#</th><th>Player</th><th>Score</th><th>Cleanses</th><th>Breakbar</th>
                       <th>Self</th><th>Strips</th><th>Revives</th><th>Stun breaks</th>
                     </tr>
                   </thead>
@@ -1720,7 +1718,7 @@
                         </td>
                         <td class="ax-table-score">{supportScore.get(p.name) ?? 0}</td>
                         <td>{fmt(p.condiCleanse)}</td>
-                        <td>{fmt(p.appliedCrowdControl)}</td>
+                        <td>{fmt(p.breakbarDamage)}</td>
                         <td>{fmt(p.condiCleanseSelf)}</td>
                         <td>{fmt(p.boonStrips)}</td>
                         <td>{fmt(p.resurrects)}</td>

@@ -74,9 +74,10 @@ export interface SupportPlayerStat {
   removedStunDuration: number;
   stunBreakSelf: number;
   removedStunSelfDuration: number;
-  // Crowd control this player applied to enemies (ms of control)
-  appliedCrowdControl: number;
-  appliedCrowdControlDuration: number;
+  // Crowd control this player applied to enemies, as breakbar damage dealt.
+  // EI's appliedCrowdControl event count is NOT a reliable measure of this:
+  // it stays 0 for players who clearly dealt breakbar damage.
+  breakbarDamage: number;
   // Boons this player generated for the group
   groupBoons: { id: number; name: string; generation: number; presence: number; overstack: number }[];
 }
@@ -172,7 +173,7 @@ export function extractDefenseSupport(raw: any): DefenseSupportStats | null {
       });
 
       const s = Array.isArray(p?.support) ? (p.support[phase] ?? {}) : {};
-      const st = Array.isArray(p?.statsAll) ? (p.statsAll[phase] ?? {}) : {};
+      const da = Array.isArray(p?.dpsAll) ? (p.dpsAll[phase] ?? {}) : {};
       // `groupBuffsActive` is one entry per buff; `id` sits on the buff and
       // `buffData` holds one cell per phase.
       const groupBuffsList: any[] = Array.isArray(p?.groupBuffsActive) ? p.groupBuffsActive : [];
@@ -207,8 +208,7 @@ export function extractDefenseSupport(raw: any): DefenseSupportStats | null {
         removedStunDuration: num(s.removedStunDuration),
         stunBreakSelf: num(s.stunBreakSelf),
         removedStunSelfDuration: num(s.removedStunSelfDuration),
-        appliedCrowdControl: num(st.appliedCrowdControl),
-        appliedCrowdControlDuration: num(st.appliedCrowdControlDuration),
+        breakbarDamage: num(da.breakbarDamage),
         groupBoons,
       });
     }
