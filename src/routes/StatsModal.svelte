@@ -30,6 +30,11 @@
   }
   interface LogFull { stats: LogStats; raw: any; }
 
+  // Compact stats caches are keyed by file and persisted across launches.
+  // Bumping this discards entries written before a field existed: a cached
+  // defenseSupport with no `damageTaken1S` would otherwise throw on read.
+  const STATS_CACHE_VERSION = 1;
+
   let { permalink, bossName = "", localPath, onClose }: {
     permalink: string;
     bossName?: string;
@@ -505,13 +510,15 @@
     if (defensePlayers.length === 0) return null;
     const series: number[] = [];
     for (const p of defensePlayers) {
-      p.damageTaken1S.forEach((v, i) => { series[i] = (series[i] ?? 0) + v; });
+      // Optional: a malformed (pre-versioning) cached entry degrades to an
+      // empty series instead of throwing and taking the whole tab down.
+      p.damageTaken1S?.forEach((v, i) => { series[i] = (series[i] ?? 0) + v; });
     }
     if (series.length < 2) return null;
     const max = Math.max(1, ...series);
     const seconds = series.length - 1;
     const deaths = defensePlayers
-      .flatMap((p) => p.deathRecap.map((d) => d.deathTime / 1000))
+      .flatMap((p) => p.deathRecap?.map((d) => d.deathTime / 1000) ?? [])
       .filter((t) => t > 0 && t <= seconds)
       .sort((a, b) => a - b);
     return { points: series.map((v) => (v / max) * 100), seconds, deaths };
@@ -660,8 +667,8 @@
       skillNames = ((res.raw as any)?.skillMap as Record<string, { name?: string; icon?: string }>) || {};
       const mech = extractMechanics(res.raw, res.stats.boss_name);
       mechanics = mech;
-      statsCache.set(localPath, { stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport });
-      try { await invoke("store_stats_cache", { filePath: localPath, data: { stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport } }); } catch (e) {}
+      statsCache.set(localPath, { version: STATS_CACHE_VERSION, stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport });
+      try { await invoke("store_stats_cache", { filePath: localPath, data: { version: STATS_CACHE_VERSION, stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport } }); } catch (e) {}
     } catch (e: any) {
       error = typeof e === "string" ? e : (e?.message || "Failed to parse locally");
     } finally {
@@ -928,7 +935,7 @@
   }
 
   // Module-level cache so reopening a log is instant.
-  const statsCache = new Map<string, { stats: any; mechanics: any; phases?: PhaseStat[] | null; defenseSupport?: DefenseSupportStats | null }>();
+  const statsCache = new Map<string, { version?: number; stats: any; mechanics: any; phases?: PhaseStat[] | null; defenseSupport?: DefenseSupportStats | null }>();
   // concurrent fetches to dps.report — on a flaky WiFi link a burst of large
   // (30MB+) responses can saturate the link and drop the connection.
   let inflight: Promise<unknown> | null = null;
@@ -938,7 +945,7 @@
     // Opening a different log resets the phase selection.
     selectedPhase = 0;
     const cachedMem = statsCache.get(cacheKey);
-    if (cachedMem) {
+    if (cachedMem && cachedMem.version === STATS_CACHE_VERSION) {
       stats = cachedMem.stats;
       mechanics = cachedMem.mechanics;
       phaseStats = cachedMem.phases ?? null;
@@ -947,6 +954,7 @@
       activeTab = "statistics";
       return;
     }
+    statsCache.delete(cacheKey);
     if (inflight) return;
     loading = true; error = null; stats = null; mechanics = null; phaseStats = null; defenseSupport = null;
     activeTab = "statistics";
@@ -954,8 +962,8 @@
       // Try compact cache first (instant)
       if (localPath) {
         try {
-          const cached = await invoke("load_stats_cache", { filePath: localPath }) as { stats: any; mechanics: any; phases?: PhaseStat[] | null; defenseSupport?: DefenseSupportStats | null } | null;
-          if (cached) {
+          const cached = await invoke("load_stats_cache", { filePath: localPath }) as { stats: any; mechanics: any; phases?: PhaseStat[] | null; defenseSupport?: DefenseSupportStats | null; version?: number } | null;
+          if (cached && cached.version === STATS_CACHE_VERSION) {
             stats = cached.stats;
             mechanics = cached.mechanics;
             phaseStats = cached.phases ?? null;
@@ -1058,9 +1066,9 @@
           // Local merge skipped — no error to surface.
         }
         mechanics = mech;
-        statsCache.set(cacheKey, { stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport });
+        statsCache.set(cacheKey, { version: STATS_CACHE_VERSION, stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport });
         if (localPath) {
-          try { await invoke("store_stats_cache", { filePath: localPath, data: { stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport } }); } catch (e) {}
+          try { await invoke("store_stats_cache", { filePath: localPath, data: { version: STATS_CACHE_VERSION, stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport } }); } catch (e) {}
         }
         // Non-Cerus fights only get the Boon Uptime tab — skip Statistics.
         // Harvest Temple defaults to Revealed if break data is present.
@@ -1621,7 +1629,7 @@
                               <div><span>Downed</span><b>{row.player.downCount}× {fmtTime(row.player.downDuration / 1000)}</b></div>
                               <div><span>Deaths</span><b>{row.player.deadCount}</b></div>
                             </div>
-                            {#if row.player.deathRecap.length > 0}
+                            {#if row.player.deathRecap && row.player.deathRecap.length > 0}
                               <div class="ds-deaths">
                                 {#each row.player.deathRecap as d, i}
                                   <div class="ds-death">
