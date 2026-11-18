@@ -1,68 +1,40 @@
-# Portal Protocol 0.7.2 — Patch Notes
+# Portal Protocol 0.8.2 — Patch Notes
 
-This update fixes Quick Play badge detection (the headline bug where QP logs showed "Normal Mode"), reduces idle resource usage, eliminates unnecessary disk I/O when auto-upload is watching your logs folder, and updates the bundled Elite Insights CLI.
-
----
-
-## 🔧 Bug Fixes
-
-### Quick Play Badge Detection (Complete Fix)
-
-Quick Play logs were incorrectly displaying "Normal Mode" instead of "Quick Play" on the log card. Three root causes were identified and fixed:
-
-- **Local EVTC Parser (`evtc_parser.rs` — `parse_is_quick_play`):** The function only checked `isBuff == 1`, the old arcDPS format. New arcDPS builds (>= 20260501) encode buff applications as state change events (statechange 18 = BuffInitial, 69 = BuffApply, 70 = BuffChange) without setting `isBuff == 1`. The parser now recognizes all three state change values in addition to the legacy `isBuff == 1` check, ensuring QP detection works regardless of arcDPS build version.
-
-- **Boss Name Allowlist (`uploader.rs` — `QUICK_PLAY_BOSS_NAMES`):** Two typos — `"prototypvermilion"` and `"prototyparsenite"` (missing 'e' in "prototype") — caused Old Lion's Court Prototype variant logs to fail the allowlist match, which silently discarded the local parse result before detection could run. Fixed to correct names.
-
-- **EI Runner Allowlist (`ei_runner.rs` — `qp_allowed_bosses`):** The EI enrichment path's allowlist was missing all four Prototype variant boss names. All added for consistency.
-
-- **dps.report Fallback:** Added a `fightMode`-based fallback that checks `metadata.fightMode` to mark the log as Quick Play when local detection is indeterminate. The fallback never overwrites a local `Some(false)` result, so genuine Normal Mode logs are never misclassified.
-
-- **ApiTracker Clears:** Quick Play logs are now excluded from weekly clears tracking and staleness checks, since QP is a difficulty-reduced encounter.
-
-- **Tests:** Added 6 unit tests covering new-format state change detection (18/69/70), old-format detection (`isBuff == 1`), non-QP skill ID rejection, and non-player target rejection.
-
-### Convergence VL Rank Leakage Fixed
-
-Janthir CM Convergences are no longer incorrectly receiving raid boss Void Lounge ranks (e.g., "The Stormsinger" for Decima) because convergences share boss names with raid bosses.
+This update reworks the Capture Session filing flow — you can now see exactly what will be filed, rename the subfolder, and pick its colour before committing — and overhauls Appearance with a bigger font selection where every font actually applies.
 
 ---
 
-## 🔧 Improvements
+## 🎨 Appearance
 
-### Slower Watcher Polling (5s, Configurable)
+### More Fonts
+Choose from Outfit, Inter, DM Sans, Manrope, Space Grotesk, Fredoka, a terminal-style font, or your system font.
 
-The folder watcher that detects new `.evtc`/`.zevtc` files when auto-upload is enabled now polls every **5 seconds** instead of every 1 second, reducing unnecessary disk I/O.
+### Font Picker Fixed
+Every font in the list now actually applies. The terminal-style option used to fall back to a plain system font, and one option looked identical to the default.
 
-### In-Memory History Dedup (O(1) Lookups)
+### Quieter Settings
+Changing the font saves right away and no longer pops up the "settings saved" message.
 
-History is now loaded once into an in-memory `HashSet` at startup, eliminating repeated disk reads on every poll cycle. The cache is rebuilt whenever history is modified.
+---
 
-### Path Normalization for Dedup Check
+## 📁 Capture Session
 
-File paths are now normalized before comparing (case-insensitive, separator-normalized), preventing duplicate uploads from path casing differences.
+### Easier End-of-Session Filing
+When you end a session, the app now shows exactly what will be filed — the boss names, not just a number — and lets you rename the subfolder and pick its colour with a live preview.
 
-### Version Alignment
+### Don't Save
+You can end a session without filing it. The logs simply stay in your Uploads Feed.
 
-Bumped `Cargo.toml` to 0.7.2 to align with `package.json` and `tauri.conf.json`.
+### Duplicate Name Warning
+If a subfolder with that name already exists in the folder, the app warns you instead of quietly creating a second one.
 
-### Elite Insights CLI Update (v3.30.0 → v3.30.2)
+### Keyboard Support
+The filing window works without the mouse — it focuses the name field, Enter jumps to the folder list, and the arrow keys move between folders.
 
-Bundled EI parser updated. Version bump: GW2EIParserCommons 0.330.0 → 0.330.2, GW2EIEvtcParser 0.88.0 → 0.88.2.
+---
 
-### Vloxx (Nexus of Eternity) CM Support
+## 🔧 Under the Hood
 
-Vloxx now correctly detects as CM when the boss has 70M+ HP. CM status comes from the bundled Elite Insights parser instead of dps.report, preventing overwrites from the fallback path. Ura AHR badge detection also fixed for edge cases where EI uses different phase names.
-
-### New Void Lounge Ranks
-
-- **Crustacean Corraler** (Kela CM) — auto-awarded on successful Kela CM kill. Badge: bg `#33272e`, text `#b64955`.
-- **True Visionary** (Vloxx CM) — auto-awarded on successful Vloxx CM kill. Badge: bg `#1f2b43`, text `#5793df`.
-
-### Convergence VL Rank Leakage Fix
-
-VlEncounter now has `cm_only` and `lcm_only` flags. CM-only encounters only appear on CM logs. Added early return to `vlCurrentRanks()` for convergence logs.
-
-### Zip Crate Update
-
-Bumped `zip` dependency from `^2` to `^9` and committed `Cargo.lock` to prevent CI resolution failures from yanked crate versions.
+- Updated the build toolchain (SvelteKit 3, Vite 8, TypeScript 6) and the Tauri packages.
+- Refreshed dependencies to clear the outstanding security advisories.
+- Building from source now requires Node.js 22.17 or newer.
