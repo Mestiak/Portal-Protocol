@@ -291,17 +291,17 @@
       .map((p) => ({ player: p, scaled: (p.damageTaken / max) * 100, shown: p.damageTaken * dsRate }));
   });
 
-  const DEFENSE_HEAT_COLS: { key: keyof DefensePlayerStat; label: string }[] = [
-    { key: "blockedCount", label: "Blocked" },
-    { key: "evadedCount", label: "Evaded" },
-    { key: "dodgeCount", label: "Dodged" },
-    { key: "invulnedCount", label: "Invuln" },
-    { key: "interruptedCount", label: "Interrupted" },
-    { key: "downCount", label: "Downed" },
-    { key: "deadCount", label: "Dead" },
+  const DEFENSE_HEAT_COLS: { key: keyof DefensePlayerStat; label: string; tip: string }[] = [
+    { key: "blockedCount", label: "Blocked", tip: "Hits negated by the Block modifier" },
+    { key: "evadedCount", label: "Evaded", tip: "Hits avoided with Evade (your shadowsteps)" },
+    { key: "dodgeCount", label: "Dodged", tip: "Hits avoided with a dodge roll" },
+    { key: "invulnedCount", label: "Invuln", tip: "Hits negated by invulnerability frames" },
+    { key: "interruptedCount", label: "Interrupted", tip: "Enemy casts or actions you interrupted" },
+    { key: "downCount", label: "Downed", tip: "Times you were downed (but not dead)" },
+    { key: "deadCount", label: "Dead", tip: "Times you died" },
   ];
 
-  // Heatmap intensity per column, scaled to that column's squad max.
+  // Heatmap intensity per column (scaled to that column's squad max) + squad rank.
   let defenseHeat = $derived.by(() => {
     const cols = DEFENSE_HEAT_COLS.map((c) => ({
       ...c,
@@ -313,7 +313,8 @@
         player,
         cells: cols.map((c) => {
           const value = Number(player[c.key]) || 0;
-          return { label: c.label, value, pct: (value / c.max) * 100 };
+          const rank = 1 + defensePlayers.filter((p) => (Number(p[c.key]) || 0) > value).length;
+          return { label: c.label, tip: c.tip, value, pct: (value / c.max) * 100, rank };
         }),
       }));
   });
@@ -1154,47 +1155,58 @@
             {#if defensePlayers.length === 0}
               <div class="stat-note">No defensive data for this log.</div>
             {:else}
-              <div class="ds-cards">
-                <div class="ds-card">
-                  <span class="ds-val">{fmt(defenseSummary.taken)}</span>
-                  <span class="ds-label">Damage Taken</span>
+              <div class="ds-hero">
+                <div class="ds-hero-main">
+                  <span class="ds-hero-val">{fmt(defenseSummary.taken)}</span>
+                  <span class="ds-hero-label">Squad Damage Taken</span>
+                  <span class="ds-hero-sub">{defenseSummary.hits} hits taken · {defenseSummary.mitigated} mitigated</span>
                 </div>
-                <div class="ds-card">
-                  <span class="ds-val">{fmtPct(defenseSummary.mitigationPct)}<span class="ds-unit">%</span></span>
-                  <span class="ds-label">Hits Mitigated</span>
-                  <span class="ds-sub">{defenseSummary.mitigated} / {defenseSummary.mitigated + defenseSummary.hits} hits</span>
+                <div class="ds-hero-chips">
+                  <div class="ds-hero-chip"><b>{defenseSummary.downed}</b><span>Downed</span></div>
+                  <div class="ds-hero-chip"><b>{defenseSummary.deaths}</b><span>Deaths</span></div>
                 </div>
-                <div class="ds-card">
-                  <span class="ds-val">{defenseSummary.downed}</span>
-                  <span class="ds-label">Downed</span>
-                </div>
-                <div class="ds-card">
-                  <span class="ds-val">{defenseSummary.deaths}</span>
-                  <span class="ds-label">Deaths</span>
+                <div class="ds-hero-ring">
+                  <svg viewBox="0 0 80 80" class="ds-ring" aria-hidden="true">
+                    <circle class="ds-ring-track" cx="40" cy="40" r="34" />
+                    <circle class="ds-ring-val" cx="40" cy="40" r="34"
+                            style="stroke-dashoffset: {213.63 * (1 - defenseSummary.mitigationPct / 100)}" />
+                  </svg>
+                  <div class="ds-ring-text"><b>{fmtPct(defenseSummary.mitigationPct)}%</b><span>mitigated</span></div>
                 </div>
               </div>
 
               <div class="ds-block">
                 <div class="ds-block-title">Damage taken by player</div>
+                <div class="ds-legend">
+                  <span><i class="ds-dot ds-dot-power"></i>Power</span>
+                  <span><i class="ds-dot ds-dot-condi"></i>Condition</span>
+                  <span class="ds-legend-muted">▢ after the value = barrier soak</span>
+                </div>
                 {#each defenseBars as b}
                   <div class="ds-bar-row">
                     <span class="ds-bar-name" title={b.player.account}>{b.player.name}</span>
                     <div class="ds-bar-track">
-                      <div class="ds-bar-fill" style="width:{b.scaled}%"></div>
+                      <div class="ds-seg ds-seg-power" style="width:{(b.player.powerDamageTaken / b.player.damageTaken * 100) || 0}%"></div>
+                      <div class="ds-seg ds-seg-condi" style="width:{(b.player.conditionDamageTaken / b.player.damageTaken * 100) || 0}%"></div>
                     </div>
-                    <span class="ds-bar-val">{fmt(b.shown)}</span>
+                    <span class="ds-bar-val">{fmt(b.shown)} <i class="ds-bar-barrier" title="Barrier soak">{fmt(b.player.damageBarrier * dsRate)}</i></span>
                   </div>
                 {/each}
               </div>
 
               <div class="ds-block">
-                <div class="ds-block-title">Mitigation matrix <span class="ds-block-hint">click a row for the breakdown</span></div>
+                <div class="ds-block-title">Mitigation matrix <span class="ds-block-hint">click a row for the damage breakdown</span></div>
+                <div class="ds-legend">
+                  <span>Hits that never landed: blocked · evaded · dodged · invuln</span>
+                  <span>Enemy casts stopped: interrupted</span>
+                  <span>Went down / died: downed · dead</span>
+                </div>
                 <table class="ds-heat">
                   <thead>
                     <tr>
                       <th>Player</th>
                       {#each DEFENSE_HEAT_COLS as c}
-                        <th class="ds-heat-col">{c.label}</th>
+                        <th class="ds-heat-col" title={c.tip}>{c.label}</th>
                       {/each}
                     </tr>
                   </thead>
@@ -1208,7 +1220,7 @@
                           <span>{row.player.name}</span>
                         </td>
                         {#each row.cells as cell}
-                          <td class="ds-heat-cell" title="{cell.label}: {cell.value}"
+                          <td class="ds-heat-cell" title="{cell.tip} — {cell.value} · #{cell.rank} of {defensePlayers.length}"
                               style="background: {heatBg(cell.pct)}">{cell.value}</td>
                         {/each}
                       </tr>
@@ -1769,11 +1781,49 @@
     cursor: pointer; user-select: none;
   }
   .ds-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+  .ds-hero {
+    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+    background: var(--bg-sidebar); border: 1px solid var(--border); border-left: 2px solid var(--accent);
+    border-radius: var(--radius); padding: 14px 18px;
+  }
+  .ds-hero-main { display: flex; flex-direction: column; gap: 3px; min-width: 190px; }
+  .ds-hero-val { font-size: 30px; font-weight: 800; color: #fff; line-height: 1; font-variant-numeric: tabular-nums; }
+  .ds-hero-label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+  .ds-hero-sub { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .ds-hero-chips { display: flex; gap: 8px; margin-left: auto; }
+  .ds-hero-chip {
+    display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 62px;
+    padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+    background: color-mix(in srgb, #fff 3%, transparent);
+  }
+  .ds-hero-chip b { font-size: 18px; color: #fff; font-variant-numeric: tabular-nums; }
+  .ds-hero-chip span { font-size: 9px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
+  .ds-hero-ring { position: relative; width: 84px; height: 84px; flex: 0 0 auto; }
+  .ds-ring { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .ds-ring circle { fill: none; stroke-width: 8; }
+  .ds-ring-track { stroke: color-mix(in srgb, #fff 8%, transparent); }
+  .ds-ring-val { stroke: var(--success); stroke-linecap: round; stroke-dasharray: 213.63; transition: stroke-dashoffset .5s var(--ease-smooth); }
+  .ds-ring-text {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 1px;
+  }
+  .ds-ring-text b { font-size: 14px; color: #fff; font-variant-numeric: tabular-nums; }
+  .ds-ring-text span { font-size: 8px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
+
+  .ds-legend {
+    display: flex; flex-wrap: wrap; gap: 4px 14px; margin-bottom: 8px;
+    font-size: 10px; color: var(--text-muted);
+  }
+  .ds-legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .ds-legend-muted { opacity: .75; }
+  .ds-dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+  .ds-dot-power { background: var(--fail); }
+  .ds-dot-condi { background: var(--warn); }
   .ds-card {
     background: var(--bg-sidebar); border: 1px solid var(--border); border-radius: 12px;
     padding: 12px 14px; display: flex; flex-direction: column; gap: 3px;
   }
-  .ds-val { font-size: 24px; font-weight: 800; color: #fff; line-height: 1; font-variant-numeric: tabular-nums; }
+  .ds-val { font-size: 24px; font-weight: 800; color: #fff; letter-spacing: .01em; line-height: 1; font-variant-numeric: tabular-nums; }
   .ds-unit { font-size: 13px; font-weight: 700; color: var(--text-muted); margin-left: 1px; }
   .ds-label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
   .ds-sub { font-size: 10px; color: var(--text-muted); opacity: .8; }
@@ -1790,13 +1840,12 @@
 
   .ds-bar-row { display: grid; grid-template-columns: 130px 1fr 74px; align-items: center; gap: 8px; padding: 3px 0; }
   .ds-bar-name { font-size: 11px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .ds-bar-track { height: 10px; border-radius: 5px; background: color-mix(in srgb, #fff 5%, transparent); overflow: hidden; }
-  .ds-bar-fill {
-    height: 100%; border-radius: 5px;
-    background: linear-gradient(90deg, color-mix(in srgb, var(--error) 70%, #000), var(--error));
-    transition: width .35s cubic-bezier(.22,.61,.36,1);
-  }
-  .ds-bar-val { font-size: 11px; color: var(--text-muted); text-align: right; font-variant-numeric: tabular-nums; }
+  .ds-bar-track { display: flex; height: 10px; border-radius: 5px; background: color-mix(in srgb, #fff 5%, transparent); overflow: hidden; }
+  .ds-seg { height: 100%; transition: width .5s var(--ease-smooth); }
+  .ds-seg-power { background: var(--fail); }
+  .ds-seg-condi { background: var(--warn); }
+  .ds-bar-val { font-size: 11px; color: var(--text-muted); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .ds-bar-barrier { font-style: normal; opacity: .7; margin-left: 4px; }
 
   .ds-heat { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 11px; }
   .ds-heat th {
