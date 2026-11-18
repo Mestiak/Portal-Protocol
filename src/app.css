@@ -3879,6 +3879,7 @@ html.reduce-motion .session-pill {
   line-height: 1;
   padding: 0 4px;
   opacity: .7;
+  pointer-events: auto;
 }
 .on-hold-footer-banner {
   margin: 8px auto;
@@ -6244,12 +6245,28 @@ html.reduce-motion .session-pill {
   color: #fff;
 }
 
-.app-toast {
+/* Fixed overlay stack: transient toasts + persistent banners share one column
+   so they stack instead of painting over each other. The container ignores
+   pointer events; each child opts back in so its buttons stay clickable. */
+.overlay-stack {
   position: fixed;
   top: 56px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.overlay-stack > * {
+  pointer-events: auto;
+}
+
+.app-toast {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -6280,7 +6297,7 @@ html.reduce-motion .session-pill {
   border-color: rgba(168, 85, 247, 0.5);
   color: #e9d5ff;
   overflow: hidden;
-  position: fixed;
+  position: relative;
   width: fit-content;
   max-width: 90vw;
 }
@@ -6486,13 +6503,8 @@ html.reduce-motion .session-pill {
   animation: none !important;
 }
 
-/* ── Status pill: offline (amber) / online (green) / default — fixed, never in flow ── */
+/* ── Status pill: offline (amber) / online (green) / default — stacked in .overlay-stack ── */
 .pp-status-pill {
-  position: fixed;
-  top: 56px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 9999;
   display: flex;
   align-items: center;
   gap: 8px;

@@ -7102,52 +7102,55 @@ async function testWebhook(wh: any) {
       Portal Protocol <span class="titlebar-version">v{appVersion}</span>
     </div>
   </div>
-  <!-- Connectivity / status pill: fixed overlay, never in layout flow (cannot displace sidebar) -->
-  {#if !isOnline}
-    <div class="pp-status-pill pp-status-offline" role="status" aria-live="polite">
-      <span class="pp-status-dot"></span>
-      <span>Offline Mode · Uploads Paused</span>
-    </div>
-  {/if}
+  <!-- Fixed overlay stack: transient toasts + persistent banners share one
+       column so they stack instead of painting over each other. -->
+  <div class="overlay-stack">
+    {#if !isOnline}
+      <div class="pp-status-pill pp-status-offline" role="status" aria-live="polite">
+        <span class="pp-status-dot"></span>
+        <span>Offline Mode · Uploads Paused</span>
+      </div>
+    {/if}
 
-  {#if toastMsg}
-    <div class="pp-status-pill" class:pp-status-online={toastType === "online"} class:pp-status-offline={toastType === "offline"} class:pp-status-success={toastType === "success"} role="status" aria-live="polite" transition:fade={{ duration: prefersReducedMotion ? 0 : 220 }}>
-      <span class="pp-status-dot"></span>
-      <span class="pp-status-icon">{toastIcon}</span>
-      <span>{toastMsg}</span>
-      <button class="toast-close-btn" onclick={() => { toastMsg = null; if (toastTimer) clearTimeout(toastTimer); }} aria-label="Close notification">×</button>
-    </div>
-  {/if}
+    {#if toastMsg}
+      <div class="pp-status-pill" class:pp-status-online={toastType === "online"} class:pp-status-offline={toastType === "offline"} class:pp-status-success={toastType === "success"} role="status" aria-live="polite" transition:fade={{ duration: prefersReducedMotion ? 0 : 220 }}>
+        <span class="pp-status-dot"></span>
+        <span class="pp-status-icon">{toastIcon}</span>
+        <span>{toastMsg}</span>
+        <button class="toast-close-btn" onclick={() => { toastMsg = null; if (toastTimer) clearTimeout(toastTimer); }} aria-label="Close notification">×</button>
+      </div>
+    {/if}
 
-  {#if updateAvailable}
-    <div class="app-toast app-update-banner">
-      <span class="app-toast-icon"><i class="fa-solid fa-arrow-up-from-bracket"></i></span>
-      <span>Update {updateAvailable.version} ready</span>
-      <button class="app-update-btn" onclick={() => applyUpdate()} disabled={updateModalOpen}>
-        {updateDownloaded ? "Restart to apply" : "Click to Download"}
-      </button>
-    </div>
-  {/if}
+    {#if updateAvailable}
+      <div class="app-toast app-update-banner">
+        <span class="app-toast-icon"><i class="fa-solid fa-arrow-up-from-bracket"></i></span>
+        <span>Update {updateAvailable.version} ready</span>
+        <button class="app-update-btn" onclick={() => applyUpdate()} disabled={updateModalOpen}>
+          {updateDownloaded ? "Restart to apply" : "Click to Download"}
+        </button>
+      </div>
+    {/if}
 
-  {#if settingsDirty}
-    <div class="app-toast app-settings-save-banner" transition:fade={{ duration: prefersReducedMotion ? 0 : 220 }}>
-      <span class="app-toast-icon"><i class="fa-solid fa-floppy-disk"></i></span>
-      <span>Unsaved settings changes</span>
-      <button class="app-update-btn" onclick={() => { settingsDirty = false; if (configSaveTimer) { clearTimeout(configSaveTimer); configSaveTimer = null; } saveConfig(); }}>Save Settings</button>
-    </div>
-  {/if}
+    {#if settingsDirty}
+      <div class="app-toast app-settings-save-banner" transition:fade={{ duration: prefersReducedMotion ? 0 : 220 }}>
+        <span class="app-toast-icon"><i class="fa-solid fa-floppy-disk"></i></span>
+        <span>Unsaved settings changes</span>
+        <button class="app-update-btn" onclick={() => { settingsDirty = false; if (configSaveTimer) { clearTimeout(configSaveTimer); configSaveTimer = null; } saveConfig(); }}>Save Settings</button>
+      </div>
+    {/if}
 
-  {#if dpsReportStatus === "offline" && !dpsBannerDismissed}
-    <div class="app-toast app-dps-down-banner" role="status" aria-live="polite" transition:fade={{ duration: prefersReducedMotion ? 0 : 220 }}>
-      <span class="app-toast-icon"><i class="fa-solid fa-triangle-exclamation"></i></span>
-      {#if bDpsReportStatus === "online" && use_backup_dps}
-        <span>dps.report is unreachable — uploads are auto-routing to <strong>b.dps.report</strong> until it recovers.</span>
-      {:else}
-        <span>dps.report is unreachable — uploads are paused and will resume automatically when it comes back.</span>
-      {/if}
-      <button class="toast-close-btn" onclick={() => (dpsBannerDismissed = true)} aria-label="Close notification">×</button>
-    </div>
-  {/if}
+    {#if dpsReportStatus === "offline" && !dpsBannerDismissed}
+      <div class="app-toast app-dps-down-banner" role="status" aria-live="polite" transition:fade={{ duration: prefersReducedMotion ? 0 : 220 }}>
+        <span class="app-toast-icon"><i class="fa-solid fa-triangle-exclamation"></i></span>
+        {#if bDpsReportStatus === "online" && use_backup_dps}
+          <span>dps.report is unreachable — uploads are auto-routing to <strong>b.dps.report</strong> until it recovers.</span>
+        {:else}
+          <span>dps.report is unreachable — uploads are paused and will resume automatically when it comes back.</span>
+        {/if}
+        <button class="toast-close-btn" onclick={() => (dpsBannerDismissed = true)} aria-label="Close notification">×</button>
+      </div>
+    {/if}
+  </div>
 
   {#if updateModalOpen}
     <div class="update-overlay" transition:fade={{ duration: prefersReducedMotion ? 0 : 160 }}>
