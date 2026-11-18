@@ -1125,12 +1125,12 @@
 
         <!-- ── Axibridge-style blocks: MVP hero, runner-up, metric panel ── -->
         {#snippet axHero(cfg: AxHeroCfg)}
-          <div class="ax-hero-card">
+          <div class="ax-hero-card {cfg.tier}">
             <div class="ax-hero-pill {cfg.tier}">
               <i class="fa-solid {cfg.icon}"></i> {cfg.label}
             </div>
             <div class="ax-hero-main">
-              <span class="ax-hero-crown"><i class="fa-solid fa-crown"></i></span>
+              <span class="ax-hero-crown {cfg.tier}"><i class="fa-solid fa-crown"></i></span>
               <div class="ax-hero-id">
                 <span class="ax-hero-name" title={cfg.player.account}>{cfg.player.name}</span>
                 <span class="ax-hero-prof">{cfg.player.profession}</span>
@@ -1148,12 +1148,14 @@
         {/snippet}
 
         {#snippet axRunner(cfg: AxRunnerCfg)}
-          <div class="ax-runner-card">
+          <div class="ax-runner-card {cfg.tier}">
             <div class="ax-runner-top">
               <span class="ax-runner-tier {cfg.tier}">{cfg.tier}</span>
               <b>{cfg.score}</b>
             </div>
-            <div class="ax-runner-name" title={cfg.player.account}>{cfg.player.name}</div>
+            <div class="ax-runner-name" title={cfg.player.account}>
+              <span class="ax-runner-crown {cfg.tier}"><i class="fa-solid fa-crown"></i></span>{cfg.player.name}
+            </div>
             <div class="ax-runner-prof">{cfg.player.profession}</div>
             {#each cfg.rows as row}
               <div class="ax-runner-row"><span>{row.label}</span><b>{row.value}</b></div>
@@ -1937,6 +1939,10 @@
 
   @media (prefers-reduced-motion: reduce) {
     .stats-modal { animation: none !important; }
+    .ax-hero-card, .ax-runner-card, .ax-panel, .ax-boon-row, .ds-block, .ax-row {
+      transition: none !important;
+      transform: none !important;
+    }
   }
 
   /* ── Mechanic tab summaries (charcoal cards, indigo accent) ── */
@@ -2119,9 +2125,16 @@
   /* ── MVP hero + runner-up cards ── */
   .ax-heroes { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 10px; }
   .ax-hero-card {
-    background: var(--bg-sidebar); border: 1px solid var(--border);
-    border-top: 2px solid var(--accent); border-radius: var(--radius);
+    background: var(--bg-panel); border: 1px solid var(--border);
+    border-top: 2px solid var(--gold); border-radius: var(--radius);
     padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;
+    transition: transform .18s var(--ease-smooth), border-color .18s, box-shadow .18s;
+  }
+  .ax-hero-card.gold { border-color: color-mix(in srgb, var(--gold) 55%, var(--border)); }
+  .ax-hero-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--gold);
+    box-shadow: 0 10px 24px -12px rgba(0, 0, 0, .85);
   }
   .ax-hero-pill {
     align-self: flex-start; display: inline-flex; align-items: center; gap: 5px;
@@ -2130,12 +2143,20 @@
     color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent);
     border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
   }
+  .ax-hero-pill.gold {
+    color: var(--gold); background: color-mix(in srgb, var(--gold) 14%, transparent);
+    border-color: color-mix(in srgb, var(--gold) 40%, transparent);
+  }
   .ax-hero-main { display: flex; align-items: center; gap: 10px; }
   .ax-hero-crown {
     display: grid; place-items: center; width: 34px; height: 34px; flex: none;
     border-radius: 9px; font-size: 15px; color: var(--accent);
     background: color-mix(in srgb, var(--accent) 12%, transparent);
     border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  .ax-hero-crown.gold {
+    color: var(--gold); background: color-mix(in srgb, var(--gold) 14%, transparent);
+    border-color: color-mix(in srgb, var(--gold) 38%, transparent);
   }
   .ax-hero-id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .ax-hero-name {
@@ -2156,18 +2177,34 @@
   .ax-hero-row b { color: var(--text); font-variant-numeric: tabular-nums; }
 
   .ax-runner-card {
-    background: var(--bg-sidebar); border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius);
     padding: 12px; display: flex; flex-direction: column; gap: 6px;
+    transition: transform .18s var(--ease-smooth), border-color .18s, box-shadow .18s;
   }
+  .ax-runner-card.silver { border-color: color-mix(in srgb, var(--silver) 50%, var(--border)); }
+  .ax-runner-card.bronze { border-color: color-mix(in srgb, var(--bronze) 50%, var(--border)); }
+  .ax-runner-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 24px -12px rgba(0, 0, 0, .85);
+  }
+  .ax-runner-card.silver:hover { border-color: var(--silver); }
+  .ax-runner-card.bronze:hover { border-color: var(--bronze); }
   .ax-runner-top { display: flex; align-items: center; justify-content: space-between; }
   .ax-runner-tier {
     font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em;
     padding: 2px 6px; border-radius: 5px;
   }
-  .ax-runner-tier.silver { color: #cbd5e1; background: color-mix(in srgb, #cbd5e1 14%, transparent); }
-  .ax-runner-tier.bronze { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+  .ax-runner-tier.silver { color: var(--silver); background: color-mix(in srgb, var(--silver) 14%, transparent); }
+  .ax-runner-tier.bronze { color: var(--bronze); background: color-mix(in srgb, var(--bronze) 14%, transparent); }
   .ax-runner-top b { font-size: 16px; color: #fff; font-variant-numeric: tabular-nums; }
-  .ax-runner-name { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ax-runner-name {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 13px; font-weight: 700; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ax-runner-crown { font-size: 11px; flex: none; }
+  .ax-runner-crown.silver { color: var(--silver); }
+  .ax-runner-crown.bronze { color: var(--bronze); }
   .ax-runner-prof { font-size: 10px; color: var(--text-muted); margin-top: -3px; }
   .ax-runner-row { display: flex; align-items: center; justify-content: space-between; font-size: 10px; color: var(--text-muted); }
   .ax-runner-row b { color: var(--text); font-variant-numeric: tabular-nums; }
@@ -2175,8 +2212,14 @@
   /* ── Metric panels ── */
   .ax-panels { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
   .ax-panel {
-    background: var(--bg-sidebar); border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius);
     padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; min-width: 0;
+    transition: transform .18s var(--ease-smooth), border-color .18s, box-shadow .18s;
+  }
+  .ax-panel:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+    box-shadow: 0 10px 24px -12px rgba(0, 0, 0, .85);
   }
   .ax-panel-head { display: flex; align-items: center; gap: 6px; color: var(--accent); }
   .ax-panel-head i { font-size: 11px; }
@@ -2190,9 +2233,10 @@
   .ax-panel-rows { display: flex; flex-direction: column; gap: 1px; }
   .ax-row {
     display: grid; grid-template-columns: 16px 16px 1fr auto 10px; align-items: center;
-    gap: 5px; padding: 2px 0; border-radius: 4px; transition: background-color .14s;
+    gap: 5px; padding: 2px 4px; border-radius: 4px;
+    transition: background-color .14s, transform .18s var(--ease-smooth);
   }
-  .ax-row:hover { background: color-mix(in srgb, #fff 4%, transparent); }
+  .ax-row:hover { background: color-mix(in srgb, #fff 5%, transparent); transform: translateX(2px); }
   .ax-row-rank { font-size: 9px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
   .ax-row-icon { width: 14px; height: 14px; border-radius: 4px; object-fit: cover; background: #0c0c0f; }
   .ax-row-name { font-size: 10px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -2208,8 +2252,14 @@
   }
 
   .ds-block {
-    background: var(--bg-sidebar); border: 1px solid var(--border); border-left: 2px solid var(--accent);
+    background: var(--bg-panel); border: 1px solid var(--border); border-left: 2px solid var(--accent);
     border-radius: 10px; padding: 12px 14px;
+    transition: transform .18s var(--ease-smooth), border-color .18s, box-shadow .18s;
+  }
+  .ds-block:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+    box-shadow: 0 10px 24px -12px rgba(0, 0, 0, .85);
   }
   .ds-block-title {
     font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
@@ -2246,6 +2296,12 @@
     display: grid; grid-template-columns: 16px 16px 1fr auto; align-items: center;
     gap: 6px; padding: 5px 8px; border-radius: 6px;
     background: color-mix(in srgb, #fff 3%, transparent);
+    transition: background-color .14s, transform .18s var(--ease-smooth), box-shadow .18s;
+  }
+  .ax-boon-row:hover {
+    background: color-mix(in srgb, #fff 6%, transparent);
+    transform: translateX(2px);
+    box-shadow: 0 4px 12px -8px rgba(0, 0, 0, .8);
   }
   .ax-boon-name { font-size: 11px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ax-boon-total { font-size: 11px; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
