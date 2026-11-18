@@ -1439,12 +1439,13 @@
     vlModal = { log, encounter: enc };
   }
   // Stats modal (per-player damage + boon breakdown from dps.report)
-  let statsModal = $state<{ permalink: string; bossName: string; localPath?: string } | null>(null);
+  let statsModal = $state<{ permalink: string; bossName: string; bossIcon: string; localPath?: string } | null>(null);
   function openStats(log: UploadRecord) {
     if (!log.url && !log.local_fallback) return;
     statsModal = {
       permalink: log.url ?? "",
       bossName: log.boss_name ?? "",
+      bossIcon: resolveBossIconSrc(log),
       localPath: log.file_path || undefined,
     };
   }
@@ -9477,6 +9478,7 @@ async function testWebhook(wh: any) {
   <StatsModal
     permalink={statsModal.permalink}
     bossName={statsModal.bossName}
+    bossIcon={statsModal.bossIcon}
     localPath={statsModal.localPath}
     onClose={() => { statsModal = null; refreshCacheSize(); }}
   />

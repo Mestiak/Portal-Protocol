@@ -35,9 +35,10 @@
   // defenseSupport with no `damageTaken1S` would otherwise throw on read.
   const STATS_CACHE_VERSION = 1;
 
-  let { permalink, bossName = "", localPath, onClose }: {
+  let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;
     bossName?: string;
+    bossIcon?: string;
     localPath?: string;
     onClose: () => void;
   } = $props();
@@ -359,6 +360,15 @@
     sources: RecapSource[];
   }
 
+  /** One skill in the down recap, ranked by how many players it took down. */
+  interface DownRecapRow {
+    id: number;
+    name: string;
+    players: number;
+    deaths: number;
+    damage: number;
+  }
+
   interface AxPanel {
     key: string;
     title: string;
@@ -528,6 +538,39 @@
       .filter((d) => d.time > 0)
       .sort((a, b) => a.time - b.time),
   );
+
+  // Top skills by how many players they took out of the fight, across the log.
+  let downRecap = $derived.by<DownRecapRow[]>(() => {
+    const downed = new Map<number, { players: Set<string>; damage: number; src: string }>();
+    const killed = new Map<number, Set<string>>();
+    for (const p of defensePlayers) {
+      const who = p.account || p.name;
+      for (const d of p.deathRecap) {
+        for (const k of d.toDown) {
+          const e = downed.get(k.id) ?? { players: new Set<string>(), damage: 0, src: k.src };
+          e.players.add(who);
+          e.damage += k.damage;
+          downed.set(k.id, e);
+        }
+        for (const k of d.toKill) {
+          const s = killed.get(k.id) ?? new Set<string>();
+          s.add(who);
+          killed.set(k.id, s);
+        }
+      }
+    }
+    return [...downed.entries()]
+      .map(([id, e]) => ({
+        id,
+        name: axSkillName(id) || e.src,
+        players: e.players.size,
+        deaths: killed.get(id)?.size ?? 0,
+        damage: e.damage,
+      }))
+      .filter((r) => r.name)
+      .sort((a, b) => b.players - a.players || b.damage - a.damage)
+      .slice(0, 3);
+  });
 
   function axSkillName(id: number): string {
     return (id > 0 && skillNames["s" + id]?.name) || "";
@@ -1604,6 +1647,25 @@
                 {/each}
               </div>
 
+              {#if downRecap.length > 0}
+                <div class="ds-block ax-downrecap">
+                  <div class="ax-downrecap-icon">
+                    <img src={bossIcon} alt={bossName} />
+                    <span>{bossName}</span>
+                  </div>
+                  <div class="ax-downrecap-body">
+                    <div class="ds-block-title">Down recap <span class="ds-block-hint">top skills by players downed</span></div>
+                    {#each downRecap as r}
+                      <div class="ax-downrecap-row">
+                        <span class="ax-downrecap-name">{r.name}</span>
+                        <span class="ax-downrecap-val">{r.players} downed{r.deaths > 0 ? ` · ${r.deaths} died` : ""}</span>
+                        <span class="ax-downrecap-dmg">{fmt(r.damage)}</span>
+                      </div>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+
               {@render axFeed("Downs", `${defenseDowns.length} led to a death`, defenseDowns, true)}
               {@render axFeed("Deaths", `${defenseDeaths.length} in this log`, defenseDeaths, false)}
 
@@ -2091,7 +2153,7 @@
 
   @media (prefers-reduced-motion: reduce) {
     .stats-modal { animation: none !important; }
-    .ax-hero-card, .ax-runner-card, .ax-panel, .ax-boon-row, .ds-block, .ax-row, .ax-death-row {
+    .ax-hero-card, .ax-runner-card, .ax-panel, .ax-boon-row, .ds-block, .ax-row, .ax-death-row, .ax-downrecap-row {
       transition: none !important;
       transform: none !important;
     }
@@ -2445,6 +2507,22 @@
   .ds-detail { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 8px 0 2px; }
   .ds-detail div { display: flex; gap: 6px; font-size: 11px; color: var(--text-muted); }
   .ds-detail b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+  /* ── Down recap ── */
+  .ax-downrecap { display: flex; gap: 14px; align-items: flex-start; }
+  .ax-downrecap-icon { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 76px; flex: none; }
+  .ax-downrecap-icon img { width: 60px; height: 60px; border-radius: 12px; object-fit: cover; border: 1px solid var(--border); }
+  .ax-downrecap-icon span { font-size: 10px; color: var(--text-muted); text-align: center; line-height: 1.25; }
+  .ax-downrecap-body { flex: 1; min-width: 0; }
+  .ax-downrecap-row {
+    display: grid; grid-template-columns: 1fr auto; align-items: center;
+    gap: 1px 12px; padding: 5px 6px; border-radius: 6px;
+    transition: background-color .14s;
+  }
+  .ax-downrecap-row:hover { background: color-mix(in srgb, #fff 4%, transparent); }
+  .ax-downrecap-name { font-size: 12px; font-weight: 700; color: var(--text); }
+  .ax-downrecap-val { grid-column: 1; font-size: 10px; color: var(--text-muted); }
+  .ax-downrecap-dmg { grid-column: 2; grid-row: 1 / span 2; font-size: 11px; font-weight: 700; color: var(--fail); font-variant-numeric: tabular-nums; }
 
   /* ── Death feed ── */
   .ax-death-feed { display: flex; flex-direction: column; gap: 3px; }
