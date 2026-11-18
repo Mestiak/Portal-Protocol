@@ -6,6 +6,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { extractMechanics, type MechanicReport } from "#lib/mechanicParser";
   import { extractPhaseStats, type PhaseStat } from "#lib/phaseStats";
+  import { extractDefenseSupport, type DefenseSupportStats, type DefensePlayerStat } from "#lib/defenseSupport";
   import { fmt, fmtPct, fmtTime } from "#lib/format";
   import { slide } from "svelte/transition";
   import { cubicInOut } from "svelte/easing";
@@ -78,7 +79,7 @@
   // Single source of truth for the active sub-view. STATS section: Statistics
   // (cards+chart, default) | Boon Uptime (table). MECHANICS section (Cerus
   // only): Shadows | Orbs | Empowered.
-  type Tab = "statistics" | "boon" | "revealed" | "shadows" | "orbs" | "empowered";
+  type Tab = "statistics" | "boon" | "defense" | "support" | "revealed" | "shadows" | "orbs" | "empowered";
   let activeTab = $state<Tab>("statistics");
   // ── Phase breakdown ──
   // EI stores every per-phase metric as a positional array indexed by phase, so one
@@ -86,6 +87,10 @@
   let phaseStats = $state<PhaseStat[] | null>(null);
   let selectedPhase = $state(0);          // EI phase index; 0 = Full Fight
   let showBreakbars = $state(true);
+  // ── Defense / Support tabs ──
+  let defenseSupport = $state<DefenseSupportStats | null>(null);
+  let showPer10Min = $state(false);       // scale damage numbers to a per-10-minute rate
+  let defenseOpen = $state<string | null>(null); // player row expanded in the matrix
   let openOrbPhase = $state<string | null>(null); // Orbs tab: expanded per-phase leaderboard
 
   // Revealed feature flag: hide the tab + table until the feature is complete.
@@ -237,6 +242,11 @@
     };
   });
 
+  // Heatmap cell background: accent ramp scaled to the column max.
+  function heatBg(pct: number): string {
+    return `color-mix(in srgb, var(--accent) ${Math.round(pct * 0.45)}%, transparent)`;
+  }
+
   // A phase with no boss-target damage reads as "—" rather than a misleading 0.
   function fmtPhase(v: number): string {
     return v > 0 ? fmt(v) : "—";
@@ -246,6 +256,68 @@
   function fmtBoonPct(v: number): string {
     return v > 0 ? `${fmtPct(v)}%` : "—";
   }
+
+  // ── Defense tab derivations ──
+  let defensePlayers = $derived<DefensePlayerStat[]>(
+    defenseSupport ? (defenseSupport.defense[selectedPhase] ?? []) : [],
+  );
+
+  // Damage numbers scaled to a per-10-minute rate when the toggle is on.
+  let dsRate = $derived.by(() => {
+    if (!showPer10Min) return 1;
+    const dur = selectedPhase === 0 ? (stats?.duration_sec ?? 0) : (phaseStats?.[selectedPhase]?.durationSec ?? 0);
+    return dur > 0 ? 600 / dur : 1;
+  });
+
+  let defenseSummary = $derived.by(() => {
+    const sum = (f: (p: DefensePlayerStat) => number) => defensePlayers.reduce((a, p) => a + f(p), 0);
+    const mitigated = sum((p) => p.blockedCount + p.evadedCount + p.dodgeCount + p.invulnedCount);
+    const hits = sum((p) => p.damageTakenCount);
+    return {
+      taken: sum((p) => p.damageTaken) * dsRate,
+      mitigated,
+      hits,
+      mitigationPct: hits + mitigated > 0 ? (mitigated / (hits + mitigated)) * 100 : 0,
+      downed: sum((p) => p.downCount),
+      deaths: sum((p) => p.deadCount),
+    };
+  });
+
+  // Damage-taken bars, sorted desc, with the track scaled to the squad max.
+  let defenseBars = $derived.by(() => {
+    const max = Math.max(1, ...defensePlayers.map((p) => p.damageTaken));
+    return [...defensePlayers]
+      .sort((a, b) => b.damageTaken - a.damageTaken)
+      .map((p) => ({ player: p, scaled: (p.damageTaken / max) * 100, shown: p.damageTaken * dsRate }));
+  });
+
+  const DEFENSE_HEAT_COLS: { key: keyof DefensePlayerStat; label: string }[] = [
+    { key: "blockedCount", label: "Blocked" },
+    { key: "evadedCount", label: "Evaded" },
+    { key: "dodgeCount", label: "Dodged" },
+    { key: "invulnedCount", label: "Invuln" },
+    { key: "interruptedCount", label: "Interrupted" },
+    { key: "downCount", label: "Downed" },
+    { key: "deadCount", label: "Dead" },
+  ];
+
+  // Heatmap intensity per column, scaled to that column's squad max.
+  let defenseHeat = $derived.by(() => {
+    const cols = DEFENSE_HEAT_COLS.map((c) => ({
+      ...c,
+      max: Math.max(1, ...defensePlayers.map((p) => Number(p[c.key]) || 0)),
+    }));
+    return [...defensePlayers]
+      .sort((a, b) => b.damageTaken - a.damageTaken)
+      .map((player) => ({
+        player,
+        cells: cols.map((c) => {
+          const value = Number(player[c.key]) || 0;
+          return { label: c.label, value, pct: (value / c.max) * 100 };
+        }),
+      }));
+  });
+
 
   // Non-EI fallback: parse the local file with the bundled Elite Insights, then
   // refetch directly (bypassing the compact stats cache) so phases appear.
@@ -259,10 +331,11 @@
       const res = await invoke("get_local_log_full", { filePath: localPath }) as LogFull;
       stats = res.stats;
       phaseStats = extractPhaseStats(res.raw, PHASE_BOON_META);
+      defenseSupport = extractDefenseSupport(res.raw);
       const mech = extractMechanics(res.raw, res.stats.boss_name);
       mechanics = mech;
-      statsCache.set(localPath, { stats: res.stats, mechanics: mech, phases: phaseStats });
-      try { await invoke("store_stats_cache", { filePath: localPath, data: { stats: res.stats, mechanics: mech, phases: phaseStats } }); } catch (e) {}
+      statsCache.set(localPath, { stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport });
+      try { await invoke("store_stats_cache", { filePath: localPath, data: { stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport } }); } catch (e) {}
     } catch (e: any) {
       error = typeof e === "string" ? e : (e?.message || "Failed to parse locally");
     } finally {
@@ -529,7 +602,7 @@
   }
 
   // Module-level cache so reopening a log is instant.
-  const statsCache = new Map<string, { stats: any; mechanics: any; phases?: PhaseStat[] | null }>();
+  const statsCache = new Map<string, { stats: any; mechanics: any; phases?: PhaseStat[] | null; defenseSupport?: DefenseSupportStats | null }>();
   // concurrent fetches to dps.report — on a flaky WiFi link a burst of large
   // (30MB+) responses can saturate the link and drop the connection.
   let inflight: Promise<unknown> | null = null;
@@ -543,22 +616,24 @@
       stats = cachedMem.stats;
       mechanics = cachedMem.mechanics;
       phaseStats = cachedMem.phases ?? null;
+      defenseSupport = cachedMem.defenseSupport ?? null;
       loading = false;
       activeTab = "statistics";
       return;
     }
     if (inflight) return;
-    loading = true; error = null; stats = null; mechanics = null; phaseStats = null;
+    loading = true; error = null; stats = null; mechanics = null; phaseStats = null; defenseSupport = null;
     activeTab = "statistics";
     inflight = (async () => {
       // Try compact cache first (instant)
       if (localPath) {
         try {
-          const cached = await invoke("load_stats_cache", { filePath: localPath }) as { stats: any; mechanics: any; phases?: PhaseStat[] | null } | null;
+          const cached = await invoke("load_stats_cache", { filePath: localPath }) as { stats: any; mechanics: any; phases?: PhaseStat[] | null; defenseSupport?: DefenseSupportStats | null } | null;
           if (cached) {
             stats = cached.stats;
             mechanics = cached.mechanics;
             phaseStats = cached.phases ?? null;
+            defenseSupport = cached.defenseSupport ?? null;
             loading = false;
             activeTab = "statistics";
             inflight = null;
@@ -591,6 +666,7 @@
         }
         stats = res.stats;
         phaseStats = extractPhaseStats(res.raw, PHASE_BOON_META);
+        defenseSupport = extractDefenseSupport(res.raw);
         let mech = extractMechanics(res.raw, res.stats.boss_name);
         // If a local EVTC fallback is available, use it to fill in Revealed
         // source attribution that dps.report does not expose (skill/clone/
@@ -655,9 +731,9 @@
           // Local merge skipped — no error to surface.
         }
         mechanics = mech;
-        statsCache.set(cacheKey, { stats: res.stats, mechanics: mech, phases: phaseStats });
+        statsCache.set(cacheKey, { stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport });
         if (localPath) {
-          try { await invoke("store_stats_cache", { filePath: localPath, data: { stats: res.stats, mechanics: mech, phases: phaseStats } }); } catch (e) {}
+          try { await invoke("store_stats_cache", { filePath: localPath, data: { stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport } }); } catch (e) {}
         }
         // Non-Cerus fights only get the Boon Uptime tab — skip Statistics.
         // Harvest Temple defaults to Revealed if break data is present.
@@ -771,6 +847,12 @@
           {/if}
           <button class="top-tab" class:active={activeTab === "boon"} onclick={() => (activeTab = "boon")}>
             <i class="fa-solid fa-shield-halved"></i> Boon Uptime
+          </button>
+          <button class="top-tab" class:active={activeTab === "defense"} onclick={() => (activeTab = "defense")}>
+            <i class="fa-solid fa-shield"></i> Defense
+          </button>
+          <button class="top-tab" class:active={activeTab === "support"} onclick={() => (activeTab = "support")}>
+            <i class="fa-solid fa-hand-holding-heart"></i> Support
           </button>
           {#if isHT && revealFeatureReady}
           <button class="top-tab" class:active={activeTab === "revealed"} onclick={() => (activeTab = "revealed")}>
@@ -1059,6 +1141,95 @@
                     {/each}
                   </div>
                 {/if}
+              </div>
+            {/if}
+
+          {:else if activeTab === "defense"}
+            <!-- DEFENSE -->
+            {@render phaseBar()}
+            <div class="ds-toolbar">
+              <span class="stats-hint">Hits mitigated = blocked + evaded + dodged + invulned</span>
+              <label class="ds-rate"><input type="checkbox" bind:checked={showPer10Min} /> Per 10 min</label>
+            </div>
+            {#if defensePlayers.length === 0}
+              <div class="stat-note">No defensive data for this log.</div>
+            {:else}
+              <div class="ds-cards">
+                <div class="ds-card">
+                  <span class="ds-val">{fmt(defenseSummary.taken)}</span>
+                  <span class="ds-label">Damage Taken</span>
+                </div>
+                <div class="ds-card">
+                  <span class="ds-val">{fmtPct(defenseSummary.mitigationPct)}<span class="ds-unit">%</span></span>
+                  <span class="ds-label">Hits Mitigated</span>
+                  <span class="ds-sub">{defenseSummary.mitigated} / {defenseSummary.mitigated + defenseSummary.hits} hits</span>
+                </div>
+                <div class="ds-card">
+                  <span class="ds-val">{defenseSummary.downed}</span>
+                  <span class="ds-label">Downed</span>
+                </div>
+                <div class="ds-card">
+                  <span class="ds-val">{defenseSummary.deaths}</span>
+                  <span class="ds-label">Deaths</span>
+                </div>
+              </div>
+
+              <div class="ds-block">
+                <div class="ds-block-title">Damage taken by player</div>
+                {#each defenseBars as b}
+                  <div class="ds-bar-row">
+                    <span class="ds-bar-name" title={b.player.account}>{b.player.name}</span>
+                    <div class="ds-bar-track">
+                      <div class="ds-bar-fill" style="width:{b.scaled}%"></div>
+                    </div>
+                    <span class="ds-bar-val">{fmt(b.shown)}</span>
+                  </div>
+                {/each}
+              </div>
+
+              <div class="ds-block">
+                <div class="ds-block-title">Mitigation matrix <span class="ds-block-hint">click a row for the breakdown</span></div>
+                <table class="ds-heat">
+                  <thead>
+                    <tr>
+                      <th>Player</th>
+                      {#each DEFENSE_HEAT_COLS as c}
+                        <th class="ds-heat-col">{c.label}</th>
+                      {/each}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#each defenseHeat as row}
+                      <tr class="ds-heat-row" class:open={defenseOpen === row.player.name}
+                          onclick={() => defenseOpen = defenseOpen === row.player.name ? null : row.player.name}>
+                        <td class="ds-heat-name">
+                          <img class="prof-icon" src={profIcon(row.player.profession)} alt={row.player.profession}
+                               onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                          <span>{row.player.name}</span>
+                        </td>
+                        {#each row.cells as cell}
+                          <td class="ds-heat-cell" title="{cell.label}: {cell.value}"
+                              style="background: {heatBg(cell.pct)}">{cell.value}</td>
+                        {/each}
+                      </tr>
+                      {#if defenseOpen === row.player.name}
+                        <tr class="ds-detail-row">
+                          <td colspan={DEFENSE_HEAT_COLS.length + 1}>
+                            <div class="ds-detail">
+                              <div><span>Power</span><b>{fmt(row.player.powerDamageTaken * dsRate)}</b></div>
+                              <div><span>Condition</span><b>{fmt(row.player.conditionDamageTaken * dsRate)}</b></div>
+                              <div><span>Strike</span><b>{fmt(row.player.strikeDamageTaken * dsRate)}</b></div>
+                              <div><span>Barrier</span><b>{fmt(row.player.damageBarrier * dsRate)}</b></div>
+                              <div><span>Hits taken</span><b>{row.player.damageTakenCount}</b></div>
+                              <div><span>Downed</span><b>{row.player.downCount}× {fmtTime(row.player.downDuration / 1000)}</b></div>
+                              <div><span>Deaths</span><b>{row.player.deadCount}</b></div>
+                            </div>
+                          </td>
+                        </tr>
+                      {/if}
+                    {/each}
+                  </tbody>
+                </table>
               </div>
             {/if}
           {/if}
@@ -1589,6 +1760,61 @@
   .phase-parse:disabled { opacity: .6; cursor: default; }
   .stat-phase-note { margin: 8px 0 0; font-size: 11px; color: var(--text-muted); }
   .stat-phase-note b { color: var(--text); }
+
+  /* ── Defense / Support tabs ── */
+  .ds-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .ds-rate {
+    display: inline-flex; align-items: center; gap: 4px; margin-left: auto;
+    font-size: 10px; font-weight: 700; letter-spacing: .03em; color: var(--text-muted);
+    cursor: pointer; user-select: none;
+  }
+  .ds-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+  .ds-card {
+    background: var(--bg-sidebar); border: 1px solid var(--border); border-radius: 12px;
+    padding: 12px 14px; display: flex; flex-direction: column; gap: 3px;
+  }
+  .ds-val { font-size: 24px; font-weight: 800; color: #fff; line-height: 1; font-variant-numeric: tabular-nums; }
+  .ds-unit { font-size: 13px; font-weight: 700; color: var(--text-muted); margin-left: 1px; }
+  .ds-label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+  .ds-sub { font-size: 10px; color: var(--text-muted); opacity: .8; }
+
+  .ds-block {
+    background: var(--bg-sidebar); border: 1px solid var(--border); border-left: 2px solid var(--accent);
+    border-radius: 10px; padding: 12px 14px;
+  }
+  .ds-block-title {
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--text); margin-bottom: 10px;
+  }
+  .ds-block-hint { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text-muted); }
+
+  .ds-bar-row { display: grid; grid-template-columns: 130px 1fr 74px; align-items: center; gap: 8px; padding: 3px 0; }
+  .ds-bar-name { font-size: 11px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ds-bar-track { height: 10px; border-radius: 5px; background: color-mix(in srgb, #fff 5%, transparent); overflow: hidden; }
+  .ds-bar-fill {
+    height: 100%; border-radius: 5px;
+    background: linear-gradient(90deg, color-mix(in srgb, var(--error) 70%, #000), var(--error));
+    transition: width .35s cubic-bezier(.22,.61,.36,1);
+  }
+  .ds-bar-val { font-size: 11px; color: var(--text-muted); text-align: right; font-variant-numeric: tabular-nums; }
+
+  .ds-heat { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 11px; }
+  .ds-heat th {
+    text-align: right; font-size: 9px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--text-muted); font-weight: 700; padding: 4px 6px;
+  }
+  .ds-heat th:first-child { text-align: left; }
+  .ds-heat-row { cursor: pointer; }
+  .ds-heat-row td { padding: 4px 6px; border-top: 1px solid var(--border); transition: background-color .14s; }
+  .ds-heat-row:hover td { background: color-mix(in srgb, #fff 4%, transparent); }
+  .ds-heat-row.open td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .ds-heat-name { display: flex; align-items: center; gap: 6px; color: var(--text); }
+  .ds-heat-name .prof-icon { width: 16px; height: 16px; border-radius: 4px; }
+  .ds-heat-cell { text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+  .ds-detail-row td { padding: 0 6px 8px; }
+  .ds-detail { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 8px 0 2px; }
+  .ds-detail div { display: flex; gap: 6px; font-size: 11px; color: var(--text-muted); }
+  .ds-detail b { color: var(--text); font-variant-numeric: tabular-nums; }
   .sg-chip {
     font-size: 10px; font-weight: 700; letter-spacing: .03em; font-family: inherit;
     color: var(--text-muted); background: color-mix(in srgb,#fff 5%,transparent);
