@@ -271,15 +271,11 @@
 
   let defenseSummary = $derived.by(() => {
     const sum = (f: (p: DefensePlayerStat) => number) => defensePlayers.reduce((a, p) => a + f(p), 0);
-    const mitigated = sum((p) => p.blockedCount + p.evadedCount + p.dodgeCount + p.invulnedCount);
-    const hits = sum((p) => p.damageTakenCount);
     return {
       taken: sum((p) => p.damageTaken) * dsRate,
-      mitigated,
-      hits,
-      mitigationPct: hits + mitigated > 0 ? (mitigated / (hits + mitigated)) * 100 : 0,
+      mitigated: sum((p) => p.blockedCount + p.evadedCount + p.dodgeCount + p.invulnedCount),
       downed: sum((p) => p.downCount),
-      deaths: sum((p) => p.deadCount),
+      barrier: sum((p) => p.damageBarrier) * dsRate,
     };
   });
 
@@ -327,6 +323,7 @@
     name: string;
     account: string;
     profession: string;
+    value: number;
     shown: string;
     pct: number;          // 0..100 of the column max — drives the mini-bar height
   }
@@ -338,12 +335,14 @@
     quote: string;
     score: string;
     scoreLabel: string;
+    scoreTip?: string;
     rows: AxStatRow[];
   }
   interface AxRunnerCfg {
     player: { name: string; account: string; profession: string };
     tier: string;
     score: string;
+    scoreTip?: string;
     rows: AxStatRow[];
   }
   interface AxPanel {
@@ -353,6 +352,7 @@
     total: string;
     hint: string;
     top: string;
+    hasData: boolean;
     rows: AxRow[];
   }
 
@@ -360,11 +360,12 @@
     players: T[],
     valueOf: (p: T) => number,
     format: (v: number) => string,
+    ascending = false,
   ): AxRow[] {
     const values = players.map(valueOf);
     const max = Math.max(1, ...values);
     return [...players]
-      .sort((a, b) => valueOf(b) - valueOf(a))
+      .sort((a, b) => (ascending ? valueOf(a) - valueOf(b) : valueOf(b) - valueOf(a)))
       .map((p) => {
         const value = valueOf(p);
         return {
@@ -372,8 +373,11 @@
           name: p.name,
           account: p.account,
           profession: p.profession,
+          value,
           shown: format(value),
-          pct: (value / max) * 100,
+          // The bar tracks standing, not the raw value, so rank 1 is always the
+          // tallest bar even when the best result is the smallest number.
+          pct: ascending ? (1 - value / max) * 100 : (value / max) * 100,
         };
       });
   }
@@ -389,7 +393,14 @@
   function axPanel(
     key: string, title: string, icon: string, hint: string, total: string, rows: AxRow[],
   ): AxPanel {
-    return { key, title, icon, hint, total, top: rows[0]?.name ?? "", rows };
+    return {
+      key, title, icon, hint, total,
+      top: rows[0]?.name ?? "",
+      // A metric nobody produced (stun breaks in PvE, interrupts) is hidden
+      // rather than shown as an all-zero panel.
+      hasData: rows.some((r) => r.value > 0),
+      rows,
+    };
   }
 
   function axMitigated(p: DefensePlayerStat): number {
@@ -402,8 +413,40 @@
     return hits + mit > 0 ? (mit / (hits + mit)) * 100 : 0;
   }
 
+  // ── Defense score ──
+  // Mitigation rate is the skill component; downs and deaths are measured against
+  // the squad worst, so a clean run for everyone doesn't distort the ranking.
+  // Players who were barely targeted don't qualify for the hero cards.
+  const DEFENSE_PARTICIPATION_FLOOR = 10; // damage-taken events
+
+  const DEFENSE_SCORE_TIP =
+    "Defensive score = 60% mitigation rate (blocked + evaded + dodged + invulned, as a share of hits " +
+    "taken, measured against the squad's best mitigator) + 25% for fewer downs + 15% for fewer " +
+    "deaths (measured against the squad worst). Needs 10+ hits taken to qualify.";
+
+  let defenseScore = $derived.by(() => {
+    const maxRate = Math.max(0, ...defensePlayers.map((p) => axMitigationPct(p) / 100));
+    const maxDowns = Math.max(1, ...defensePlayers.map((p) => p.downCount));
+    const maxDeaths = Math.max(1, ...defensePlayers.map((p) => p.deadCount));
+    return new Map(defensePlayers.map((p) => {
+      const hits = p.damageTakenCount;
+      // Every component is normalised to a 0..1 scale, so the weights mean what
+      // they say: PvE mitigation rates sit at 5-20%, and an unnormalised 60% of
+      // that would be worth ~10 points while a clean run was worth 40.
+      const rate = maxRate > 0 ? (axMitigationPct(p) / 100) / maxRate : 0;
+      const score = 100 * (0.6 * rate + 0.25 * (1 - p.downCount / maxDowns) + 0.15 * (1 - p.deadCount / maxDeaths));
+      return [p.name, { score: Math.round(score), eligible: hits >= DEFENSE_PARTICIPATION_FLOOR }] as const;
+    }));
+  });
+
   // ── Defense: hero ranking + metric panels ──
-  let defenseTop = $derived(axTop(defensePlayers, (p) => p.damageTaken));
+  let defenseTop = $derived.by(() => {
+    const rank = (p: DefensePlayerStat) => defenseScore.get(p.name)?.score ?? 0;
+    const byScore = [...defensePlayers].sort((a, b) => rank(b) - rank(a));
+    const eligible = byScore.filter((p) => defenseScore.get(p.name)?.eligible);
+    const pool = eligible.length >= Math.min(3, defensePlayers.length) ? eligible : byScore;
+    return pool.slice(0, 3);
+  });
 
   let defenseHero = $derived.by<AxHeroCfg | null>(() => {
     const p = defenseTop[0];
@@ -413,9 +456,10 @@
       tier: "gold",
       label: "Defensive MVP",
       icon: "fa-shield-halved",
-      quote: "Damage Soak",
-      score: `${fmtPct(axMitigationPct(p))}%`,
-      scoreLabel: "mitigated",
+      quote: "Defensive Play",
+      score: String(defenseScore.get(p.name)?.score ?? 0),
+      scoreLabel: "defensive score",
+      scoreTip: DEFENSE_SCORE_TIP,
       rows: [
         { label: "Damage taken", value: fmt(p.damageTaken * dsRate) },
         { label: "Hits mitigated", value: String(axMitigated(p)) },
@@ -431,7 +475,8 @@
       return [{
         player: p,
         tier,
-        score: `${fmtPct(axMitigationPct(p))}%`,
+        score: String(defenseScore.get(p.name)?.score ?? 0),
+        scoreTip: DEFENSE_SCORE_TIP,
         rows: [
           { label: "Damage taken", value: fmt(p.damageTaken * dsRate) },
           { label: "Mitigated", value: `${fmtPct(axMitigationPct(p))}%` },
@@ -442,15 +487,16 @@
   );
 
   let defensePanels = $derived<AxPanel[]>([
-    axPanel("taken", "Damage Taken", "fa-solid fa-heart-crack", "total damage absorbed",
-      fmt(defenseSummary.taken), axRows(defensePlayers, (p) => p.damageTaken, (v) => fmt(v * dsRate))),
+    axPanel("taken", "Damage Taken", "fa-solid fa-heart-crack", "least taken first",
+      fmt(defenseSummary.taken),
+      axRows(defensePlayers, (p) => p.damageTaken, (v) => fmt(v * dsRate), true)),
     axPanel("mitigated", "Hits Mitigated", "fa-solid fa-shield-halved", "hits that never landed",
       String(defenseSummary.mitigated), axRows(defensePlayers, axMitigated, (v) => fmt(v))),
-    axPanel("downed", "Downed", "fa-solid fa-person-falling", "times downed, not dead",
-      String(defenseSummary.downed), axRows(defensePlayers, (p) => p.downCount, (v) => fmt(v))),
-    axPanel("deaths", "Deaths", "fa-solid fa-skull", "times died",
-      String(defenseSummary.deaths), axRows(defensePlayers, (p) => p.deadCount, (v) => fmt(v))),
-  ]);
+    axPanel("downed", "Downed", "fa-solid fa-person-falling", "fewest first",
+      String(defenseSummary.downed), axRows(defensePlayers, (p) => p.downCount, (v) => fmt(v), true)),
+    axPanel("barrier", "Barrier", "fa-solid fa-shield", "damage absorbed by barrier",
+      fmt(defenseSummary.barrier), axRows(defensePlayers, (p) => p.damageBarrier, (v) => fmt(v * dsRate))),
+  ].filter((p) => p.hasData));
 
   // ── Support tab ──
   let supportPlayers = $derived<SupportPlayerStat[]>(
@@ -465,11 +511,42 @@
       strips: sum((p) => p.boonStrips),
       revives: sum((p) => p.resurrects),
       stunBreaks: sum((p) => p.stunBreak),
-      stunSeconds: sum((p) => p.removedStunDuration),
+      ccSeconds: sum((p) => p.appliedCrowdControlDuration) / 1000,
     };
   });
 
-  let supportTop = $derived(axTop(supportPlayers, (p) => p.condiCleanse));
+  // ── Support score ──
+  // Same shape as the defensive score: every component is normalised to the
+  // squad's best, so the weights mean what they say. A component nobody
+  // produced (CC on a breakbar-free fight) scores 0 for everyone.
+  const SUPPORT_SCORE_TIP =
+    "Support score = 40% cleanses on allies + 30% crowd control time + 20% revives + 10% boon " +
+    "strips, each measured against the squad's best.";
+
+  let supportScore = $derived.by(() => {
+    const maxOf = (f: (p: SupportPlayerStat) => number) => Math.max(0, ...supportPlayers.map(f));
+    const maxCleanses = maxOf((p) => p.condiCleanse);
+    const maxCC = maxOf((p) => p.appliedCrowdControlDuration);
+    const maxRevives = maxOf((p) => p.resurrects);
+    const maxStrips = maxOf((p) => p.boonStrips);
+    const rel = (v: number, max: number) => (max > 0 ? v / max : 0);
+    return new Map(supportPlayers.map((p) => [
+      p.name,
+      Math.round(100 * (
+        0.40 * rel(p.condiCleanse, maxCleanses) +
+        0.30 * rel(p.appliedCrowdControlDuration, maxCC) +
+        0.20 * rel(p.resurrects, maxRevives) +
+        0.10 * rel(p.boonStrips, maxStrips)
+      )),
+    ] as const));
+  });
+
+  let supportRanked = $derived.by(() =>
+    [...supportPlayers]
+      .sort((a, b) => (supportScore.get(b.name) ?? 0) - (supportScore.get(a.name) ?? 0)),
+  );
+
+  let supportTop = $derived(supportRanked.slice(0, 3));
 
   let supportHero = $derived.by<AxHeroCfg | null>(() => {
     const p = supportTop[0];
@@ -480,12 +557,13 @@
       label: "Support MVP",
       icon: "fa-hand-holding-heart",
       quote: "Condition Control",
-      score: String(p.condiCleanse),
-      scoreLabel: "cleanses on allies",
+      score: String(supportScore.get(p.name) ?? 0),
+      scoreLabel: "support score",
+      scoreTip: SUPPORT_SCORE_TIP,
       rows: [
-        { label: "Boon strips", value: String(p.boonStrips) },
+        { label: "Cleanses", value: String(p.condiCleanse) },
+        { label: "CC applied", value: `${fmt(p.appliedCrowdControlDuration / 1000)}s` },
         { label: "Revives", value: String(p.resurrects) },
-        { label: "Stun breaks", value: String(p.stunBreak) },
       ],
     };
   });
@@ -497,9 +575,10 @@
       return [{
         player: p,
         tier,
-        score: String(p.condiCleanse),
+        score: String(supportScore.get(p.name) ?? 0),
+        scoreTip: SUPPORT_SCORE_TIP,
         rows: [
-          { label: "Boon strips", value: String(p.boonStrips) },
+          { label: "Cleanses", value: String(p.condiCleanse) },
           { label: "Revives", value: String(p.resurrects) },
         ],
       }];
@@ -509,13 +588,16 @@
   let supportPanels = $derived<AxPanel[]>([
     axPanel("cleanses", "Cleanses", "fa-solid fa-droplet", "conditions removed from allies",
       String(supportSummary.cleanses), axRows(supportPlayers, (p) => p.condiCleanse, (v) => fmt(v))),
+    axPanel("cc", "CC Applied", "fa-solid fa-hand", "total time enemies were controlled",
+      `${fmt(supportSummary.ccSeconds)}s`,
+      axRows(supportPlayers, (p) => p.appliedCrowdControlDuration, (v) => `${fmt(v / 1000)}s`)),
     axPanel("strips", "Boon Strips", "fa-solid fa-bolt", "enemy boons removed",
       String(supportSummary.strips), axRows(supportPlayers, (p) => p.boonStrips, (v) => fmt(v))),
     axPanel("revives", "Revives", "fa-solid fa-heart-pulse", "players resurrected",
       String(supportSummary.revives), axRows(supportPlayers, (p) => p.resurrects, (v) => fmt(v))),
     axPanel("stuns", "Stun Breaks", "fa-solid fa-hand-fist", "stuns removed",
       String(supportSummary.stunBreaks), axRows(supportPlayers, (p) => p.stunBreak, (v) => fmt(v))),
-  ]);
+  ].filter((p) => p.hasData));
 
   // Boons each player generated for the group (EI reports generation as an
   // uptime percentage per boon, so the total is a sum of uptime points).
@@ -1135,7 +1217,7 @@
                 <span class="ax-hero-name" title={cfg.player.account}>{cfg.player.name}</span>
                 <span class="ax-hero-prof">{cfg.player.profession}</span>
               </div>
-              <div class="ax-hero-score">
+              <div class="ax-hero-score" title={cfg.scoreTip}>
                 <b>{cfg.score}</b>
                 <span>{cfg.scoreLabel}</span>
               </div>
@@ -1151,7 +1233,7 @@
           <div class="ax-runner-card {cfg.tier}">
             <div class="ax-runner-top">
               <span class="ax-runner-tier {cfg.tier}">{cfg.tier}</span>
-              <b>{cfg.score}</b>
+              <b title={cfg.scoreTip}>{cfg.score}</b>
             </div>
             <div class="ax-runner-name" title={cfg.player.account}>
               <span class="ax-runner-crown {cfg.tier}"><i class="fa-solid fa-crown"></i></span>{cfg.player.name}
@@ -1555,25 +1637,26 @@
                 <table class="ax-table">
                   <thead>
                     <tr>
-                      <th>#</th><th>Player</th><th>Cleanses</th><th>Self</th>
-                      <th>Strips</th><th>Revives</th><th>Stun breaks</th><th>Stun time</th>
+                      <th>#</th><th>Player</th><th>Score</th><th>Cleanses</th><th>CC</th>
+                      <th>Self</th><th>Strips</th><th>Revives</th><th>Stun breaks</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {#each supportPlayers as p}
+                    {#each supportRanked as p}
                       <tr>
-                        <td class="ax-table-rank">{competitionRank(supportPlayers.map((x) => x.condiCleanse), p.condiCleanse)}</td>
+                        <td class="ax-table-rank">{competitionRank(supportPlayers.map((x) => supportScore.get(x.name) ?? 0), supportScore.get(p.name) ?? 0)}</td>
                         <td class="ax-table-name">
                           <img class="ax-row-icon" src={profIcon(p.profession)} alt={p.profession}
                                onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
                           <span>{p.name}</span>
                         </td>
+                        <td class="ax-table-score">{supportScore.get(p.name) ?? 0}</td>
                         <td>{fmt(p.condiCleanse)}</td>
+                        <td>{fmt(p.appliedCrowdControl)}</td>
                         <td>{fmt(p.condiCleanseSelf)}</td>
                         <td>{fmt(p.boonStrips)}</td>
                         <td>{fmt(p.resurrects)}</td>
                         <td>{fmt(p.stunBreak)}</td>
-                        <td>{fmtTime(p.removedStunDuration)}</td>
                       </tr>
                     {/each}
                   </tbody>
@@ -2210,7 +2293,11 @@
   .ax-runner-row b { color: var(--text); font-variant-numeric: tabular-nums; }
 
   /* ── Metric panels ── */
-  .ax-panels { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  .ax-panels {
+    display: grid; gap: 10px;
+    /* auto-fit collapses the tracks of hidden panels so the survivors stretch. */
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  }
   .ax-panel {
     background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius);
     padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; min-width: 0;
@@ -2319,6 +2406,7 @@
   .ax-table th:nth-child(2) { text-align: left; }
   .ax-table td { padding: 5px 6px; border-top: 1px solid var(--border); text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
   .ax-table-rank { color: var(--text-muted) !important; }
+  .ax-table-score { color: var(--accent) !important; font-weight: 700; }
   .ax-table-name { display: flex; align-items: center; gap: 6px; text-align: left !important; }
   .ax-table .ax-row-icon { width: 16px; height: 16px; }
   .sg-chip {

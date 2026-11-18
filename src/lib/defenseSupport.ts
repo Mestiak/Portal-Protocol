@@ -70,6 +70,9 @@ export interface SupportPlayerStat {
   removedStunDuration: number;
   stunBreakSelf: number;
   removedStunSelfDuration: number;
+  // Crowd control this player applied to enemies (ms of control)
+  appliedCrowdControl: number;
+  appliedCrowdControlDuration: number;
   // Boons this player generated for the group
   groupBoons: { id: number; name: string; generation: number; presence: number; overstack: number }[];
 }
@@ -151,6 +154,7 @@ export function extractDefenseSupport(raw: any): DefenseSupportStats | null {
       });
 
       const s = Array.isArray(p?.support) ? (p.support[phase] ?? {}) : {};
+      const st = Array.isArray(p?.statsAll) ? (p.statsAll[phase] ?? {}) : {};
       // `groupBuffsActive` is one entry per buff; `id` sits on the buff and
       // `buffData` holds one cell per phase.
       const groupBuffsList: any[] = Array.isArray(p?.groupBuffsActive) ? p.groupBuffsActive : [];
@@ -185,6 +189,8 @@ export function extractDefenseSupport(raw: any): DefenseSupportStats | null {
         removedStunDuration: num(s.removedStunDuration),
         stunBreakSelf: num(s.stunBreakSelf),
         removedStunSelfDuration: num(s.removedStunSelfDuration),
+        appliedCrowdControl: num(st.appliedCrowdControl),
+        appliedCrowdControlDuration: num(st.appliedCrowdControlDuration),
         groupBoons,
       });
     }
