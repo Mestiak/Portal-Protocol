@@ -6,7 +6,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { extractMechanics, type MechanicReport } from "#lib/mechanicParser";
   import { extractPhaseStats, type PhaseStat } from "#lib/phaseStats";
-  import { extractDefenseSupport, type DefenseSupportStats, type DefensePlayerStat, type SupportPlayerStat } from "#lib/defenseSupport";
+  import { extractDefenseSupport, type DefenseSupportStats, type DefensePlayerStat, type SupportPlayerStat, type RecapSource } from "#lib/defenseSupport";
   import { fmt, fmtPct, fmtTime } from "#lib/format";
   import { slide } from "svelte/transition";
   import { cubicInOut } from "svelte/easing";
@@ -352,6 +352,13 @@
     scoreTip?: string;
     rows: AxStatRow[];
   }
+  /** One entry in the downs/deaths feed. */
+  interface AxFeedRow {
+    time: number;
+    player: DefensePlayerStat;
+    sources: RecapSource[];
+  }
+
   interface AxPanel {
     key: string;
     title: string;
@@ -505,10 +512,19 @@
       fmt(defenseSummary.barrier), axRows(defensePlayers, (p) => p.damageBarrier, (v) => fmt(v * dsRate))),
   ].filter((p) => p.hasData));
 
-  // Every death in the phase, in order, with the sources that led to it.
-  let defenseDeaths = $derived.by(() =>
+  // Every death in the log, in order, with the sources that led to it.
+  let defenseDeaths = $derived.by<AxFeedRow[]>(() =>
     defensePlayers
-      .flatMap((p) => p.deathRecap.map((d) => ({ player: p, time: d.deathTime / 1000, toKill: d.toKill })))
+      .flatMap((p) => p.deathRecap.map((d) => ({ player: p, time: d.deathTime / 1000, sources: d.toKill })))
+      .filter((d) => d.time > 0)
+      .sort((a, b) => a.time - b.time),
+  );
+
+  // Every down that went on to kill the player, in order, with its sources.
+  // EI only records a down when it led to a death, so this is a subset of downs.
+  let defenseDowns = $derived.by<AxFeedRow[]>(() =>
+    defensePlayers
+      .flatMap((p) => p.deathRecap.map((d) => ({ player: p, time: d.downTime / 1000, sources: d.toDown })))
       .filter((d) => d.time > 0)
       .sort((a, b) => a.time - b.time),
   );
@@ -1270,6 +1286,31 @@
           </div>
         {/snippet}
 
+        {#snippet axFeed(title: string, hint: string, rows: AxFeedRow[], down: boolean)}
+          {#if rows.length > 0}
+            <div class="ds-block">
+              <div class="ds-block-title">{title} <span class="ds-block-hint">{hint}</span></div>
+              <div class="ax-death-feed">
+                {#each rows as r}
+                  <div class="ax-death-row">
+                    <span class="ax-death-time" class:ax-death-time-down={down}>{fmtTime(r.time)}</span>
+                    <img class="ax-row-icon" src={profIcon(r.player.profession)} alt={r.player.profession}
+                         onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                    <span class="ax-death-name" title={r.player.account}>{r.player.name}</span>
+                    <span class="ax-death-cause">
+                      {#each r.sources as k}
+                        <span title={k.src + (k.indirectDamage ? " (indirect)" : "")}>
+                          {axSkillName(k.id) || k.src}{k.damage > 0 ? ` · ${fmt(k.damage)}` : ""}
+                        </span>
+                      {/each}
+                    </span>
+                  </div>
+                {/each}
+              </div>
+            </div>
+          {/if}
+        {/snippet}
+
         {#snippet axPanel(panel: AxPanel)}
           <div class="ax-panel">
             <div class="ax-panel-head">
@@ -1563,28 +1604,8 @@
                 {/each}
               </div>
 
-              {#if defenseDeaths.length > 0}
-                <div class="ds-block">
-                  <div class="ds-block-title">Deaths <span class="ds-block-hint">{defenseDeaths.length} in this phase</span></div>
-                  <div class="ax-death-feed">
-                    {#each defenseDeaths as d}
-                      <div class="ax-death-row">
-                        <span class="ax-death-time">{fmtTime(d.time)}</span>
-                        <img class="ax-row-icon" src={profIcon(d.player.profession)} alt={d.player.profession}
-                             onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
-                        <span class="ax-death-name" title={d.player.account}>{d.player.name}</span>
-                        <span class="ax-death-cause">
-                          {#each d.toKill as k}
-                            <span title={k.src + (k.indirectDamage ? " (indirect)" : "")}>
-                              {axSkillName(k.id) || k.src}{k.damage > 0 ? ` · ${fmt(k.damage)}` : ""}
-                            </span>
-                          {/each}
-                        </span>
-                      </div>
-                    {/each}
-                  </div>
-                </div>
-              {/if}
+              {@render axFeed("Downs", `${defenseDowns.length} led to a death`, defenseDowns, true)}
+              {@render axFeed("Deaths", `${defenseDeaths.length} in this log`, defenseDeaths, false)}
 
               <div class="ds-block">
                 <div class="ds-block-title">Mitigation matrix <span class="ds-block-hint">click a row for the damage breakdown</span></div>
@@ -2435,6 +2456,7 @@
   }
   .ax-death-row:hover { background: color-mix(in srgb, #fff 6%, transparent); transform: translateX(2px); }
   .ax-death-time { font-size: 10px; font-weight: 700; color: var(--fail); font-variant-numeric: tabular-nums; }
+  .ax-death-time-down { color: var(--warn); }
   .ax-death-name { font-size: 11px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ax-death-cause {
     grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 3px 10px;
