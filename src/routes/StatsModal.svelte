@@ -540,6 +540,7 @@
       selfCleanses: sum((p) => p.condiCleanseSelf),
       strips: sum((p) => p.boonStrips),
       revives: sum((p) => p.resurrects),
+      resurrectSeconds: sum((p) => p.resurrectTime),
       stunBreaks: sum((p) => p.stunBreak),
       breakbar: sum((p) => p.breakbarDamage),
     };
@@ -593,7 +594,7 @@
       rows: [
         { label: "Cleanses", value: String(p.condiCleanse) },
         { label: "Breakbar damage", value: fmt(p.breakbarDamage) },
-        { label: "Revives", value: String(p.resurrects) },
+        { label: "Revives", value: `${p.resurrects} · ${p.resurrectTime.toFixed(1)}s` },
       ],
     };
   });
@@ -609,7 +610,7 @@
         scoreTip: SUPPORT_SCORE_TIP,
         rows: [
           { label: "Cleanses", value: String(p.condiCleanse) },
-          { label: "Revives", value: String(p.resurrects) },
+          { label: "Revives", value: `${p.resurrects} · ${p.resurrectTime.toFixed(1)}s` },
         ],
       }];
     }),
@@ -623,8 +624,10 @@
       axRows(supportPlayers, (p) => p.breakbarDamage, (v) => fmt(v))),
     axPanel("strips", "Boon Strips", "fa-solid fa-bolt", "enemy boons removed",
       String(supportSummary.strips), axRows(supportPlayers, (p) => p.boonStrips, (v) => fmt(v))),
-    axPanel("revives", "Revives", "fa-solid fa-heart-pulse", "players resurrected",
-      String(supportSummary.revives), axRows(supportPlayers, (p) => p.resurrects, (v) => fmt(v))),
+    axPanel("revives", "Revives", "fa-solid fa-heart-pulse", "players resurrected · time spent",
+      `${fmt(supportSummary.revives)} · ${supportSummary.resurrectSeconds.toFixed(1)}s`,
+      axRows(supportPlayers, (p) => p.resurrects,
+        (v, p) => `${fmt(v)} · ${p.resurrectTime.toFixed(1)}s`)),
     axPanel("stuns", "Stun Breaks", "fa-solid fa-hand-fist", "stuns removed",
       String(supportSummary.stunBreaks), axRows(supportPlayers, (p) => p.stunBreak, (v) => fmt(v))),
   ].filter((p) => p.hasData));
