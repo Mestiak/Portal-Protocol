@@ -3262,9 +3262,6 @@
   // ─── Auto-updater ────────────────────────────────────────────────────────
   let updateAvailable = $state<Update | null>(null);
   let updateChecking = $state(false);
-  // Version we've already nudged the user about, so the hourly poll toasts only
-  // once per new release (the persistent banner keeps showing it after that).
-  let lastNotifiedVersion = $state<string | null>(null);
   // Full-screen modal takeover so a download/install is never "invisible".
   let updateModalOpen = $state(false);
   let updatePhase = $state<"downloading" | "ready" | "installing" | "restarting">("downloading");
@@ -3286,13 +3283,9 @@
     try {
       const u = await check();
       if (u) {
+        // The persistent banner communicates the update; a toast would only
+        // duplicate it (and, being the default style, show up red).
         updateAvailable = u;
-        // Only toast on first sighting of a given version (e.g. the hourly poll).
-        // Subsequent polls keep the banner but stay quiet to avoid nagging.
-        if (u.version !== lastNotifiedVersion) {
-          lastNotifiedVersion = u.version;
-          showToast(`Update ${u.version} ready — restart to apply`);
-        }
       } else if (!silent) {
         showToast("You're on the latest version");
       }
@@ -4445,11 +4438,10 @@
       checkDpsReportStatus();
       checkBackupDpsStatus();
       checkWingmanStatus();
-      checkForUpdate(true); // silent: only toasts if an update is found
+      checkForUpdate(true); // silent: only raises the banner if an update is found
 
-      // Hourly poll so a freshly-shipped GitHub update surfaces a toast without the
-      // user relaunching. De-duped inside checkForUpdate via lastNotifiedVersion;
-      // skipped while the install modal is open so we don't nag mid-update.
+      // Hourly poll so a freshly-shipped GitHub update surfaces the banner
+      // without the user relaunching; skipped while the install modal is open.
       updatePollInterval = setInterval(() => {
         if (!updateModalOpen && !updateChecking) checkForUpdate(true);
       }, 60 * 60 * 1000);
