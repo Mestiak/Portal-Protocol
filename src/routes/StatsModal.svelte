@@ -366,7 +366,7 @@
   function axRows<T extends { name: string; account: string; profession: string }>(
     players: T[],
     valueOf: (p: T) => number,
-    format: (v: number) => string,
+    format: (v: number, p: T) => string,
     ascending = false,
   ): AxRow[] {
     const values = players.map(valueOf);
@@ -381,7 +381,7 @@
           account: p.account,
           profession: p.profession,
           value,
-          shown: format(value),
+          shown: format(value, p),
           // The bar tracks standing, not the raw value, so rank 1 is always the
           // tallest bar even when the best result is the smallest number.
           pct: ascending ? (1 - value / max) * 100 : (value / max) * 100,
@@ -541,6 +541,7 @@
       strips: sum((p) => p.boonStrips),
       revives: sum((p) => p.resurrects),
       stunBreaks: sum((p) => p.stunBreak),
+      cc: sum((p) => p.appliedCrowdControl),
       ccSeconds: sum((p) => p.appliedCrowdControlDuration) / 1000,
     };
   });
@@ -592,7 +593,7 @@
       scoreTip: SUPPORT_SCORE_TIP,
       rows: [
         { label: "Cleanses", value: String(p.condiCleanse) },
-        { label: "CC applied", value: `${fmt(p.appliedCrowdControlDuration / 1000)}s` },
+        { label: "CC applied", value: `${fmt(p.appliedCrowdControl)} · ${fmt(p.appliedCrowdControlDuration / 1000)}s` },
         { label: "Revives", value: String(p.resurrects) },
       ],
     };
@@ -618,9 +619,10 @@
   let supportPanels = $derived<AxPanel[]>([
     axPanel("cleanses", "Cleanses", "fa-solid fa-droplet", "conditions removed from allies",
       String(supportSummary.cleanses), axRows(supportPlayers, (p) => p.condiCleanse, (v) => fmt(v))),
-    axPanel("cc", "CC Applied", "fa-solid fa-hand", "total time enemies were controlled",
-      `${fmt(supportSummary.ccSeconds)}s`,
-      axRows(supportPlayers, (p) => p.appliedCrowdControlDuration, (v) => `${fmt(v / 1000)}s`)),
+    axPanel("cc", "CC Applied", "fa-solid fa-hand", "CC events · seconds of control",
+      `${fmt(supportSummary.cc)} · ${fmt(supportSummary.ccSeconds)}s`,
+      axRows(supportPlayers, (p) => p.appliedCrowdControlDuration,
+        (v, p) => `${fmt(p.appliedCrowdControl)} · ${fmt(v / 1000)}s`)),
     axPanel("strips", "Boon Strips", "fa-solid fa-bolt", "enemy boons removed",
       String(supportSummary.strips), axRows(supportPlayers, (p) => p.boonStrips, (v) => fmt(v))),
     axPanel("revives", "Revives", "fa-solid fa-heart-pulse", "players resurrected",
