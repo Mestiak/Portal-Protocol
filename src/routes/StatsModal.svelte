@@ -97,6 +97,9 @@
   let defenseSupport = $state<DefenseSupportStats | null>(null);
   // EI's skillMap ("s<id>" -> name) so death recaps can name the killing skill.
   let skillNames = $state<Record<string, { name?: string; icon?: string }>>({});
+  // EI keys condition damage in a death recap by the BUFF id, not the skill id,
+  // so a Burning/Poison tick has no skillMap entry. Resolved as a fallback.
+  let buffNames = $state<Record<string, { name?: string }>>({});
   let showPer10Min = $state(false);       // scale damage numbers to a per-10-minute rate
   let defenseOpen = $state<string | null>(null); // player row expanded in the matrix
   let openOrbPhase = $state<string | null>(null); // Orbs tab: expanded per-phase leaderboard
@@ -573,7 +576,13 @@
   });
 
   function axSkillName(id: number): string {
-    return (id > 0 && skillNames["s" + id]?.name) || "";
+    if (id <= 0) return "";
+    return skillNames["s" + id]?.name || buffNames["b" + id]?.name || "";
+  }
+
+  /** Condition (DoT) damage arrives flagged indirect and keyed by buff id. */
+  function axIsCondition(k: RecapSource): boolean {
+    return k.indirectDamage && !skillNames["s" + k.id];
   }
 
   // ── Support tab ──
@@ -716,6 +725,7 @@
       phaseStats = extractPhaseStats(res.raw, PHASE_BOON_META);
       defenseSupport = extractDefenseSupport(res.raw);
       skillNames = ((res.raw as any)?.skillMap as Record<string, { name?: string; icon?: string }>) || {};
+      buffNames = ((res.raw as any)?.buffMap as Record<string, { name?: string }>) || {};
       const mech = extractMechanics(res.raw, res.stats.boss_name);
       mechanics = mech;
       statsCache.set(localPath, { version: STATS_CACHE_VERSION, stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport });
@@ -1053,6 +1063,7 @@
         phaseStats = extractPhaseStats(res.raw, PHASE_BOON_META);
         defenseSupport = extractDefenseSupport(res.raw);
         skillNames = ((res.raw as any)?.skillMap as Record<string, { name?: string; icon?: string }>) || {};
+        buffNames = ((res.raw as any)?.buffMap as Record<string, { name?: string }>) || {};
         let mech = extractMechanics(res.raw, res.stats.boss_name);
         // If a local EVTC fallback is available, use it to fill in Revealed
         // source attribution that dps.report does not expose (skill/clone/
@@ -1342,7 +1353,8 @@
                     <span class="ax-death-name" title={r.player.account}>{r.player.name}</span>
                     <span class="ax-death-cause">
                       {#each r.sources as k}
-                        <span title={k.src + (k.indirectDamage ? " (indirect)" : "")}>
+                        <span title={k.src + (axIsCondition(k) ? " (condition damage)" : "")}
+                              class:ax-death-cond={axIsCondition(k)}>
                           {axSkillName(k.id) || k.src}{k.damage > 0 ? ` · ${fmt(k.damage)}` : ""}
                         </span>
                       {/each}
@@ -2541,6 +2553,7 @@
     font-size: 10px; color: var(--text-muted);
   }
   .ax-death-cause span { color: var(--text); font-variant-numeric: tabular-nums; }
+  .ax-death-cond { color: var(--warn); }
 
   /* ── Support: boons generated + detail table ── */
   .ax-boon-rows { display: flex; flex-direction: column; gap: 4px; }
