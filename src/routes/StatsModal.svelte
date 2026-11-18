@@ -6,7 +6,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { extractMechanics, type MechanicReport } from "#lib/mechanicParser";
   import { extractPhaseStats, type PhaseStat } from "#lib/phaseStats";
-  import { extractDefenseSupport, type DefenseSupportStats, type DefensePlayerStat } from "#lib/defenseSupport";
+  import { extractDefenseSupport, type DefenseSupportStats, type DefensePlayerStat, type SupportPlayerStat } from "#lib/defenseSupport";
   import { fmt, fmtPct, fmtTime } from "#lib/format";
   import { slide } from "svelte/transition";
   import { cubicInOut } from "svelte/easing";
@@ -283,13 +283,8 @@
     };
   });
 
-  // Damage-taken bars, sorted desc, with the track scaled to the squad max.
-  let defenseBars = $derived.by(() => {
-    const max = Math.max(1, ...defensePlayers.map((p) => p.damageTaken));
-    return [...defensePlayers]
-      .sort((a, b) => b.damageTaken - a.damageTaken)
-      .map((p) => ({ player: p, scaled: (p.damageTaken / max) * 100, shown: p.damageTaken * dsRate }));
-  });
+  // Damage-taken bars were replaced by the metric panels; ranking now lives in
+  // `defensePanels` / `axRows`.
 
   const DEFENSE_HEAT_COLS: { key: keyof DefensePlayerStat; label: string; tip: string }[] = [
     { key: "blockedCount", label: "Blocked", tip: "Hits negated by the Block modifier" },
@@ -319,6 +314,230 @@
       }));
   });
 
+
+  // ── Axibridge-style ranking helpers ──
+  // Competition ranking: equal values share a rank (1, 2, 2, 4).
+  function competitionRank(values: number[], value: number): number {
+    return 1 + values.filter((v) => v > value).length;
+  }
+
+  interface AxStatRow { label: string; value: string; }
+  interface AxRow {
+    rank: number;
+    name: string;
+    account: string;
+    profession: string;
+    shown: string;
+    pct: number;          // 0..100 of the column max — drives the mini-bar height
+  }
+  interface AxHeroCfg {
+    player: { name: string; account: string; profession: string };
+    tier: string;
+    label: string;
+    icon: string;
+    quote: string;
+    score: string;
+    scoreLabel: string;
+    rows: AxStatRow[];
+  }
+  interface AxRunnerCfg {
+    player: { name: string; account: string; profession: string };
+    tier: string;
+    score: string;
+    rows: AxStatRow[];
+  }
+  interface AxPanel {
+    key: string;
+    title: string;
+    icon: string;
+    total: string;
+    hint: string;
+    top: string;
+    rows: AxRow[];
+  }
+
+  function axRows<T extends { name: string; account: string; profession: string }>(
+    players: T[],
+    valueOf: (p: T) => number,
+    format: (v: number) => string,
+  ): AxRow[] {
+    const values = players.map(valueOf);
+    const max = Math.max(1, ...values);
+    return [...players]
+      .sort((a, b) => valueOf(b) - valueOf(a))
+      .map((p) => {
+        const value = valueOf(p);
+        return {
+          rank: competitionRank(values, value),
+          name: p.name,
+          account: p.account,
+          profession: p.profession,
+          shown: format(value),
+          pct: (value / max) * 100,
+        };
+      });
+  }
+
+  // Top N by a metric — drives the MVP / silver / bronze hero cards.
+  function axTop<T extends { name: string; account: string; profession: string }>(
+    players: T[],
+    valueOf: (p: T) => number,
+  ): T[] {
+    return [...players].sort((a, b) => valueOf(b) - valueOf(a)).slice(0, 3);
+  }
+
+  function axPanel(
+    key: string, title: string, icon: string, hint: string, total: string, rows: AxRow[],
+  ): AxPanel {
+    return { key, title, icon, hint, total, top: rows[0]?.name ?? "", rows };
+  }
+
+  function axMitigated(p: DefensePlayerStat): number {
+    return p.blockedCount + p.evadedCount + p.dodgeCount + p.invulnedCount;
+  }
+
+  function axMitigationPct(p: DefensePlayerStat): number {
+    const hits = p.damageTakenCount;
+    const mit = axMitigated(p);
+    return hits + mit > 0 ? (mit / (hits + mit)) * 100 : 0;
+  }
+
+  // ── Defense: hero ranking + metric panels ──
+  let defenseTop = $derived(axTop(defensePlayers, (p) => p.damageTaken));
+
+  let defenseHero = $derived.by<AxHeroCfg | null>(() => {
+    const p = defenseTop[0];
+    if (!p) return null;
+    return {
+      player: p,
+      tier: "gold",
+      label: "Defensive MVP",
+      icon: "fa-shield-halved",
+      quote: "Damage Soak",
+      score: `${fmtPct(axMitigationPct(p))}%`,
+      scoreLabel: "mitigated",
+      rows: [
+        { label: "Damage taken", value: fmt(p.damageTaken * dsRate) },
+        { label: "Hits mitigated", value: String(axMitigated(p)) },
+        { label: "Downed / deaths", value: `${p.downCount} / ${p.deadCount}` },
+      ],
+    };
+  });
+
+  let defenseRunners = $derived.by<AxRunnerCfg[]>(() =>
+    ["silver", "bronze"].flatMap((tier, i): AxRunnerCfg[] => {
+      const p = defenseTop[i + 1];
+      if (!p) return [];
+      return [{
+        player: p,
+        tier,
+        score: `${fmtPct(axMitigationPct(p))}%`,
+        rows: [
+          { label: "Damage taken", value: fmt(p.damageTaken * dsRate) },
+          { label: "Mitigated", value: `${fmtPct(axMitigationPct(p))}%` },
+          { label: "Downed / deaths", value: `${p.downCount} / ${p.deadCount}` },
+        ],
+      }];
+    }),
+  );
+
+  let defensePanels = $derived<AxPanel[]>([
+    axPanel("taken", "Damage Taken", "fa-solid fa-heart-crack", "total damage absorbed",
+      fmt(defenseSummary.taken), axRows(defensePlayers, (p) => p.damageTaken, (v) => fmt(v * dsRate))),
+    axPanel("mitigated", "Hits Mitigated", "fa-solid fa-shield-halved", "hits that never landed",
+      String(defenseSummary.mitigated), axRows(defensePlayers, axMitigated, (v) => fmt(v))),
+    axPanel("downed", "Downed", "fa-solid fa-person-falling", "times downed, not dead",
+      String(defenseSummary.downed), axRows(defensePlayers, (p) => p.downCount, (v) => fmt(v))),
+    axPanel("deaths", "Deaths", "fa-solid fa-skull", "times died",
+      String(defenseSummary.deaths), axRows(defensePlayers, (p) => p.deadCount, (v) => fmt(v))),
+  ]);
+
+  // ── Support tab ──
+  let supportPlayers = $derived<SupportPlayerStat[]>(
+    defenseSupport ? (defenseSupport.support[selectedPhase] ?? []) : [],
+  );
+
+  let supportSummary = $derived.by(() => {
+    const sum = (f: (p: SupportPlayerStat) => number) => supportPlayers.reduce((a, p) => a + f(p), 0);
+    return {
+      cleanses: sum((p) => p.condiCleanse),
+      selfCleanses: sum((p) => p.condiCleanseSelf),
+      strips: sum((p) => p.boonStrips),
+      revives: sum((p) => p.resurrects),
+      stunBreaks: sum((p) => p.stunBreak),
+      stunSeconds: sum((p) => p.removedStunDuration),
+    };
+  });
+
+  let supportTop = $derived(axTop(supportPlayers, (p) => p.condiCleanse));
+
+  let supportHero = $derived.by<AxHeroCfg | null>(() => {
+    const p = supportTop[0];
+    if (!p) return null;
+    return {
+      player: p,
+      tier: "gold",
+      label: "Support MVP",
+      icon: "fa-hand-holding-heart",
+      quote: "Condition Control",
+      score: String(p.condiCleanse),
+      scoreLabel: "cleanses on allies",
+      rows: [
+        { label: "Boon strips", value: String(p.boonStrips) },
+        { label: "Revives", value: String(p.resurrects) },
+        { label: "Stun breaks", value: String(p.stunBreak) },
+      ],
+    };
+  });
+
+  let supportRunners = $derived.by<AxRunnerCfg[]>(() =>
+    ["silver", "bronze"].flatMap((tier, i): AxRunnerCfg[] => {
+      const p = supportTop[i + 1];
+      if (!p) return [];
+      return [{
+        player: p,
+        tier,
+        score: String(p.condiCleanse),
+        rows: [
+          { label: "Boon strips", value: String(p.boonStrips) },
+          { label: "Revives", value: String(p.resurrects) },
+        ],
+      }];
+    }),
+  );
+
+  let supportPanels = $derived<AxPanel[]>([
+    axPanel("cleanses", "Cleanses", "fa-solid fa-droplet", "conditions removed from allies",
+      String(supportSummary.cleanses), axRows(supportPlayers, (p) => p.condiCleanse, (v) => fmt(v))),
+    axPanel("strips", "Boon Strips", "fa-solid fa-bolt", "enemy boons removed",
+      String(supportSummary.strips), axRows(supportPlayers, (p) => p.boonStrips, (v) => fmt(v))),
+    axPanel("revives", "Revives", "fa-solid fa-heart-pulse", "players resurrected",
+      String(supportSummary.revives), axRows(supportPlayers, (p) => p.resurrects, (v) => fmt(v))),
+    axPanel("stuns", "Stun Breaks", "fa-solid fa-hand-fist", "stuns removed",
+      String(supportSummary.stunBreaks), axRows(supportPlayers, (p) => p.stunBreak, (v) => fmt(v))),
+  ]);
+
+  // Boons each player generated for the group (EI reports generation as an
+  // uptime percentage per boon, so the total is a sum of uptime points).
+  let supportBoons = $derived.by(() =>
+    [...supportPlayers]
+      .map((p) => {
+        const boons = [...p.groupBoons]
+          .filter((b) => b.generation > 0)
+          .sort((a, b) => b.generation - a.generation);
+        return {
+          player: p,
+          total: boons.reduce((a, b) => a + b.generation, 0),
+          boons: boons.slice(0, 4).map((b) => ({
+            id: b.id,
+            name: b.name || BOON_BY_ID.get(b.id)?.label || `Buff ${b.id}`,
+            generation: b.generation,
+          })),
+        };
+      })
+      .filter((r) => r.total > 0)
+      .sort((a, b) => b.total - a.total),
+  );
 
   // Non-EI fallback: parse the local file with the bundled Elite Insights, then
   // refetch directly (bypassing the compact stats cache) so phases appear.
@@ -903,6 +1122,71 @@
             </div>
           {/if}
         {/snippet}
+
+        <!-- ── Axibridge-style blocks: MVP hero, runner-up, metric panel ── -->
+        {#snippet axHero(cfg: AxHeroCfg)}
+          <div class="ax-hero-card">
+            <div class="ax-hero-pill {cfg.tier}">
+              <i class="fa-solid {cfg.icon}"></i> {cfg.label}
+            </div>
+            <div class="ax-hero-main">
+              <span class="ax-hero-crown"><i class="fa-solid fa-crown"></i></span>
+              <div class="ax-hero-id">
+                <span class="ax-hero-name" title={cfg.player.account}>{cfg.player.name}</span>
+                <span class="ax-hero-prof">{cfg.player.profession}</span>
+              </div>
+              <div class="ax-hero-score">
+                <b>{cfg.score}</b>
+                <span>{cfg.scoreLabel}</span>
+              </div>
+            </div>
+            <div class="ax-hero-quote">{cfg.quote}</div>
+            {#each cfg.rows as row}
+              <div class="ax-hero-row"><span>{row.label}</span><b>{row.value}</b></div>
+            {/each}
+          </div>
+        {/snippet}
+
+        {#snippet axRunner(cfg: AxRunnerCfg)}
+          <div class="ax-runner-card">
+            <div class="ax-runner-top">
+              <span class="ax-runner-tier {cfg.tier}">{cfg.tier}</span>
+              <b>{cfg.score}</b>
+            </div>
+            <div class="ax-runner-name" title={cfg.player.account}>{cfg.player.name}</div>
+            <div class="ax-runner-prof">{cfg.player.profession}</div>
+            {#each cfg.rows as row}
+              <div class="ax-runner-row"><span>{row.label}</span><b>{row.value}</b></div>
+            {/each}
+          </div>
+        {/snippet}
+
+        {#snippet axPanel(panel: AxPanel)}
+          <div class="ax-panel">
+            <div class="ax-panel-head">
+              <i class="{panel.icon}"></i>
+              <span class="ax-panel-title">{panel.title}</span>
+            </div>
+            <div class="ax-panel-total">{panel.total}</div>
+            {#if panel.top}
+              <div class="ax-panel-top" title={panel.top}>{panel.top}</div>
+            {/if}
+            <div class="ax-panel-hint">{panel.hint}</div>
+            <div class="ax-panel-rows">
+              {#each panel.rows as row}
+                <div class="ax-row">
+                  <span class="ax-row-rank">{row.rank}</span>
+                  <img class="ax-row-icon" src={profIcon(row.profession)} alt={row.profession}
+                       onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                  <span class="ax-row-name" title={row.account}>{row.name}</span>
+                  <span class="ax-row-val">{row.shown}</span>
+                  <span class="ax-row-bar"><i style="height:{row.pct}%"></i></span>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/snippet}
+
         <div class="stats-content">
           {#if activeTab === "statistics"}
             <!-- STATISTICS -->
@@ -1155,42 +1439,18 @@
             {#if defensePlayers.length === 0}
               <div class="stat-note">No defensive data for this log.</div>
             {:else}
-              <div class="ds-hero">
-                <div class="ds-hero-main">
-                  <span class="ds-hero-val">{fmt(defenseSummary.taken)}</span>
-                  <span class="ds-hero-label">Squad Damage Taken</span>
-                  <span class="ds-hero-sub">{defenseSummary.hits} hits taken · {defenseSummary.mitigated} mitigated</span>
-                </div>
-                <div class="ds-hero-chips">
-                  <div class="ds-hero-chip"><b>{defenseSummary.downed}</b><span>Downed</span></div>
-                  <div class="ds-hero-chip"><b>{defenseSummary.deaths}</b><span>Deaths</span></div>
-                </div>
-                <div class="ds-hero-ring">
-                  <svg viewBox="0 0 80 80" class="ds-ring" aria-hidden="true">
-                    <circle class="ds-ring-track" cx="40" cy="40" r="34" />
-                    <circle class="ds-ring-val" cx="40" cy="40" r="34"
-                            style="stroke-dashoffset: {213.63 * (1 - defenseSummary.mitigationPct / 100)}" />
-                  </svg>
-                  <div class="ds-ring-text"><b>{fmtPct(defenseSummary.mitigationPct)}%</b><span>mitigated</span></div>
-                </div>
+              <div class="ax-heroes">
+                {#if defenseHero}
+                  {@render axHero(defenseHero)}
+                {/if}
+                {#each defenseRunners as cfg}
+                  {@render axRunner(cfg)}
+                {/each}
               </div>
 
-              <div class="ds-block">
-                <div class="ds-block-title">Damage taken by player</div>
-                <div class="ds-legend">
-                  <span><i class="ds-dot ds-dot-power"></i>Power</span>
-                  <span><i class="ds-dot ds-dot-condi"></i>Condition</span>
-                  <span class="ds-legend-muted">▢ after the value = barrier soak</span>
-                </div>
-                {#each defenseBars as b}
-                  <div class="ds-bar-row">
-                    <span class="ds-bar-name" title={b.player.account}>{b.player.name}</span>
-                    <div class="ds-bar-track">
-                      <div class="ds-seg ds-seg-power" style="width:{(b.player.powerDamageTaken / b.player.damageTaken * 100) || 0}%"></div>
-                      <div class="ds-seg ds-seg-condi" style="width:{(b.player.conditionDamageTaken / b.player.damageTaken * 100) || 0}%"></div>
-                    </div>
-                    <span class="ds-bar-val">{fmt(b.shown)} <i class="ds-bar-barrier" title="Barrier soak">{fmt(b.player.damageBarrier * dsRate)}</i></span>
-                  </div>
+              <div class="ax-panels">
+                {#each defensePanels as panel}
+                  {@render axPanel(panel)}
                 {/each}
               </div>
 
@@ -1243,6 +1503,82 @@
                   </tbody>
                 </table>
               </div>
+            {/if}
+          {:else if activeTab === "support"}
+            <!-- SUPPORT -->
+            {@render phaseBar()}
+            <div class="ds-toolbar">
+              <span class="stats-hint">Cleanses, boon strips, revives and stun breaks from Elite Insights</span>
+            </div>
+            {#if supportPlayers.length === 0}
+              <div class="stat-note">No support data for this log.</div>
+            {:else}
+              <div class="ax-heroes">
+                {#if supportHero}
+                  {@render axHero(supportHero)}
+                {/if}
+                {#each supportRunners as cfg}
+                  {@render axRunner(cfg)}
+                {/each}
+              </div>
+
+              <div class="ax-panels">
+                {#each supportPanels as panel}
+                  {@render axPanel(panel)}
+                {/each}
+              </div>
+
+              <div class="ds-block">
+                <div class="ds-block-title">Boons generated for the group <span class="ds-block-hint">hover a chip for the exact uptime</span></div>
+                <div class="ax-boon-rows">
+                  {#each supportBoons as row}
+                    <div class="ax-boon-row">
+                      <span class="ax-row-rank">{competitionRank(supportBoons.map((r) => r.total), row.total)}</span>
+                      <img class="ax-row-icon" src={profIcon(row.player.profession)} alt={row.player.profession}
+                           onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                      <span class="ax-boon-name" title={row.player.account}>{row.player.name}</span>
+                      <span class="ax-boon-total" title="Sum of generated boon uptime">{row.total.toFixed(1)}</span>
+                      <span class="ax-boon-list">
+                        {#each row.boons as b}
+                          <span class="ax-boon-chip" title="{b.name}: {b.generation.toFixed(1)}% uptime generated">{b.name} {b.generation.toFixed(1)}%</span>
+                        {/each}
+                      </span>
+                    </div>
+                  {/each}
+                </div>
+              </div>
+
+              <div class="ds-block">
+                <div class="ds-block-title">Support detail</div>
+                <table class="ax-table">
+                  <thead>
+                    <tr>
+                      <th>#</th><th>Player</th><th>Cleanses</th><th>Self</th>
+                      <th>Strips</th><th>Revives</th><th>Stun breaks</th><th>Stun time</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#each supportPlayers as p}
+                      <tr>
+                        <td class="ax-table-rank">{competitionRank(supportPlayers.map((x) => x.condiCleanse), p.condiCleanse)}</td>
+                        <td class="ax-table-name">
+                          <img class="ax-row-icon" src={profIcon(p.profession)} alt={p.profession}
+                               onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                          <span>{p.name}</span>
+                        </td>
+                        <td>{fmt(p.condiCleanse)}</td>
+                        <td>{fmt(p.condiCleanseSelf)}</td>
+                        <td>{fmt(p.boonStrips)}</td>
+                        <td>{fmt(p.resurrects)}</td>
+                        <td>{fmt(p.stunBreak)}</td>
+                        <td>{fmtTime(p.removedStunDuration)}</td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="stat-note">Healing is not shown — Elite Insights only reports it when its healing-stats module is enabled, and it is off for these logs.</div>
             {/if}
           {/if}
 
@@ -1780,53 +2116,96 @@
     font-size: 10px; font-weight: 700; letter-spacing: .03em; color: var(--text-muted);
     cursor: pointer; user-select: none;
   }
-  .ds-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
-  .ds-hero {
-    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
-    background: var(--bg-sidebar); border: 1px solid var(--border); border-left: 2px solid var(--accent);
-    border-radius: var(--radius); padding: 14px 18px;
+  /* ── MVP hero + runner-up cards ── */
+  .ax-heroes { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 10px; }
+  .ax-hero-card {
+    background: var(--bg-sidebar); border: 1px solid var(--border);
+    border-top: 2px solid var(--accent); border-radius: var(--radius);
+    padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;
   }
-  .ds-hero-main { display: flex; flex-direction: column; gap: 3px; min-width: 190px; }
-  .ds-hero-val { font-size: 30px; font-weight: 800; color: #fff; line-height: 1; font-variant-numeric: tabular-nums; }
-  .ds-hero-label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
-  .ds-hero-sub { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
-  .ds-hero-chips { display: flex; gap: 8px; margin-left: auto; }
-  .ds-hero-chip {
-    display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 62px;
-    padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+  .ax-hero-pill {
+    align-self: flex-start; display: inline-flex; align-items: center; gap: 5px;
+    font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em;
+    padding: 3px 8px; border-radius: 6px;
+    color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+  .ax-hero-main { display: flex; align-items: center; gap: 10px; }
+  .ax-hero-crown {
+    display: grid; place-items: center; width: 34px; height: 34px; flex: none;
+    border-radius: 9px; font-size: 15px; color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  .ax-hero-id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .ax-hero-name {
+    font-size: 16px; font-weight: 800; color: #fff;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ax-hero-prof { font-size: 10px; color: var(--text-muted); }
+  .ax-hero-score { margin-left: auto; text-align: right; flex: none; }
+  .ax-hero-score b { display: block; font-size: 20px; font-weight: 800; color: var(--accent); line-height: 1; font-variant-numeric: tabular-nums; }
+  .ax-hero-score span { font-size: 8px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
+  .ax-hero-quote { font-size: 11px; font-style: italic; color: var(--text-muted); }
+  .ax-hero-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    font-size: 11px; padding: 5px 8px; border-radius: 6px;
     background: color-mix(in srgb, #fff 3%, transparent);
   }
-  .ds-hero-chip b { font-size: 18px; color: #fff; font-variant-numeric: tabular-nums; }
-  .ds-hero-chip span { font-size: 9px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
-  .ds-hero-ring { position: relative; width: 84px; height: 84px; flex: 0 0 auto; }
-  .ds-ring { width: 100%; height: 100%; transform: rotate(-90deg); }
-  .ds-ring circle { fill: none; stroke-width: 8; }
-  .ds-ring-track { stroke: color-mix(in srgb, #fff 8%, transparent); }
-  .ds-ring-val { stroke: var(--success); stroke-linecap: round; stroke-dasharray: 213.63; transition: stroke-dashoffset .5s var(--ease-smooth); }
-  .ds-ring-text {
-    position: absolute; inset: 0; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 1px;
-  }
-  .ds-ring-text b { font-size: 14px; color: #fff; font-variant-numeric: tabular-nums; }
-  .ds-ring-text span { font-size: 8px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
+  .ax-hero-row span { color: var(--text-muted); }
+  .ax-hero-row b { color: var(--text); font-variant-numeric: tabular-nums; }
 
-  .ds-legend {
-    display: flex; flex-wrap: wrap; gap: 4px 14px; margin-bottom: 8px;
-    font-size: 10px; color: var(--text-muted);
+  .ax-runner-card {
+    background: var(--bg-sidebar); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 12px; display: flex; flex-direction: column; gap: 6px;
   }
-  .ds-legend span { display: inline-flex; align-items: center; gap: 5px; }
-  .ds-legend-muted { opacity: .75; }
-  .ds-dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
-  .ds-dot-power { background: var(--fail); }
-  .ds-dot-condi { background: var(--warn); }
-  .ds-card {
-    background: var(--bg-sidebar); border: 1px solid var(--border); border-radius: 12px;
-    padding: 12px 14px; display: flex; flex-direction: column; gap: 3px;
+  .ax-runner-top { display: flex; align-items: center; justify-content: space-between; }
+  .ax-runner-tier {
+    font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em;
+    padding: 2px 6px; border-radius: 5px;
   }
-  .ds-val { font-size: 24px; font-weight: 800; color: #fff; letter-spacing: .01em; line-height: 1; font-variant-numeric: tabular-nums; }
-  .ds-unit { font-size: 13px; font-weight: 700; color: var(--text-muted); margin-left: 1px; }
-  .ds-label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
-  .ds-sub { font-size: 10px; color: var(--text-muted); opacity: .8; }
+  .ax-runner-tier.silver { color: #cbd5e1; background: color-mix(in srgb, #cbd5e1 14%, transparent); }
+  .ax-runner-tier.bronze { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+  .ax-runner-top b { font-size: 16px; color: #fff; font-variant-numeric: tabular-nums; }
+  .ax-runner-name { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ax-runner-prof { font-size: 10px; color: var(--text-muted); margin-top: -3px; }
+  .ax-runner-row { display: flex; align-items: center; justify-content: space-between; font-size: 10px; color: var(--text-muted); }
+  .ax-runner-row b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+  /* ── Metric panels ── */
+  .ax-panels { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  .ax-panel {
+    background: var(--bg-sidebar); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; min-width: 0;
+  }
+  .ax-panel-head { display: flex; align-items: center; gap: 6px; color: var(--accent); }
+  .ax-panel-head i { font-size: 11px; }
+  .ax-panel-title { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; color: var(--text-muted); }
+  .ax-panel-total { font-size: 22px; font-weight: 800; color: #fff; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .ax-panel-top {
+    font-size: 11px; font-weight: 700; color: var(--accent);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ax-panel-hint { font-size: 9px; color: var(--text-muted); opacity: .8; margin-bottom: 6px; }
+  .ax-panel-rows { display: flex; flex-direction: column; gap: 1px; }
+  .ax-row {
+    display: grid; grid-template-columns: 16px 16px 1fr auto 10px; align-items: center;
+    gap: 5px; padding: 2px 0; border-radius: 4px; transition: background-color .14s;
+  }
+  .ax-row:hover { background: color-mix(in srgb, #fff 4%, transparent); }
+  .ax-row-rank { font-size: 9px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .ax-row-icon { width: 14px; height: 14px; border-radius: 4px; object-fit: cover; background: #0c0c0f; }
+  .ax-row-name { font-size: 10px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ax-row-val { font-size: 10px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .ax-row-bar {
+    position: relative; width: 3px; height: 18px; border-radius: 2px;
+    background: color-mix(in srgb, #fff 7%, transparent); overflow: hidden;
+  }
+  .ax-row-bar i {
+    position: absolute; bottom: 0; left: 0; right: 0; display: block;
+    background: var(--accent); border-radius: 2px;
+    transition: height .5s var(--ease-smooth);
+  }
 
   .ds-block {
     background: var(--bg-sidebar); border: 1px solid var(--border); border-left: 2px solid var(--accent);
@@ -1837,15 +2216,11 @@
     color: var(--text); margin-bottom: 10px;
   }
   .ds-block-hint { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text-muted); }
-
-  .ds-bar-row { display: grid; grid-template-columns: 130px 1fr 74px; align-items: center; gap: 8px; padding: 3px 0; }
-  .ds-bar-name { font-size: 11px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .ds-bar-track { display: flex; height: 10px; border-radius: 5px; background: color-mix(in srgb, #fff 5%, transparent); overflow: hidden; }
-  .ds-seg { height: 100%; transition: width .5s var(--ease-smooth); }
-  .ds-seg-power { background: var(--fail); }
-  .ds-seg-condi { background: var(--warn); }
-  .ds-bar-val { font-size: 11px; color: var(--text-muted); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .ds-bar-barrier { font-style: normal; opacity: .7; margin-left: 4px; }
+  .ds-legend {
+    display: flex; flex-wrap: wrap; gap: 4px 14px; margin-bottom: 8px;
+    font-size: 10px; color: var(--text-muted);
+  }
+  .ds-legend span { display: inline-flex; align-items: center; gap: 5px; }
 
   .ds-heat { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 11px; }
   .ds-heat th {
@@ -1864,6 +2239,32 @@
   .ds-detail { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 8px 0 2px; }
   .ds-detail div { display: flex; gap: 6px; font-size: 11px; color: var(--text-muted); }
   .ds-detail b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+  /* ── Support: boons generated + detail table ── */
+  .ax-boon-rows { display: flex; flex-direction: column; gap: 4px; }
+  .ax-boon-row {
+    display: grid; grid-template-columns: 16px 16px 1fr auto; align-items: center;
+    gap: 6px; padding: 5px 8px; border-radius: 6px;
+    background: color-mix(in srgb, #fff 3%, transparent);
+  }
+  .ax-boon-name { font-size: 11px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ax-boon-total { font-size: 11px; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .ax-boon-list { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; }
+  .ax-boon-chip {
+    font-size: 9px; padding: 2px 6px; border-radius: 5px;
+    color: var(--text-muted); background: color-mix(in srgb, #fff 5%, transparent);
+    border: 1px solid var(--border); font-variant-numeric: tabular-nums;
+  }
+  .ax-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 11px; }
+  .ax-table th {
+    text-align: right; font-size: 9px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--text-muted); font-weight: 700; padding: 4px 6px;
+  }
+  .ax-table th:nth-child(2) { text-align: left; }
+  .ax-table td { padding: 5px 6px; border-top: 1px solid var(--border); text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+  .ax-table-rank { color: var(--text-muted) !important; }
+  .ax-table-name { display: flex; align-items: center; gap: 6px; text-align: left !important; }
+  .ax-table .ax-row-icon { width: 16px; height: 16px; }
   .sg-chip {
     font-size: 10px; font-weight: 700; letter-spacing: .03em; font-family: inherit;
     color: var(--text-muted); background: color-mix(in srgb,#fff 5%,transparent);

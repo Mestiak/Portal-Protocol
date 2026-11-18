@@ -71,7 +71,7 @@ export interface SupportPlayerStat {
   stunBreakSelf: number;
   removedStunSelfDuration: number;
   // Boons this player generated for the group
-  groupBoons: { id: number; generation: number; presence: number; overstack: number }[];
+  groupBoons: { id: number; name: string; generation: number; presence: number; overstack: number }[];
 }
 
 export interface DefenseSupportStats {
@@ -157,8 +157,12 @@ export function extractDefenseSupport(raw: any): DefenseSupportStats | null {
       const groupBoons = groupBuffsList.map((buff) => {
         const buffData: any[] = Array.isArray(buff?.buffData) ? buff.buffData : [];
         const cell = buffData[phase] ?? {};
+        const id = num(buff?.id);
         return {
-          id: num(buff?.id),
+          id,
+          // EI keys its buff map as "b<id>"; the app's own ALL_BOONS list covers
+          // only the classic boons, so this is what names everything else.
+          name: str(raw?.buffMap?.[`b${id}`]?.name),
           generation: num(cell.generation),
           presence: num(cell.generationPresence),
           overstack: num(cell.overstack),
