@@ -34,7 +34,10 @@
   // Bumping this discards entries written before a field existed. Any addition
   // to the cached payload MUST bump it: a warm open otherwise loads entries
   // missing the new field, and the tab that dereferences it throws.
-  const STATS_CACHE_VERSION = 2;
+  // 2: deathRecap gained toDown/downTime. 3: defenseSupport gained `downs`.
+  // 4: the name maps (skillMap/buffMap) ride along, so a cached open can still
+  //    resolve skill names instead of falling back to the boss name.
+  const STATS_CACHE_VERSION = 4;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;
@@ -287,6 +290,9 @@
       taken: sum((p) => p.damageTaken) * dsRate,
       mitigated: sum((p) => p.blockedCount + p.evadedCount + p.dodgeCount + p.invulnedCount),
       downed: sum((p) => p.downCount),
+      downedTime: sum((p) => p.downDuration),
+      ccReceived: sum((p) => p.receivedCrowdControl),
+      ccReceivedTime: sum((p) => p.receivedCrowdControlDuration),
       barrier: sum((p) => p.damageBarrier) * dsRate,
     };
   });
@@ -357,10 +363,17 @@
     scoreTip?: string;
     rows: AxStatRow[];
   }
+  /** The player fields the feeds need; DefensePlayerStat satisfies this. */
+  interface AxFeedPlayer {
+    name: string;
+    account: string;
+    profession: string;
+  }
+
   /** One entry in the downs/deaths feed. */
   interface AxFeedRow {
     time: number;
-    player: DefensePlayerStat;
+    player: AxFeedPlayer;
     sources: RecapSource[];
   }
 
@@ -418,6 +431,12 @@
     return [...players].sort((a, b) => valueOf(b) - valueOf(a)).slice(0, 3);
   }
 
+  /** Downed time: seconds while short, m:ss once it passes a minute. */
+  function fmtDownTime(ms: number): string {
+    const s = Math.floor(ms / 1000);
+    return s < 60 ? `${s}s` : fmtTime(s);
+  }
+
   function axPanel(
     key: string, title: string, icon: string, hint: string, total: string, rows: AxRow[],
   ): AxPanel {
@@ -450,20 +469,32 @@
   const DEFENSE_SCORE_TIP =
     "Defensive score = 60% mitigation rate (blocked + evaded + dodged + invulned, as a share of hits " +
     "taken, measured against the squad's best mitigator) + 25% for fewer downs + 15% for fewer " +
-    "deaths (measured against the squad worst). Needs 10+ hits taken to qualify.";
+    "deaths (measured against the squad worst). Categories nobody reached are left out and the " +
+    "rest rescaled to 100. Needs 10+ hits taken to qualify.";
 
   let defenseScore = $derived.by(() => {
     const maxRate = Math.max(0, ...defensePlayers.map((p) => axMitigationPct(p) / 100));
-    const maxDowns = Math.max(1, ...defensePlayers.map((p) => p.downCount));
-    const maxDeaths = Math.max(1, ...defensePlayers.map((p) => p.deadCount));
+    const maxDowns = Math.max(0, ...defensePlayers.map((p) => p.downCount));
+    const maxDeaths = Math.max(0, ...defensePlayers.map((p) => p.deadCount));
+    // Every component is normalised to a 0..1 scale, so the weights mean what
+    // they say: PvE mitigation rates sit at 5-20%, and an unnormalised 60% of
+    // that would be worth ~10 points while a clean run was worth 40.
+    //
+    // A component nobody reached (no deaths on a clean run, no mitigation on a
+    // log where nobody blocked) is dropped and the rest rescaled. Keeping it
+    // would contribute its whole weight as zeros and quietly shrink the scale.
+    const parts = [
+      { w: 0.6, max: maxRate, v: (p: DefensePlayerStat) => axMitigationPct(p) / 100 / maxRate },
+      { w: 0.25, max: maxDowns, v: (p: DefensePlayerStat) => 1 - p.downCount / maxDowns },
+      { w: 0.15, max: maxDeaths, v: (p: DefensePlayerStat) => 1 - p.deadCount / maxDeaths },
+    ].filter((x) => x.max > 0);
+    const total = parts.reduce((a, x) => a + x.w, 0);
     return new Map(defensePlayers.map((p) => {
       const hits = p.damageTakenCount;
-      // Every component is normalised to a 0..1 scale, so the weights mean what
-      // they say: PvE mitigation rates sit at 5-20%, and an unnormalised 60% of
-      // that would be worth ~10 points while a clean run was worth 40.
-      const rate = maxRate > 0 ? (axMitigationPct(p) / 100) / maxRate : 0;
-      const score = 100 * (0.6 * rate + 0.25 * (1 - p.downCount / maxDowns) + 0.15 * (1 - p.deadCount / maxDeaths));
-      return [p.name, { score: Math.round(score), eligible: hits >= DEFENSE_PARTICIPATION_FLOOR }] as const;
+      const score = total > 0
+        ? Math.round((100 / total) * parts.reduce((a, x) => a + x.w * x.v(p), 0))
+        : 0;
+      return [p.name, { score, eligible: hits >= DEFENSE_PARTICIPATION_FLOOR }] as const;
     }));
   });
 
@@ -520,8 +551,12 @@
       axRows(defensePlayers, (p) => p.damageTaken, (v) => fmt(v * dsRate), true)),
     axPanel("mitigated", "Hits Mitigated", "fa-solid fa-shield-halved", "hits that never landed",
       String(defenseSummary.mitigated), axRows(defensePlayers, axMitigated, (v) => fmt(v))),
-    axPanel("downed", "Downed", "fa-solid fa-person-falling", "fewest first",
-      String(defenseSummary.downed), axRows(defensePlayers, (p) => p.downCount, (v) => fmt(v), true)),
+    axPanel("downed", "Downed", "fa-solid fa-person-falling", "most first · count | time downed",
+      `${defenseSummary.downed} | ${fmtDownTime(defenseSummary.downedTime)}`,
+      axRows(defensePlayers, (p) => p.downCount, (v, p) => `${fmt(v)} | ${fmtDownTime(p.downDuration)}`)),
+    axPanel("cc", "CC Received", "fa-solid fa-user-injured", "most controlled first · count | time",
+      `${defenseSummary.ccReceived} | ${fmtDownTime(defenseSummary.ccReceivedTime)}`,
+      axRows(defensePlayers, (p) => p.receivedCrowdControl, (v, p) => `${fmt(v)} | ${fmtDownTime(p.receivedCrowdControlDuration)}`)),
     axPanel("barrier", "Barrier", "fa-solid fa-shield", "damage absorbed by barrier",
       fmt(defenseSummary.barrier), axRows(defensePlayers, (p) => p.damageBarrier, (v) => fmt(v * dsRate))),
   ].filter((p) => p.hasData));
@@ -534,14 +569,31 @@
       .sort((a, b) => a.time - b.time),
   );
 
-  // Every down that went on to kill the player, in order, with its sources.
-  // EI only records a down when it led to a death, so this is a subset of downs.
-  let defenseDowns = $derived.by<AxFeedRow[]>(() =>
-    defensePlayers
-      .flatMap((p) => p.deathRecap.map((d) => ({ player: p, time: (d.downTime ?? 0) / 1000, sources: d.toDown ?? [] })))
+  // Every down in the log, in order — including downs that did not kill.
+  // EI's mechanics table lists them all; the death recap supplies causes when a
+  // fatal down lines up with the event.
+  let defenseDowns = $derived.by<AxFeedRow[]>(() => {
+    if (!defenseSupport) return [];
+    const fatal = defensePlayers.flatMap((p) =>
+      p.deathRecap
+        .filter((d) => (d.downTime ?? 0) > 0)
+        .map((d) => ({ player: p, time: d.downTime / 1000, sources: d.toDown ?? [] })),
+    );
+    return (defenseSupport.downs ?? [])
+      .map((d) => {
+        const player = defensePlayers.find((p) => p.name === d.name);
+        const match = fatal.find(
+          (f) => f.player.name === d.name && Math.abs(f.time - d.time / 1000) < 1.5,
+        );
+        return {
+          player: player ?? { name: d.name, account: d.account, profession: d.profession },
+          time: d.time / 1000,
+          sources: match?.sources ?? [],
+        };
+      })
       .filter((d) => d.time > 0)
-      .sort((a, b) => a.time - b.time),
-  );
+      .sort((a, b) => a.time - b.time);
+  });
 
   // Top skills by how many players they took out of the fight, across the log.
   let downRecap = $derived.by<DownRecapRow[]>(() => {
@@ -607,26 +659,29 @@
   // ── Support score ──
   // Same shape as the defensive score: every component is normalised to the
   // squad's best, so the weights mean what they say. A component nobody
-  // produced (CC on a breakbar-free fight) scores 0 for everyone.
+  // produced (CC on a breakbar-free fight) is dropped and the rest rescaled —
+  // keeping it would contribute its whole weight as zeros and shrink the scale,
+  // so a log with no breakbar phase capped the score at 70 while still
+  // presenting it as out of 100.
   const SUPPORT_SCORE_TIP =
     "Support score = 40% cleanses on allies + 30% breakbar damage (CC) + 20% revives + 10% boon " +
-    "strips, each measured against the squad's best.";
+    "strips, each measured against the squad's best. Categories nobody produced are left out " +
+    "and the rest rescaled to 100.";
 
   let supportScore = $derived.by(() => {
     const maxOf = (f: (p: SupportPlayerStat) => number) => Math.max(0, ...supportPlayers.map(f));
-    const maxCleanses = maxOf((p) => p.condiCleanse);
-    const maxBreakbar = maxOf((p) => p.breakbarDamage);
-    const maxRevives = maxOf((p) => p.resurrects);
-    const maxStrips = maxOf((p) => p.boonStrips);
-    const rel = (v: number, max: number) => (max > 0 ? v / max : 0);
+    const parts = [
+      { w: 0.40, max: maxOf((p) => p.condiCleanse), v: (p: SupportPlayerStat) => p.condiCleanse },
+      { w: 0.30, max: maxOf((p) => p.breakbarDamage), v: (p: SupportPlayerStat) => p.breakbarDamage },
+      { w: 0.20, max: maxOf((p) => p.resurrects), v: (p: SupportPlayerStat) => p.resurrects },
+      { w: 0.10, max: maxOf((p) => p.boonStrips), v: (p: SupportPlayerStat) => p.boonStrips },
+    ].filter((x) => x.max > 0);
+    const total = parts.reduce((a, x) => a + x.w, 0);
     return new Map(supportPlayers.map((p) => [
       p.name,
-      Math.round(100 * (
-        0.40 * rel(p.condiCleanse, maxCleanses) +
-        0.30 * rel(p.breakbarDamage, maxBreakbar) +
-        0.20 * rel(p.resurrects, maxRevives) +
-        0.10 * rel(p.boonStrips, maxStrips)
-      )),
+      total > 0
+        ? Math.round((100 / total) * parts.reduce((a, x) => a + x.w * (x.v(p) / x.max), 0))
+        : 0,
     ] as const));
   });
 
@@ -729,8 +784,8 @@
       buffNames = ((res.raw as any)?.buffMap as Record<string, { name?: string }>) || {};
       const mech = extractMechanics(res.raw, res.stats.boss_name);
       mechanics = mech;
-      statsCache.set(localPath, { version: STATS_CACHE_VERSION, stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport });
-      try { await invoke("store_stats_cache", { filePath: localPath, data: { version: STATS_CACHE_VERSION, stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport } }); } catch (e) {}
+      statsCache.set(localPath, { version: STATS_CACHE_VERSION, stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport, skillMap: (res.raw as any)?.skillMap, buffMap: (res.raw as any)?.buffMap });
+      try { await invoke("store_stats_cache", { filePath: localPath, data: { version: STATS_CACHE_VERSION, stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport, skillMap: (res.raw as any)?.skillMap, buffMap: (res.raw as any)?.buffMap } }); } catch (e) {}
     } catch (e: any) {
       error = typeof e === "string" ? e : (e?.message || "Failed to parse locally");
     } finally {
@@ -996,8 +1051,10 @@
     }
   }
 
-  // Module-level cache so reopening a log is instant.
-  const statsCache = new Map<string, { version?: number; stats: any; mechanics: any; phases?: PhaseStat[] | null; defenseSupport?: DefenseSupportStats | null }>();
+  // Module-level cache so reopening a log is instant. `skillMap`/`buffMap` ride
+  // along because the recap feeds resolve skill names through them; without
+  // them a cached open falls back to the source agent (the boss name).
+  const statsCache = new Map<string, { version?: number; stats: any; mechanics: any; phases?: PhaseStat[] | null; defenseSupport?: DefenseSupportStats | null; skillMap?: Record<string, { name?: string; icon?: string }>; buffMap?: Record<string, { name?: string }> }>();
   // concurrent fetches to dps.report — on a flaky WiFi link a burst of large
   // (30MB+) responses can saturate the link and drop the connection.
   let inflight: Promise<unknown> | null = null;
@@ -1012,6 +1069,8 @@
       mechanics = cachedMem.mechanics;
       phaseStats = cachedMem.phases ?? null;
       defenseSupport = cachedMem.defenseSupport ?? null;
+      skillNames = cachedMem.skillMap ?? {};
+      buffNames = cachedMem.buffMap ?? {};
       loading = false;
       activeTab = "statistics";
       return;
@@ -1024,12 +1083,14 @@
       // Try compact cache first (instant)
       if (localPath) {
         try {
-          const cached = await invoke("load_stats_cache", { filePath: localPath }) as { stats: any; mechanics: any; phases?: PhaseStat[] | null; defenseSupport?: DefenseSupportStats | null; version?: number } | null;
+          const cached = await invoke("load_stats_cache", { filePath: localPath }) as { stats: any; mechanics: any; phases?: PhaseStat[] | null; defenseSupport?: DefenseSupportStats | null; skillMap?: Record<string, { name?: string; icon?: string }>; buffMap?: Record<string, { name?: string }>; version?: number } | null;
           if (cached && cached.version === STATS_CACHE_VERSION) {
             stats = cached.stats;
             mechanics = cached.mechanics;
             phaseStats = cached.phases ?? null;
             defenseSupport = cached.defenseSupport ?? null;
+            skillNames = cached.skillMap ?? {};
+            buffNames = cached.buffMap ?? {};
             loading = false;
             activeTab = "statistics";
             inflight = null;
@@ -1129,9 +1190,9 @@
           // Local merge skipped — no error to surface.
         }
         mechanics = mech;
-        statsCache.set(cacheKey, { version: STATS_CACHE_VERSION, stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport });
+        statsCache.set(cacheKey, { version: STATS_CACHE_VERSION, stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport, skillMap: (res.raw as any)?.skillMap, buffMap: (res.raw as any)?.buffMap });
         if (localPath) {
-          try { await invoke("store_stats_cache", { filePath: localPath, data: { version: STATS_CACHE_VERSION, stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport } }); } catch (e) {}
+          try { await invoke("store_stats_cache", { filePath: localPath, data: { version: STATS_CACHE_VERSION, stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport, skillMap: (res.raw as any)?.skillMap, buffMap: (res.raw as any)?.buffMap } }); } catch (e) {}
         }
         // Non-Cerus fights only get the Boon Uptime tab — skip Statistics.
         // Harvest Temple defaults to Revealed if break data is present.
@@ -1679,7 +1740,7 @@
                 </div>
               {/if}
 
-              {@render axFeed("Downs", `${defenseDowns.length} led to a death`, defenseDowns, true)}
+              {@render axFeed("Downs", `${defenseDowns.length} down events`, defenseDowns, true)}
               {@render axFeed("Deaths", `${defenseDeaths.length} in this log`, defenseDeaths, false)}
 
               <div class="ds-block">
@@ -1716,13 +1777,13 @@
                         <tr class="ds-detail-row">
                           <td colspan={DEFENSE_HEAT_COLS.length + 1}>
                             <div class="ds-detail">
-                              <div><span>Power</span><b>{fmt(row.player.powerDamageTaken * dsRate)}</b></div>
-                              <div><span>Condition</span><b>{fmt(row.player.conditionDamageTaken * dsRate)}</b></div>
-                              <div><span>Strike</span><b>{fmt(row.player.strikeDamageTaken * dsRate)}</b></div>
-                              <div><span>Barrier</span><b>{fmt(row.player.damageBarrier * dsRate)}</b></div>
-                              <div><span>Hits taken</span><b>{row.player.damageTakenCount}</b></div>
-                              <div><span>Downed</span><b>{row.player.downCount}× {fmtTime(row.player.downDuration / 1000)}</b></div>
-                              <div><span>Deaths</span><b>{row.player.deadCount}</b></div>
+                              <div class="ds-detail-item"><span class="ds-detail-label">Power</span><b>{fmt(row.player.powerDamageTaken * dsRate)}</b></div>
+                              <div class="ds-detail-item"><span class="ds-detail-label">Condition</span><b>{fmt(row.player.conditionDamageTaken * dsRate)}</b></div>
+                              <div class="ds-detail-item"><span class="ds-detail-label">Strike</span><b>{fmt(row.player.strikeDamageTaken * dsRate)}</b></div>
+                              <div class="ds-detail-item"><span class="ds-detail-label">Barrier</span><b>{fmt(row.player.damageBarrier * dsRate)}</b></div>
+                              <div class="ds-detail-item"><span class="ds-detail-label">Hits taken</span><b>{row.player.damageTakenCount}</b></div>
+                              <div class="ds-detail-item"><span class="ds-detail-label">Downed</span><b>{row.player.downCount}× {fmtTime(row.player.downDuration / 1000)}</b></div>
+                              <div class="ds-detail-item"><span class="ds-detail-label">Deaths</span><b>{row.player.deadCount}</b></div>
                             </div>
                           </td>
                         </tr>
@@ -2517,9 +2578,13 @@
   .ds-heat-name .prof-icon { width: 16px; height: 16px; border-radius: 4px; }
   .ds-heat-cell { text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
   .ds-detail-row td { padding: 0 6px 8px; }
-  .ds-detail { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 8px 0 2px; }
-  .ds-detail div { display: flex; gap: 6px; font-size: 11px; color: var(--text-muted); }
-  .ds-detail b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .ds-detail {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+    gap: 10px 12px; padding: 10px 2px 6px;
+  }
+  .ds-detail-item { display: flex; flex-direction: column; gap: 2px; }
+  .ds-detail-label { font-size: 10px; color: var(--text-muted); }
+  .ds-detail-item b { font-size: 13px; color: var(--text); font-variant-numeric: tabular-nums; }
 
   /* ── Down recap ── */
   .ax-downrecap { display: flex; gap: 14px; align-items: flex-start; }
