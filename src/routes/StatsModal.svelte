@@ -520,8 +520,8 @@
       axRows(defensePlayers, (p) => p.damageTaken, (v) => fmt(v * dsRate), true)),
     axPanel("mitigated", "Hits Mitigated", "fa-solid fa-shield-halved", "hits that never landed",
       String(defenseSummary.mitigated), axRows(defensePlayers, axMitigated, (v) => fmt(v))),
-    axPanel("downed", "Downed", "fa-solid fa-person-falling", "fewest first",
-      String(defenseSummary.downed), axRows(defensePlayers, (p) => p.downCount, (v) => fmt(v), true)),
+    axPanel("downed", "Downed", "fa-solid fa-person-falling", "most first",
+      String(defenseSummary.downed), axRows(defensePlayers, (p) => p.downCount, (v) => fmt(v))),
     axPanel("barrier", "Barrier", "fa-solid fa-shield", "damage absorbed by barrier",
       fmt(defenseSummary.barrier), axRows(defensePlayers, (p) => p.damageBarrier, (v) => fmt(v * dsRate))),
   ].filter((p) => p.hasData));
@@ -1716,13 +1716,13 @@
                         <tr class="ds-detail-row">
                           <td colspan={DEFENSE_HEAT_COLS.length + 1}>
                             <div class="ds-detail">
-                              <div><span>Power</span><b>{fmt(row.player.powerDamageTaken * dsRate)}</b></div>
-                              <div><span>Condition</span><b>{fmt(row.player.conditionDamageTaken * dsRate)}</b></div>
-                              <div><span>Strike</span><b>{fmt(row.player.strikeDamageTaken * dsRate)}</b></div>
-                              <div><span>Barrier</span><b>{fmt(row.player.damageBarrier * dsRate)}</b></div>
-                              <div><span>Hits taken</span><b>{row.player.damageTakenCount}</b></div>
-                              <div><span>Downed</span><b>{row.player.downCount}× {fmtTime(row.player.downDuration / 1000)}</b></div>
-                              <div><span>Deaths</span><b>{row.player.deadCount}</b></div>
+                              <div class="ds-detail-item"><span class="ds-detail-label">Power</span><b>{fmt(row.player.powerDamageTaken * dsRate)}</b></div>
+                              <div class="ds-detail-item"><span class="ds-detail-label">Condition</span><b>{fmt(row.player.conditionDamageTaken * dsRate)}</b></div>
+                              <div class="ds-detail-item"><span class="ds-detail-label">Strike</span><b>{fmt(row.player.strikeDamageTaken * dsRate)}</b></div>
+                              <div class="ds-detail-item"><span class="ds-detail-label">Barrier</span><b>{fmt(row.player.damageBarrier * dsRate)}</b></div>
+                              <div class="ds-detail-item"><span class="ds-detail-label">Hits taken</span><b>{row.player.damageTakenCount}</b></div>
+                              <div class="ds-detail-item"><span class="ds-detail-label">Downed</span><b>{row.player.downCount}× {fmtTime(row.player.downDuration / 1000)}</b></div>
+                              <div class="ds-detail-item"><span class="ds-detail-label">Deaths</span><b>{row.player.deadCount}</b></div>
                             </div>
                           </td>
                         </tr>
@@ -2517,9 +2517,13 @@
   .ds-heat-name .prof-icon { width: 16px; height: 16px; border-radius: 4px; }
   .ds-heat-cell { text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
   .ds-detail-row td { padding: 0 6px 8px; }
-  .ds-detail { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 8px 0 2px; }
-  .ds-detail div { display: flex; gap: 6px; font-size: 11px; color: var(--text-muted); }
-  .ds-detail b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .ds-detail {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+    gap: 10px 12px; padding: 10px 2px 6px;
+  }
+  .ds-detail-item { display: flex; flex-direction: column; gap: 2px; }
+  .ds-detail-label { font-size: 10px; color: var(--text-muted); }
+  .ds-detail-item b { font-size: 13px; color: var(--text); font-variant-numeric: tabular-nums; }
 
   /* ── Down recap ── */
   .ax-downrecap { display: flex; gap: 14px; align-items: flex-start; }
