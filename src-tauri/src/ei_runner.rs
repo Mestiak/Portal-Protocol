@@ -139,6 +139,48 @@ pub fn ei_cache_prune_disk(app: &AppHandle) {
     }
 }
 
+/// Total size (bytes) and file count of the EI JSON cache — the cache that
+/// actually serves the Stats modal when EI is enabled. Reported in Settings so
+/// the readout reflects the data in use rather than the bypassed raw cache.
+fn ei_cache_size(app: &AppHandle) -> (u64, usize) {
+    let dir = ei_cache_dir(app);
+    let mut total_bytes: u64 = 0;
+    let mut file_count: usize = 0;
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            if let Ok(meta) = entry.metadata() {
+                if meta.is_file() {
+                    total_bytes += meta.len();
+                    file_count += 1;
+                }
+            }
+        }
+    }
+    (total_bytes, file_count)
+}
+
+#[tauri::command]
+/// Returns (size_bytes, file_count) of the EI JSON cache directory.
+pub async fn get_ei_cache_size(app: AppHandle) -> Result<(u64, usize), String> {
+    Ok(ei_cache_size(&app))
+}
+
+/// Delete every cached EI JSON file. The HTML report cache is separate and is
+/// left alone.
+#[tauri::command]
+pub async fn clear_ei_cache(app: AppHandle) -> Result<(), String> {
+    let dir = ei_cache_dir(&app);
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Keep the on-disk HTML cache bounded: delete the oldest `.html` files
 /// beyond the configured cap (`html_cache_max_files`). 0 = unbounded.
 pub fn ei_html_cache_prune_disk(app: &AppHandle) {
