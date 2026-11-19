@@ -618,6 +618,49 @@
   type PatchNoteVersion = { version: string; date: string; image?: string; notes: PatchNoteCategory[] };
   const PATCH_NOTES_DATA: PatchNoteVersion[] = [
     {
+      version: "0.8.3",
+      date: "November 2026",
+      notes: [
+        {
+          category: "📊 Stats — Phase Breakdown",
+          items: [
+            { title: "Pick a Phase", desc: "The Stats window now has a phase selector — Full Fight plus every phase Elite Insights found (100%–70%, burn windows, add phases). Damage and boon numbers follow the phase you pick." },
+            { title: "Per 10 min", desc: "A toggle that rescales damage numbers to a per-10-minute rate, so a short pull and a long one can be compared fairly." }
+          ]
+        },
+        {
+          category: "🛡️ Defense (new tab)",
+          items: [
+            { title: "Defensive MVP", desc: "The top three players, ranked by a defensive score — how much damage they avoided, and how few times they went down or died. Gold, silver and bronze cards with matching crowns and outlines." },
+            { title: "Metric Panels", desc: "Damage Taken, Hits Mitigated, Downed and Barrier, each showing the squad total and a ranked list of who did what." },
+            { title: "Mitigation Matrix", desc: "Blocked, evaded, dodged, invuln, interrupted, downed and dead for every player, colour-shaded so the outliers stand out. Click a row for that player's damage split." },
+            { title: "Down Recap", desc: "The boss icon beside the top three skills that took the most players down, with how many were downed and how many died to each." },
+            { title: "Downs & Deaths", desc: "Every down and every death in order — the time, the profession, the player, and what caused it." }
+          ]
+        },
+        {
+          category: "💚 Support (new tab)",
+          items: [
+            { title: "Support MVP", desc: "The top three players, ranked by cleanses, breakbar damage, revives and boon strips." },
+            { title: "Revives With Time", desc: "Shows how many players each person resurrected and how long they spent doing it." },
+            { title: "Breakbar Damage", desc: "The real crowd-control contribution — the same 'Breakbar' number Elite Insights shows in its Damage Stats." },
+            { title: "Boons Generated", desc: "Who gave the squad its boons, with a chip for each boon." }
+          ]
+        },
+        {
+          category: "🐛 Fixes",
+          items: [
+            { title: "Defense Tab Crash", desc: "Opening Defense on some logs showed '500 Internal Error'. Older cached stats were missing a newly added field; the cache is now versioned so those entries are refreshed instead of crashing the tab." },
+            { title: "Invisible Bars", desc: "The damage-taken bars were rendering transparent." },
+            { title: "Real Damage Sources", desc: "A death caused by Burning or Poison now says so, instead of only naming the boss. Condition damage is highlighted so you can tell a damage-over-time death from a single big hit." },
+            { title: "Cleaner Names", desc: "Damage sources read 'Deimos' instead of 'Deimos 12' — the number was an internal counter, not a phase or a mechanic." },
+            { title: "Crowd Control Numbers", desc: "The CC stat used an event count that stayed at 0 for players who clearly dealt breakbar damage. It now uses breakbar damage." },
+            { title: "Duplicate Update Toast", desc: "Removed a redundant update notification." }
+          ]
+        }
+      ]
+    },
+    {
       version: "0.8.2",
       date: "November 2026",
       notes: [
