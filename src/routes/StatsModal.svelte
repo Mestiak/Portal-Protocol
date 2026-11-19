@@ -428,6 +428,12 @@
     return [...players].sort((a, b) => valueOf(b) - valueOf(a)).slice(0, 3);
   }
 
+  /** Downed time: seconds while short, m:ss once it passes a minute. */
+  function fmtDownTime(ms: number): string {
+    const s = Math.floor(ms / 1000);
+    return s < 60 ? `${s}s` : fmtTime(s);
+  }
+
   function axPanel(
     key: string, title: string, icon: string, hint: string, total: string, rows: AxRow[],
   ): AxPanel {
@@ -531,7 +537,7 @@
     axPanel("mitigated", "Hits Mitigated", "fa-solid fa-shield-halved", "hits that never landed",
       String(defenseSummary.mitigated), axRows(defensePlayers, axMitigated, (v) => fmt(v))),
     axPanel("downed", "Downed", "fa-solid fa-person-falling", "most first",
-      String(defenseSummary.downed), axRows(defensePlayers, (p) => p.downCount, (v) => fmt(v))),
+      String(defenseSummary.downed), axRows(defensePlayers, (p) => p.downCount, (v, p) => `${fmt(v)} | ${fmtDownTime(p.downDuration)}`)),
     axPanel("barrier", "Barrier", "fa-solid fa-shield", "damage absorbed by barrier",
       fmt(defenseSummary.barrier), axRows(defensePlayers, (p) => p.damageBarrier, (v) => fmt(v * dsRate))),
   ].filter((p) => p.hasData));
