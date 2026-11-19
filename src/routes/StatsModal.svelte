@@ -35,7 +35,9 @@
   // to the cached payload MUST bump it: a warm open otherwise loads entries
   // missing the new field, and the tab that dereferences it throws.
   // 2: deathRecap gained toDown/downTime. 3: defenseSupport gained `downs`.
-  const STATS_CACHE_VERSION = 3;
+  // 4: the name maps (skillMap/buffMap) ride along, so a cached open can still
+  //    resolve skill names instead of falling back to the boss name.
+  const STATS_CACHE_VERSION = 4;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;
@@ -754,8 +756,8 @@
       buffNames = ((res.raw as any)?.buffMap as Record<string, { name?: string }>) || {};
       const mech = extractMechanics(res.raw, res.stats.boss_name);
       mechanics = mech;
-      statsCache.set(localPath, { version: STATS_CACHE_VERSION, stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport });
-      try { await invoke("store_stats_cache", { filePath: localPath, data: { version: STATS_CACHE_VERSION, stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport } }); } catch (e) {}
+      statsCache.set(localPath, { version: STATS_CACHE_VERSION, stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport, skillMap: (res.raw as any)?.skillMap, buffMap: (res.raw as any)?.buffMap });
+      try { await invoke("store_stats_cache", { filePath: localPath, data: { version: STATS_CACHE_VERSION, stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport, skillMap: (res.raw as any)?.skillMap, buffMap: (res.raw as any)?.buffMap } }); } catch (e) {}
     } catch (e: any) {
       error = typeof e === "string" ? e : (e?.message || "Failed to parse locally");
     } finally {
@@ -1021,8 +1023,10 @@
     }
   }
 
-  // Module-level cache so reopening a log is instant.
-  const statsCache = new Map<string, { version?: number; stats: any; mechanics: any; phases?: PhaseStat[] | null; defenseSupport?: DefenseSupportStats | null }>();
+  // Module-level cache so reopening a log is instant. `skillMap`/`buffMap` ride
+  // along because the recap feeds resolve skill names through them; without
+  // them a cached open falls back to the source agent (the boss name).
+  const statsCache = new Map<string, { version?: number; stats: any; mechanics: any; phases?: PhaseStat[] | null; defenseSupport?: DefenseSupportStats | null; skillMap?: Record<string, { name?: string; icon?: string }>; buffMap?: Record<string, { name?: string }> }>();
   // concurrent fetches to dps.report — on a flaky WiFi link a burst of large
   // (30MB+) responses can saturate the link and drop the connection.
   let inflight: Promise<unknown> | null = null;
@@ -1037,6 +1041,8 @@
       mechanics = cachedMem.mechanics;
       phaseStats = cachedMem.phases ?? null;
       defenseSupport = cachedMem.defenseSupport ?? null;
+      skillNames = cachedMem.skillMap ?? {};
+      buffNames = cachedMem.buffMap ?? {};
       loading = false;
       activeTab = "statistics";
       return;
@@ -1049,12 +1055,14 @@
       // Try compact cache first (instant)
       if (localPath) {
         try {
-          const cached = await invoke("load_stats_cache", { filePath: localPath }) as { stats: any; mechanics: any; phases?: PhaseStat[] | null; defenseSupport?: DefenseSupportStats | null; version?: number } | null;
+          const cached = await invoke("load_stats_cache", { filePath: localPath }) as { stats: any; mechanics: any; phases?: PhaseStat[] | null; defenseSupport?: DefenseSupportStats | null; skillMap?: Record<string, { name?: string; icon?: string }>; buffMap?: Record<string, { name?: string }>; version?: number } | null;
           if (cached && cached.version === STATS_CACHE_VERSION) {
             stats = cached.stats;
             mechanics = cached.mechanics;
             phaseStats = cached.phases ?? null;
             defenseSupport = cached.defenseSupport ?? null;
+            skillNames = cached.skillMap ?? {};
+            buffNames = cached.buffMap ?? {};
             loading = false;
             activeTab = "statistics";
             inflight = null;
@@ -1154,9 +1162,9 @@
           // Local merge skipped — no error to surface.
         }
         mechanics = mech;
-        statsCache.set(cacheKey, { version: STATS_CACHE_VERSION, stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport });
+        statsCache.set(cacheKey, { version: STATS_CACHE_VERSION, stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport, skillMap: (res.raw as any)?.skillMap, buffMap: (res.raw as any)?.buffMap });
         if (localPath) {
-          try { await invoke("store_stats_cache", { filePath: localPath, data: { version: STATS_CACHE_VERSION, stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport } }); } catch (e) {}
+          try { await invoke("store_stats_cache", { filePath: localPath, data: { version: STATS_CACHE_VERSION, stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport, skillMap: (res.raw as any)?.skillMap, buffMap: (res.raw as any)?.buffMap } }); } catch (e) {}
         }
         // Non-Cerus fights only get the Boon Uptime tab — skip Statistics.
         // Harvest Temple defaults to Revealed if break data is present.
