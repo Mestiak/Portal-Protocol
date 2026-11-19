@@ -8340,17 +8340,17 @@ async function testWebhook(wh: any) {
               </span>
             </div>
 
-            <!-- Slider: how many cached logs to keep -->
+            <!-- Slider: how many cached files to keep -->
             <div style="display: flex; flex-direction: column; gap: 6px;">
               <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px;">
                 <div style="display: flex; align-items: center; gap: 8px;">
-                  <div style="font-size: 13px; font-weight: 600; color: var(--text);">Max Cached Logs to Keep</div>
-                  <span class="custom-tooltip-container" aria-label="How many parsed log files the app keeps on disk for instant Stats re-opening. Older logs are auto-deleted. Set higher to keep more history at hand; lower to save space. 0 = keep all (unbounded).">
+                  <div style="font-size: 13px; font-weight: 600; color: var(--text);">Max Cached Files to Keep</div>
+                  <span class="custom-tooltip-container" aria-label="How many cached files the app keeps on disk for instant Stats re-opening. Each log can use two files (its parsed result and its Stats payload), so this counts files, not logs. Older files are auto-deleted. Set higher to keep more history at hand; lower to save space. 0 = keep all (unbounded).">
                     <i class="fa-solid fa-circle-info" style="font-size: 11px; color: var(--text-muted); cursor: help;"></i>
-                    <span class="custom-tooltip custom-tooltip-box">How many parsed log files the app keeps on disk for instant Stats re-opening. Older logs are auto-deleted to free space. Higher = keep more history ready; lower = save disk. <b>0 = keep everything</b> (unbounded).</span>
+                    <span class="custom-tooltip custom-tooltip-box">How many cached files the app keeps on disk for instant Stats re-opening. Each log can use two files (its parsed result and its Stats payload), so this counts <b>files, not logs</b>. Older files are auto-deleted to free space. Higher = keep more history ready; lower = save disk. <b>0 = keep everything</b> (unbounded).</span>
                   </span>
                 </div>
-                <span class="tabular-nums" style="font-size: 12px; color: var(--accent); font-weight: 600;">{log_cache_max_files === 0 ? 'Unlimited' : log_cache_max_files + ' logs'}</span>
+                <span class="tabular-nums" style="font-size: 12px; color: var(--accent); font-weight: 600;">{log_cache_max_files === 0 ? 'Unlimited' : log_cache_max_files + ' files'}</span>
               </div>
               <div style="display: flex; align-items: center; gap: 12px; padding: 0 4px;">
                 <span style="font-size: 10px; color: var(--text-muted);">Off</span>
@@ -8362,7 +8362,7 @@ async function testWebhook(wh: any) {
                   bind:value={log_cache_max_files}
                   onchange={async () => { await persistConfig(); try { await invoke('prune_log_cache'); await refreshCacheSize(); } catch (e) { console.error('prune_log_cache failed', e); } }}
                   style="flex: 1; accent-color: var(--accent); cursor: pointer;"
-                  title="Number of cached logs to retain (0 = unlimited)"
+                  title="Number of cached files to retain (0 = unlimited)"
                 />
                 <span style="font-size: 10px; color: var(--text-muted);">200</span>
               </div>
