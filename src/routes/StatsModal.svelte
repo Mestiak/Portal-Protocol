@@ -290,6 +290,7 @@
       taken: sum((p) => p.damageTaken) * dsRate,
       mitigated: sum((p) => p.blockedCount + p.evadedCount + p.dodgeCount + p.invulnedCount),
       downed: sum((p) => p.downCount),
+      downedTime: sum((p) => p.downDuration),
       barrier: sum((p) => p.damageBarrier) * dsRate,
     };
   });
@@ -536,8 +537,9 @@
       axRows(defensePlayers, (p) => p.damageTaken, (v) => fmt(v * dsRate), true)),
     axPanel("mitigated", "Hits Mitigated", "fa-solid fa-shield-halved", "hits that never landed",
       String(defenseSummary.mitigated), axRows(defensePlayers, axMitigated, (v) => fmt(v))),
-    axPanel("downed", "Downed", "fa-solid fa-person-falling", "most first",
-      String(defenseSummary.downed), axRows(defensePlayers, (p) => p.downCount, (v, p) => `${fmt(v)} | ${fmtDownTime(p.downDuration)}`)),
+    axPanel("downed", "Downed", "fa-solid fa-person-falling", "most first · count | time downed",
+      `${defenseSummary.downed} | ${fmtDownTime(defenseSummary.downedTime)}`,
+      axRows(defensePlayers, (p) => p.downCount, (v, p) => `${fmt(v)} | ${fmtDownTime(p.downDuration)}`)),
     axPanel("barrier", "Barrier", "fa-solid fa-shield", "damage absorbed by barrier",
       fmt(defenseSummary.barrier), axRows(defensePlayers, (p) => p.damageBarrier, (v) => fmt(v * dsRate))),
   ].filter((p) => p.hasData));
