@@ -22,6 +22,8 @@ The Stats window is now a proper post-fight review. Pick any phase of the fight,
 
 **Downed** — how many times each player went down, and how long they spent down.
 
+**CC Received** — how many times each player was crowd controlled, and for how long.
+
 **Barrier** — damage absorbed by barrier.
 
 **Down Recap** — the boss's icon beside the three skills that took the most players down, with how many went down to each and how many of those died.

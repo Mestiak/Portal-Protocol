@@ -637,6 +637,7 @@
             { title: "Damage Taken", desc: "How much damage each player took. Least taken ranks first." },
             { title: "Hits Mitigated", desc: "Hits that never landed: blocked, evaded, dodged, or made invulnerable." },
             { title: "Downed", desc: "How many times each player went down, and how long they spent down." },
+            { title: "CC Received", desc: "How many times each player was crowd controlled, and for how long." },
             { title: "Barrier", desc: "Damage absorbed by barrier." },
             { title: "Down Recap", desc: "The boss's icon beside the three skills that took the most players down, with how many went down to each and how many of those died." },
             { title: "Downs", desc: "Every down in the fight, in order: the time, the profession, and the player." },
