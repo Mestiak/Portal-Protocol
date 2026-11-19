@@ -291,6 +291,8 @@
       mitigated: sum((p) => p.blockedCount + p.evadedCount + p.dodgeCount + p.invulnedCount),
       downed: sum((p) => p.downCount),
       downedTime: sum((p) => p.downDuration),
+      ccReceived: sum((p) => p.receivedCrowdControl),
+      ccReceivedTime: sum((p) => p.receivedCrowdControlDuration),
       barrier: sum((p) => p.damageBarrier) * dsRate,
     };
   });
@@ -467,20 +469,32 @@
   const DEFENSE_SCORE_TIP =
     "Defensive score = 60% mitigation rate (blocked + evaded + dodged + invulned, as a share of hits " +
     "taken, measured against the squad's best mitigator) + 25% for fewer downs + 15% for fewer " +
-    "deaths (measured against the squad worst). Needs 10+ hits taken to qualify.";
+    "deaths (measured against the squad worst). Categories nobody reached are left out and the " +
+    "rest rescaled to 100. Needs 10+ hits taken to qualify.";
 
   let defenseScore = $derived.by(() => {
     const maxRate = Math.max(0, ...defensePlayers.map((p) => axMitigationPct(p) / 100));
-    const maxDowns = Math.max(1, ...defensePlayers.map((p) => p.downCount));
-    const maxDeaths = Math.max(1, ...defensePlayers.map((p) => p.deadCount));
+    const maxDowns = Math.max(0, ...defensePlayers.map((p) => p.downCount));
+    const maxDeaths = Math.max(0, ...defensePlayers.map((p) => p.deadCount));
+    // Every component is normalised to a 0..1 scale, so the weights mean what
+    // they say: PvE mitigation rates sit at 5-20%, and an unnormalised 60% of
+    // that would be worth ~10 points while a clean run was worth 40.
+    //
+    // A component nobody reached (no deaths on a clean run, no mitigation on a
+    // log where nobody blocked) is dropped and the rest rescaled. Keeping it
+    // would contribute its whole weight as zeros and quietly shrink the scale.
+    const parts = [
+      { w: 0.6, max: maxRate, v: (p: DefensePlayerStat) => axMitigationPct(p) / 100 / maxRate },
+      { w: 0.25, max: maxDowns, v: (p: DefensePlayerStat) => 1 - p.downCount / maxDowns },
+      { w: 0.15, max: maxDeaths, v: (p: DefensePlayerStat) => 1 - p.deadCount / maxDeaths },
+    ].filter((x) => x.max > 0);
+    const total = parts.reduce((a, x) => a + x.w, 0);
     return new Map(defensePlayers.map((p) => {
       const hits = p.damageTakenCount;
-      // Every component is normalised to a 0..1 scale, so the weights mean what
-      // they say: PvE mitigation rates sit at 5-20%, and an unnormalised 60% of
-      // that would be worth ~10 points while a clean run was worth 40.
-      const rate = maxRate > 0 ? (axMitigationPct(p) / 100) / maxRate : 0;
-      const score = 100 * (0.6 * rate + 0.25 * (1 - p.downCount / maxDowns) + 0.15 * (1 - p.deadCount / maxDeaths));
-      return [p.name, { score: Math.round(score), eligible: hits >= DEFENSE_PARTICIPATION_FLOOR }] as const;
+      const score = total > 0
+        ? Math.round((100 / total) * parts.reduce((a, x) => a + x.w * x.v(p), 0))
+        : 0;
+      return [p.name, { score, eligible: hits >= DEFENSE_PARTICIPATION_FLOOR }] as const;
     }));
   });
 
@@ -540,6 +554,9 @@
     axPanel("downed", "Downed", "fa-solid fa-person-falling", "most first · count | time downed",
       `${defenseSummary.downed} | ${fmtDownTime(defenseSummary.downedTime)}`,
       axRows(defensePlayers, (p) => p.downCount, (v, p) => `${fmt(v)} | ${fmtDownTime(p.downDuration)}`)),
+    axPanel("cc", "CC Received", "fa-solid fa-user-injured", "most controlled first · count | time",
+      `${defenseSummary.ccReceived} | ${fmtDownTime(defenseSummary.ccReceivedTime)}`,
+      axRows(defensePlayers, (p) => p.receivedCrowdControl, (v, p) => `${fmt(v)} | ${fmtDownTime(p.receivedCrowdControlDuration)}`)),
     axPanel("barrier", "Barrier", "fa-solid fa-shield", "damage absorbed by barrier",
       fmt(defenseSummary.barrier), axRows(defensePlayers, (p) => p.damageBarrier, (v) => fmt(v * dsRate))),
   ].filter((p) => p.hasData));
@@ -642,26 +659,29 @@
   // ── Support score ──
   // Same shape as the defensive score: every component is normalised to the
   // squad's best, so the weights mean what they say. A component nobody
-  // produced (CC on a breakbar-free fight) scores 0 for everyone.
+  // produced (CC on a breakbar-free fight) is dropped and the rest rescaled —
+  // keeping it would contribute its whole weight as zeros and shrink the scale,
+  // so a log with no breakbar phase capped the score at 70 while still
+  // presenting it as out of 100.
   const SUPPORT_SCORE_TIP =
     "Support score = 40% cleanses on allies + 30% breakbar damage (CC) + 20% revives + 10% boon " +
-    "strips, each measured against the squad's best.";
+    "strips, each measured against the squad's best. Categories nobody produced are left out " +
+    "and the rest rescaled to 100.";
 
   let supportScore = $derived.by(() => {
     const maxOf = (f: (p: SupportPlayerStat) => number) => Math.max(0, ...supportPlayers.map(f));
-    const maxCleanses = maxOf((p) => p.condiCleanse);
-    const maxBreakbar = maxOf((p) => p.breakbarDamage);
-    const maxRevives = maxOf((p) => p.resurrects);
-    const maxStrips = maxOf((p) => p.boonStrips);
-    const rel = (v: number, max: number) => (max > 0 ? v / max : 0);
+    const parts = [
+      { w: 0.40, max: maxOf((p) => p.condiCleanse), v: (p: SupportPlayerStat) => p.condiCleanse },
+      { w: 0.30, max: maxOf((p) => p.breakbarDamage), v: (p: SupportPlayerStat) => p.breakbarDamage },
+      { w: 0.20, max: maxOf((p) => p.resurrects), v: (p: SupportPlayerStat) => p.resurrects },
+      { w: 0.10, max: maxOf((p) => p.boonStrips), v: (p: SupportPlayerStat) => p.boonStrips },
+    ].filter((x) => x.max > 0);
+    const total = parts.reduce((a, x) => a + x.w, 0);
     return new Map(supportPlayers.map((p) => [
       p.name,
-      Math.round(100 * (
-        0.40 * rel(p.condiCleanse, maxCleanses) +
-        0.30 * rel(p.breakbarDamage, maxBreakbar) +
-        0.20 * rel(p.resurrects, maxRevives) +
-        0.10 * rel(p.boonStrips, maxStrips)
-      )),
+      total > 0
+        ? Math.round((100 / total) * parts.reduce((a, x) => a + x.w * (x.v(p) / x.max), 0))
+        : 0,
     ] as const));
   });
 
