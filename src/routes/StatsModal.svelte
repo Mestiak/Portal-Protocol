@@ -31,9 +31,10 @@
   interface LogFull { stats: LogStats; raw: any; }
 
   // Compact stats caches are keyed by file and persisted across launches.
-  // Bumping this discards entries written before a field existed: a cached
-  // defenseSupport with no `damageTaken1S` would otherwise throw on read.
-  const STATS_CACHE_VERSION = 1;
+  // Bumping this discards entries written before a field existed. Any addition
+  // to the cached payload MUST bump it: a warm open otherwise loads entries
+  // missing the new field, and the tab that dereferences it throws.
+  const STATS_CACHE_VERSION = 2;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;
@@ -528,7 +529,7 @@
   // Every death in the log, in order, with the sources that led to it.
   let defenseDeaths = $derived.by<AxFeedRow[]>(() =>
     defensePlayers
-      .flatMap((p) => p.deathRecap.map((d) => ({ player: p, time: d.deathTime / 1000, sources: d.toKill })))
+      .flatMap((p) => p.deathRecap.map((d) => ({ player: p, time: d.deathTime / 1000, sources: d.toKill ?? [] })))
       .filter((d) => d.time > 0)
       .sort((a, b) => a.time - b.time),
   );
@@ -537,7 +538,7 @@
   // EI only records a down when it led to a death, so this is a subset of downs.
   let defenseDowns = $derived.by<AxFeedRow[]>(() =>
     defensePlayers
-      .flatMap((p) => p.deathRecap.map((d) => ({ player: p, time: d.downTime / 1000, sources: d.toDown })))
+      .flatMap((p) => p.deathRecap.map((d) => ({ player: p, time: (d.downTime ?? 0) / 1000, sources: d.toDown ?? [] })))
       .filter((d) => d.time > 0)
       .sort((a, b) => a.time - b.time),
   );
@@ -549,13 +550,13 @@
     for (const p of defensePlayers) {
       const who = p.account || p.name;
       for (const d of p.deathRecap) {
-        for (const k of d.toDown) {
+        for (const k of d.toDown ?? []) {
           const e = downed.get(k.id) ?? { players: new Set<string>(), damage: 0, src: k.src };
           e.players.add(who);
           e.damage += k.damage;
           downed.set(k.id, e);
         }
-        for (const k of d.toKill) {
+        for (const k of d.toKill ?? []) {
           const s = killed.get(k.id) ?? new Set<string>();
           s.add(who);
           killed.set(k.id, s);
