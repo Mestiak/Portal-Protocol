@@ -34,7 +34,8 @@
   // Bumping this discards entries written before a field existed. Any addition
   // to the cached payload MUST bump it: a warm open otherwise loads entries
   // missing the new field, and the tab that dereferences it throws.
-  const STATS_CACHE_VERSION = 2;
+  // 2: deathRecap gained toDown/downTime. 3: defenseSupport gained `downs`.
+  const STATS_CACHE_VERSION = 3;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;
@@ -357,10 +358,17 @@
     scoreTip?: string;
     rows: AxStatRow[];
   }
+  /** The player fields the feeds need; DefensePlayerStat satisfies this. */
+  interface AxFeedPlayer {
+    name: string;
+    account: string;
+    profession: string;
+  }
+
   /** One entry in the downs/deaths feed. */
   interface AxFeedRow {
     time: number;
-    player: DefensePlayerStat;
+    player: AxFeedPlayer;
     sources: RecapSource[];
   }
 
@@ -534,14 +542,31 @@
       .sort((a, b) => a.time - b.time),
   );
 
-  // Every down that went on to kill the player, in order, with its sources.
-  // EI only records a down when it led to a death, so this is a subset of downs.
-  let defenseDowns = $derived.by<AxFeedRow[]>(() =>
-    defensePlayers
-      .flatMap((p) => p.deathRecap.map((d) => ({ player: p, time: (d.downTime ?? 0) / 1000, sources: d.toDown ?? [] })))
+  // Every down in the log, in order — including downs that did not kill.
+  // EI's mechanics table lists them all; the death recap supplies causes when a
+  // fatal down lines up with the event.
+  let defenseDowns = $derived.by<AxFeedRow[]>(() => {
+    if (!defenseSupport) return [];
+    const fatal = defensePlayers.flatMap((p) =>
+      p.deathRecap
+        .filter((d) => (d.downTime ?? 0) > 0)
+        .map((d) => ({ player: p, time: d.downTime / 1000, sources: d.toDown ?? [] })),
+    );
+    return (defenseSupport.downs ?? [])
+      .map((d) => {
+        const player = defensePlayers.find((p) => p.name === d.name);
+        const match = fatal.find(
+          (f) => f.player.name === d.name && Math.abs(f.time - d.time / 1000) < 1.5,
+        );
+        return {
+          player: player ?? { name: d.name, account: d.account, profession: d.profession },
+          time: d.time / 1000,
+          sources: match?.sources ?? [],
+        };
+      })
       .filter((d) => d.time > 0)
-      .sort((a, b) => a.time - b.time),
-  );
+      .sort((a, b) => a.time - b.time);
+  });
 
   // Top skills by how many players they took out of the fight, across the log.
   let downRecap = $derived.by<DownRecapRow[]>(() => {
@@ -1679,7 +1704,7 @@
                 </div>
               {/if}
 
-              {@render axFeed("Downs", `${defenseDowns.length} led to a death`, defenseDowns, true)}
+              {@render axFeed("Downs", `${defenseDowns.length} down events`, defenseDowns, true)}
               {@render axFeed("Deaths", `${defenseDeaths.length} in this log`, defenseDeaths, false)}
 
               <div class="ds-block">
