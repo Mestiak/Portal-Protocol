@@ -222,8 +222,10 @@
   let sidebarOpen = $state(true);
   let activeMenuCard = $state<string | null>(null);
   let gw2_accounts = $state<any[]>([]);
-  let logCacheSize = $state<number>(0);
-  let logCacheCount = $state<number>(0);
+  // Size of the EI JSON cache — the cache that actually serves the Stats modal
+  // when EI is enabled (the raw dps.report cache is bypassed in that case).
+  let statsCacheSize = $state<number>(0);
+  let statsCacheCount = $state<number>(0);
   let showClearCacheModal = $state(false);
   let historyCacheSize = $state<number>(0);
   let historyCacheCount = $state<number>(0);
@@ -5874,13 +5876,13 @@ async function testWebhook(wh: any) {
 
   async function refreshCacheSize() {
     try {
-      const res = await invoke("get_cache_size") as [number, number];
+      const res = await invoke("get_ei_cache_size") as [number, number];
       if (Array.isArray(res)) {
-        logCacheSize = res[0] ?? 0;
-        logCacheCount = res[1] ?? 0;
+        statsCacheSize = res[0] ?? 0;
+        statsCacheCount = res[1] ?? 0;
       }
     } catch (e) {
-      console.error("Failed to query log cache size:", e);
+      console.error("Failed to query stats cache size:", e);
     }
     try {
       const res = await invoke("get_history_cache_size") as [number, number];
@@ -5912,7 +5914,7 @@ async function testWebhook(wh: any) {
   }
 
   function openClearCacheModal() {
-    if (logCacheCount > 0) {
+    if (statsCacheCount > 0) {
       showClearCacheModal = true;
     }
   }
@@ -5920,9 +5922,10 @@ async function testWebhook(wh: any) {
   async function confirmPurgeLogCache() {
     showClearCacheModal = false;
     try {
+      await invoke("clear_ei_cache");
       await invoke("clear_log_cache");
       await refreshCacheSize();
-      showToast("Log JSON cache cleared successfully!", "success");
+      showToast("Stats cache cleared successfully!", "success");
     } catch (e) {
       showToast(`Failed to clear cache: ${e}`);
     }
@@ -8317,23 +8320,23 @@ async function testWebhook(wh: any) {
             <div style="display: flex; flex-direction: column; gap: 6px;">
               <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px;">
                 <div>
-                  <div style="font-size: 13px; font-weight: 600; color: var(--text);">dps.report Log Cache</div>
+                  <div style="font-size: 13px; font-weight: 600; color: var(--text);">Stats Log Cache</div>
                   <div class="tabular-nums" style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
-                    {formatSize(logCacheSize)} accumulated across {logCacheCount} log files
+                    {formatSize(statsCacheSize)} accumulated across {statsCacheCount} cached files
                   </div>
                 </div>
                 <button
                   type="button"
                   class="cache-clear-btn"
                   onclick={openClearCacheModal}
-                  disabled={logCacheCount === 0}
-                  title="Clear local log JSON cache"
+                  disabled={statsCacheCount === 0}
+                  title="Clear the cached log data used by the Stats modal"
                 >
                   <i class="fa-solid fa-trash-can"></i> Clear Cache
                 </button>
               </div>
               <span style="font-size: 10px; color: var(--text-muted); display: block; margin-left: 4px;">
-                Logs are cached locally so the Stats button opens instantly. Clearing cache will re-download logs on demand.
+                Parsed logs are kept locally so the Stats button opens instantly. Clearing the cache frees disk space; those logs are re-parsed or re-downloaded the next time you open them.
               </span>
             </div>
 
@@ -9540,12 +9543,12 @@ async function testWebhook(wh: any) {
       <div class="confirm-modal-head">
         <span class="confirm-modal-icon danger"><i class="fa-solid fa-triangle-exclamation"></i></span>
         <div>
-          <h3 class="confirm-modal-title">Clear Log JSON Cache?</h3>
-          <p class="confirm-modal-sub">This action will delete {logCacheCount} cached log files ({formatSize(logCacheSize)}).</p>
+          <h3 class="confirm-modal-title">Clear Stats Log Cache?</h3>
+          <p class="confirm-modal-sub">This action will delete {statsCacheCount} cached files ({formatSize(statsCacheSize)}).</p>
         </div>
       </div>
       <div class="confirm-modal-body">
-        <p>Log details are stored on your disk so the <strong>Stats</strong> button opens instantly. Clearing the cache will free up disk space, and logs will be re-downloaded on-demand when clicked.</p>
+        <p>Parsed logs are stored on your disk so the <strong>Stats</strong> button opens instantly. Clearing the cache frees disk space; those logs are re-parsed or re-downloaded the next time you open them.</p>
       </div>
       <div class="confirm-modal-actions">
         <button type="button" class="confirm-btn cancel" onclick={() => (showClearCacheModal = false)}>

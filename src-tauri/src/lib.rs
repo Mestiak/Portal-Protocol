@@ -1543,6 +1543,8 @@ pub fn run() {
             crate::uploader::get_local_log_full,
             crate::uploader::get_cache_size,
             crate::uploader::clear_log_cache,
+            crate::ei_runner::get_ei_cache_size,
+            crate::ei_runner::clear_ei_cache,
             crate::uploader::prune_log_cache,
             crate::uploader::invalidate_log_cache,
             crate::uploader::get_history_cache_size,
