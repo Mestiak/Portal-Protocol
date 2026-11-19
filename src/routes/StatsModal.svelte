@@ -6,6 +6,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { extractMechanics, type MechanicReport } from "#lib/mechanicParser";
   import { extractPhaseStats, type PhaseStat } from "#lib/phaseStats";
+  import { extractDefenseSupport, type DefenseSupportStats, type DefensePlayerStat, type SupportPlayerStat, type RecapSource } from "#lib/defenseSupport";
   import { fmt, fmtPct, fmtTime } from "#lib/format";
   import { slide } from "svelte/transition";
   import { cubicInOut } from "svelte/easing";
@@ -29,9 +30,16 @@
   }
   interface LogFull { stats: LogStats; raw: any; }
 
-  let { permalink, bossName = "", localPath, onClose }: {
+  // Compact stats caches are keyed by file and persisted across launches.
+  // Bumping this discards entries written before a field existed. Any addition
+  // to the cached payload MUST bump it: a warm open otherwise loads entries
+  // missing the new field, and the tab that dereferences it throws.
+  const STATS_CACHE_VERSION = 2;
+
+  let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;
     bossName?: string;
+    bossIcon?: string;
     localPath?: string;
     onClose: () => void;
   } = $props();
@@ -78,7 +86,7 @@
   // Single source of truth for the active sub-view. STATS section: Statistics
   // (cards+chart, default) | Boon Uptime (table). MECHANICS section (Cerus
   // only): Shadows | Orbs | Empowered.
-  type Tab = "statistics" | "boon" | "revealed" | "shadows" | "orbs" | "empowered";
+  type Tab = "statistics" | "boon" | "defense" | "support" | "revealed" | "shadows" | "orbs" | "empowered";
   let activeTab = $state<Tab>("statistics");
   // ── Phase breakdown ──
   // EI stores every per-phase metric as a positional array indexed by phase, so one
@@ -86,6 +94,15 @@
   let phaseStats = $state<PhaseStat[] | null>(null);
   let selectedPhase = $state(0);          // EI phase index; 0 = Full Fight
   let showBreakbars = $state(true);
+  // ── Defense / Support tabs ──
+  let defenseSupport = $state<DefenseSupportStats | null>(null);
+  // EI's skillMap ("s<id>" -> name) so death recaps can name the killing skill.
+  let skillNames = $state<Record<string, { name?: string; icon?: string }>>({});
+  // EI keys condition damage in a death recap by the BUFF id, not the skill id,
+  // so a Burning/Poison tick has no skillMap entry. Resolved as a fallback.
+  let buffNames = $state<Record<string, { name?: string }>>({});
+  let showPer10Min = $state(false);       // scale damage numbers to a per-10-minute rate
+  let defenseOpen = $state<string | null>(null); // player row expanded in the matrix
   let openOrbPhase = $state<string | null>(null); // Orbs tab: expanded per-phase leaderboard
 
   // Revealed feature flag: hide the tab + table until the feature is complete.
@@ -237,6 +254,11 @@
     };
   });
 
+  // Heatmap cell background: accent ramp scaled to the column max.
+  function heatBg(pct: number): string {
+    return `color-mix(in srgb, var(--accent) ${Math.round(pct * 0.45)}%, transparent)`;
+  }
+
   // A phase with no boss-target damage reads as "—" rather than a misleading 0.
   function fmtPhase(v: number): string {
     return v > 0 ? fmt(v) : "—";
@@ -246,6 +268,449 @@
   function fmtBoonPct(v: number): string {
     return v > 0 ? `${fmtPct(v)}%` : "—";
   }
+
+  // ── Defense tab derivations ──
+  let defensePlayers = $derived<DefensePlayerStat[]>(
+    defenseSupport ? (defenseSupport.defense[selectedPhase] ?? []) : [],
+  );
+
+  // Damage numbers scaled to a per-10-minute rate when the toggle is on.
+  let dsRate = $derived.by(() => {
+    if (!showPer10Min) return 1;
+    const dur = selectedPhase === 0 ? (stats?.duration_sec ?? 0) : (phaseStats?.[selectedPhase]?.durationSec ?? 0);
+    return dur > 0 ? 600 / dur : 1;
+  });
+
+  let defenseSummary = $derived.by(() => {
+    const sum = (f: (p: DefensePlayerStat) => number) => defensePlayers.reduce((a, p) => a + f(p), 0);
+    return {
+      taken: sum((p) => p.damageTaken) * dsRate,
+      mitigated: sum((p) => p.blockedCount + p.evadedCount + p.dodgeCount + p.invulnedCount),
+      downed: sum((p) => p.downCount),
+      barrier: sum((p) => p.damageBarrier) * dsRate,
+    };
+  });
+
+  // Damage-taken bars were replaced by the metric panels; ranking now lives in
+  // `defensePanels` / `axRows`.
+
+  const DEFENSE_HEAT_COLS: { key: keyof DefensePlayerStat; label: string; tip: string }[] = [
+    { key: "blockedCount", label: "Blocked", tip: "Hits negated by the Block modifier" },
+    { key: "evadedCount", label: "Evaded", tip: "Hits avoided with Evade (your shadowsteps)" },
+    { key: "dodgeCount", label: "Dodged", tip: "Hits avoided with a dodge roll" },
+    { key: "invulnedCount", label: "Invuln", tip: "Hits negated by invulnerability frames" },
+    { key: "interruptedCount", label: "Interrupted", tip: "Enemy casts or actions you interrupted" },
+    { key: "downCount", label: "Downed", tip: "Times you were downed (but not dead)" },
+    { key: "deadCount", label: "Dead", tip: "Times you died" },
+  ];
+
+  // Heatmap intensity per column (scaled to that column's squad max) + squad rank.
+  let defenseHeat = $derived.by(() => {
+    const cols = DEFENSE_HEAT_COLS.map((c) => ({
+      ...c,
+      max: Math.max(1, ...defensePlayers.map((p) => Number(p[c.key]) || 0)),
+    }));
+    return [...defensePlayers]
+      .sort((a, b) => b.damageTaken - a.damageTaken)
+      .map((player) => ({
+        player,
+        cells: cols.map((c) => {
+          const value = Number(player[c.key]) || 0;
+          const rank = 1 + defensePlayers.filter((p) => (Number(p[c.key]) || 0) > value).length;
+          return { label: c.label, tip: c.tip, value, pct: (value / c.max) * 100, rank };
+        }),
+      }));
+  });
+
+
+  // ── Axibridge-style ranking helpers ──
+  // Competition ranking: equal values share a rank (1, 2, 2, 4).
+  function competitionRank(values: number[], value: number): number {
+    return 1 + values.filter((v) => v > value).length;
+  }
+
+  interface AxStatRow { label: string; value: string; }
+  interface AxRow {
+    rank: number;
+    name: string;
+    account: string;
+    profession: string;
+    value: number;
+    shown: string;
+    pct: number;          // 0..100 of the column max — drives the mini-bar height
+  }
+  interface AxHeroCfg {
+    player: { name: string; account: string; profession: string };
+    tier: string;
+    label: string;
+    icon: string;
+    quote: string;
+    score: string;
+    scoreLabel: string;
+    scoreTip?: string;
+    rows: AxStatRow[];
+  }
+  interface AxRunnerCfg {
+    player: { name: string; account: string; profession: string };
+    tier: string;
+    score: string;
+    scoreTip?: string;
+    rows: AxStatRow[];
+  }
+  /** One entry in the downs/deaths feed. */
+  interface AxFeedRow {
+    time: number;
+    player: DefensePlayerStat;
+    sources: RecapSource[];
+  }
+
+  /** One skill in the down recap, ranked by how many players it took down. */
+  interface DownRecapRow {
+    id: number;
+    name: string;
+    players: number;
+    deaths: number;
+    damage: number;
+  }
+
+  interface AxPanel {
+    key: string;
+    title: string;
+    icon: string;
+    total: string;
+    hint: string;
+    top: string;
+    hasData: boolean;
+    rows: AxRow[];
+  }
+
+  function axRows<T extends { name: string; account: string; profession: string }>(
+    players: T[],
+    valueOf: (p: T) => number,
+    format: (v: number, p: T) => string,
+    ascending = false,
+  ): AxRow[] {
+    const values = players.map(valueOf);
+    const max = Math.max(1, ...values);
+    return [...players]
+      .sort((a, b) => (ascending ? valueOf(a) - valueOf(b) : valueOf(b) - valueOf(a)))
+      .map((p) => {
+        const value = valueOf(p);
+        return {
+          rank: competitionRank(values, value),
+          name: p.name,
+          account: p.account,
+          profession: p.profession,
+          value,
+          shown: format(value, p),
+          // The bar tracks standing, not the raw value, so rank 1 is always the
+          // tallest bar even when the best result is the smallest number.
+          pct: ascending ? (1 - value / max) * 100 : (value / max) * 100,
+        };
+      });
+  }
+
+  // Top N by a metric — drives the MVP / silver / bronze hero cards.
+  function axTop<T extends { name: string; account: string; profession: string }>(
+    players: T[],
+    valueOf: (p: T) => number,
+  ): T[] {
+    return [...players].sort((a, b) => valueOf(b) - valueOf(a)).slice(0, 3);
+  }
+
+  function axPanel(
+    key: string, title: string, icon: string, hint: string, total: string, rows: AxRow[],
+  ): AxPanel {
+    return {
+      key, title, icon, hint, total,
+      top: rows[0]?.name ?? "",
+      // A metric nobody produced (stun breaks in PvE, interrupts) is hidden
+      // rather than shown as an all-zero panel.
+      hasData: rows.some((r) => r.value > 0),
+      rows,
+    };
+  }
+
+  function axMitigated(p: DefensePlayerStat): number {
+    return p.blockedCount + p.evadedCount + p.dodgeCount + p.invulnedCount;
+  }
+
+  function axMitigationPct(p: DefensePlayerStat): number {
+    const hits = p.damageTakenCount;
+    const mit = axMitigated(p);
+    return hits + mit > 0 ? (mit / (hits + mit)) * 100 : 0;
+  }
+
+  // ── Defense score ──
+  // Mitigation rate is the skill component; downs and deaths are measured against
+  // the squad worst, so a clean run for everyone doesn't distort the ranking.
+  // Players who were barely targeted don't qualify for the hero cards.
+  const DEFENSE_PARTICIPATION_FLOOR = 10; // damage-taken events
+
+  const DEFENSE_SCORE_TIP =
+    "Defensive score = 60% mitigation rate (blocked + evaded + dodged + invulned, as a share of hits " +
+    "taken, measured against the squad's best mitigator) + 25% for fewer downs + 15% for fewer " +
+    "deaths (measured against the squad worst). Needs 10+ hits taken to qualify.";
+
+  let defenseScore = $derived.by(() => {
+    const maxRate = Math.max(0, ...defensePlayers.map((p) => axMitigationPct(p) / 100));
+    const maxDowns = Math.max(1, ...defensePlayers.map((p) => p.downCount));
+    const maxDeaths = Math.max(1, ...defensePlayers.map((p) => p.deadCount));
+    return new Map(defensePlayers.map((p) => {
+      const hits = p.damageTakenCount;
+      // Every component is normalised to a 0..1 scale, so the weights mean what
+      // they say: PvE mitigation rates sit at 5-20%, and an unnormalised 60% of
+      // that would be worth ~10 points while a clean run was worth 40.
+      const rate = maxRate > 0 ? (axMitigationPct(p) / 100) / maxRate : 0;
+      const score = 100 * (0.6 * rate + 0.25 * (1 - p.downCount / maxDowns) + 0.15 * (1 - p.deadCount / maxDeaths));
+      return [p.name, { score: Math.round(score), eligible: hits >= DEFENSE_PARTICIPATION_FLOOR }] as const;
+    }));
+  });
+
+  // ── Defense: hero ranking + metric panels ──
+  let defenseTop = $derived.by(() => {
+    const rank = (p: DefensePlayerStat) => defenseScore.get(p.name)?.score ?? 0;
+    const byScore = [...defensePlayers].sort((a, b) => rank(b) - rank(a));
+    const eligible = byScore.filter((p) => defenseScore.get(p.name)?.eligible);
+    const pool = eligible.length >= Math.min(3, defensePlayers.length) ? eligible : byScore;
+    return pool.slice(0, 3);
+  });
+
+  let defenseHero = $derived.by<AxHeroCfg | null>(() => {
+    const p = defenseTop[0];
+    if (!p) return null;
+    return {
+      player: p,
+      tier: "gold",
+      label: "Defensive MVP",
+      icon: "fa-shield-halved",
+      quote: "Defensive Play",
+      score: String(defenseScore.get(p.name)?.score ?? 0),
+      scoreLabel: "defensive score",
+      scoreTip: DEFENSE_SCORE_TIP,
+      rows: [
+        { label: "Damage taken", value: fmt(p.damageTaken * dsRate) },
+        { label: "Hits mitigated", value: String(axMitigated(p)) },
+        { label: "Downed / deaths", value: `${p.downCount} / ${p.deadCount}` },
+      ],
+    };
+  });
+
+  let defenseRunners = $derived.by<AxRunnerCfg[]>(() =>
+    ["silver", "bronze"].flatMap((tier, i): AxRunnerCfg[] => {
+      const p = defenseTop[i + 1];
+      if (!p) return [];
+      return [{
+        player: p,
+        tier,
+        score: String(defenseScore.get(p.name)?.score ?? 0),
+        scoreTip: DEFENSE_SCORE_TIP,
+        rows: [
+          { label: "Damage taken", value: fmt(p.damageTaken * dsRate) },
+          { label: "Mitigated", value: `${fmtPct(axMitigationPct(p))}%` },
+          { label: "Downed / deaths", value: `${p.downCount} / ${p.deadCount}` },
+        ],
+      }];
+    }),
+  );
+
+  let defensePanels = $derived<AxPanel[]>([
+    axPanel("taken", "Damage Taken", "fa-solid fa-heart-crack", "least taken first",
+      fmt(defenseSummary.taken),
+      axRows(defensePlayers, (p) => p.damageTaken, (v) => fmt(v * dsRate), true)),
+    axPanel("mitigated", "Hits Mitigated", "fa-solid fa-shield-halved", "hits that never landed",
+      String(defenseSummary.mitigated), axRows(defensePlayers, axMitigated, (v) => fmt(v))),
+    axPanel("downed", "Downed", "fa-solid fa-person-falling", "fewest first",
+      String(defenseSummary.downed), axRows(defensePlayers, (p) => p.downCount, (v) => fmt(v), true)),
+    axPanel("barrier", "Barrier", "fa-solid fa-shield", "damage absorbed by barrier",
+      fmt(defenseSummary.barrier), axRows(defensePlayers, (p) => p.damageBarrier, (v) => fmt(v * dsRate))),
+  ].filter((p) => p.hasData));
+
+  // Every death in the log, in order, with the sources that led to it.
+  let defenseDeaths = $derived.by<AxFeedRow[]>(() =>
+    defensePlayers
+      .flatMap((p) => p.deathRecap.map((d) => ({ player: p, time: d.deathTime / 1000, sources: d.toKill ?? [] })))
+      .filter((d) => d.time > 0)
+      .sort((a, b) => a.time - b.time),
+  );
+
+  // Every down that went on to kill the player, in order, with its sources.
+  // EI only records a down when it led to a death, so this is a subset of downs.
+  let defenseDowns = $derived.by<AxFeedRow[]>(() =>
+    defensePlayers
+      .flatMap((p) => p.deathRecap.map((d) => ({ player: p, time: (d.downTime ?? 0) / 1000, sources: d.toDown ?? [] })))
+      .filter((d) => d.time > 0)
+      .sort((a, b) => a.time - b.time),
+  );
+
+  // Top skills by how many players they took out of the fight, across the log.
+  let downRecap = $derived.by<DownRecapRow[]>(() => {
+    const downed = new Map<number, { players: Set<string>; damage: number; src: string }>();
+    const killed = new Map<number, Set<string>>();
+    for (const p of defensePlayers) {
+      const who = p.account || p.name;
+      for (const d of p.deathRecap) {
+        for (const k of d.toDown ?? []) {
+          const e = downed.get(k.id) ?? { players: new Set<string>(), damage: 0, src: k.src };
+          e.players.add(who);
+          e.damage += k.damage;
+          downed.set(k.id, e);
+        }
+        for (const k of d.toKill ?? []) {
+          const s = killed.get(k.id) ?? new Set<string>();
+          s.add(who);
+          killed.set(k.id, s);
+        }
+      }
+    }
+    return [...downed.entries()]
+      .map(([id, e]) => ({
+        id,
+        name: axSkillName(id) || e.src,
+        players: e.players.size,
+        deaths: killed.get(id)?.size ?? 0,
+        damage: e.damage,
+      }))
+      .filter((r) => r.name)
+      .sort((a, b) => b.players - a.players || b.damage - a.damage)
+      .slice(0, 3);
+  });
+
+  function axSkillName(id: number): string {
+    if (id <= 0) return "";
+    return skillNames["s" + id]?.name || buffNames["b" + id]?.name || "";
+  }
+
+  /** Condition (DoT) damage arrives flagged indirect and keyed by buff id. */
+  function axIsCondition(k: RecapSource): boolean {
+    return k.indirectDamage && !skillNames["s" + k.id];
+  }
+
+  // ── Support tab ──
+  let supportPlayers = $derived<SupportPlayerStat[]>(
+    defenseSupport ? (defenseSupport.support[selectedPhase] ?? []) : [],
+  );
+
+  let supportSummary = $derived.by(() => {
+    const sum = (f: (p: SupportPlayerStat) => number) => supportPlayers.reduce((a, p) => a + f(p), 0);
+    return {
+      cleanses: sum((p) => p.condiCleanse),
+      selfCleanses: sum((p) => p.condiCleanseSelf),
+      strips: sum((p) => p.boonStrips),
+      revives: sum((p) => p.resurrects),
+      resurrectSeconds: sum((p) => p.resurrectTime),
+      stunBreaks: sum((p) => p.stunBreak),
+      breakbar: sum((p) => p.breakbarDamage),
+    };
+  });
+
+  // ── Support score ──
+  // Same shape as the defensive score: every component is normalised to the
+  // squad's best, so the weights mean what they say. A component nobody
+  // produced (CC on a breakbar-free fight) scores 0 for everyone.
+  const SUPPORT_SCORE_TIP =
+    "Support score = 40% cleanses on allies + 30% breakbar damage (CC) + 20% revives + 10% boon " +
+    "strips, each measured against the squad's best.";
+
+  let supportScore = $derived.by(() => {
+    const maxOf = (f: (p: SupportPlayerStat) => number) => Math.max(0, ...supportPlayers.map(f));
+    const maxCleanses = maxOf((p) => p.condiCleanse);
+    const maxBreakbar = maxOf((p) => p.breakbarDamage);
+    const maxRevives = maxOf((p) => p.resurrects);
+    const maxStrips = maxOf((p) => p.boonStrips);
+    const rel = (v: number, max: number) => (max > 0 ? v / max : 0);
+    return new Map(supportPlayers.map((p) => [
+      p.name,
+      Math.round(100 * (
+        0.40 * rel(p.condiCleanse, maxCleanses) +
+        0.30 * rel(p.breakbarDamage, maxBreakbar) +
+        0.20 * rel(p.resurrects, maxRevives) +
+        0.10 * rel(p.boonStrips, maxStrips)
+      )),
+    ] as const));
+  });
+
+  let supportRanked = $derived.by(() =>
+    [...supportPlayers]
+      .sort((a, b) => (supportScore.get(b.name) ?? 0) - (supportScore.get(a.name) ?? 0)),
+  );
+
+  let supportTop = $derived(supportRanked.slice(0, 3));
+
+  let supportHero = $derived.by<AxHeroCfg | null>(() => {
+    const p = supportTop[0];
+    if (!p) return null;
+    return {
+      player: p,
+      tier: "gold",
+      label: "Support MVP",
+      icon: "fa-hand-holding-heart",
+      quote: "Condition Control",
+      score: String(supportScore.get(p.name) ?? 0),
+      scoreLabel: "support score",
+      scoreTip: SUPPORT_SCORE_TIP,
+      rows: [
+        { label: "Cleanses", value: String(p.condiCleanse) },
+        { label: "Breakbar damage", value: fmt(p.breakbarDamage) },
+        { label: "Revives", value: `${p.resurrects} · ${p.resurrectTime.toFixed(1)}s` },
+      ],
+    };
+  });
+
+  let supportRunners = $derived.by<AxRunnerCfg[]>(() =>
+    ["silver", "bronze"].flatMap((tier, i): AxRunnerCfg[] => {
+      const p = supportTop[i + 1];
+      if (!p) return [];
+      return [{
+        player: p,
+        tier,
+        score: String(supportScore.get(p.name) ?? 0),
+        scoreTip: SUPPORT_SCORE_TIP,
+        rows: [
+          { label: "Cleanses", value: String(p.condiCleanse) },
+          { label: "Revives", value: `${p.resurrects} · ${p.resurrectTime.toFixed(1)}s` },
+        ],
+      }];
+    }),
+  );
+
+  let supportPanels = $derived<AxPanel[]>([
+    axPanel("cleanses", "Cleanses", "fa-solid fa-droplet", "conditions removed from allies",
+      String(supportSummary.cleanses), axRows(supportPlayers, (p) => p.condiCleanse, (v) => fmt(v))),
+    axPanel("breakbar", "Breakbar Damage", "fa-solid fa-hand", "CC bar damage dealt",
+      fmt(supportSummary.breakbar),
+      axRows(supportPlayers, (p) => p.breakbarDamage, (v) => fmt(v))),
+    axPanel("strips", "Boon Strips", "fa-solid fa-bolt", "enemy boons removed",
+      String(supportSummary.strips), axRows(supportPlayers, (p) => p.boonStrips, (v) => fmt(v))),
+    axPanel("revives", "Revives", "fa-solid fa-heart-pulse", "players resurrected · time spent",
+      `${fmt(supportSummary.revives)} · ${supportSummary.resurrectSeconds.toFixed(1)}s`,
+      axRows(supportPlayers, (p) => p.resurrects,
+        (v, p) => `${fmt(v)} · ${p.resurrectTime.toFixed(1)}s`)),
+    axPanel("stuns", "Stun Breaks", "fa-solid fa-hand-fist", "stuns removed",
+      String(supportSummary.stunBreaks), axRows(supportPlayers, (p) => p.stunBreak, (v) => fmt(v))),
+  ].filter((p) => p.hasData));
+
+  // Boons each player generated for the group (EI reports generation as an
+  // uptime percentage per boon, so the total is a sum of uptime points).
+  let supportBoons = $derived.by(() =>
+    [...supportPlayers]
+      .map((p) => {
+        const boons = [...p.groupBoons]
+          .filter((b) => b.generation > 0)
+          .sort((a, b) => b.generation - a.generation);
+        return {
+          player: p,
+          total: boons.reduce((a, b) => a + b.generation, 0),
+          boons: boons.slice(0, 4).map((b) => ({
+            id: b.id,
+            name: b.name || BOON_BY_ID.get(b.id)?.label || `Buff ${b.id}`,
+            generation: b.generation,
+          })),
+        };
+      })
+      .filter((r) => r.total > 0)
+      .sort((a, b) => b.total - a.total),
+  );
 
   // Non-EI fallback: parse the local file with the bundled Elite Insights, then
   // refetch directly (bypassing the compact stats cache) so phases appear.
@@ -259,10 +724,13 @@
       const res = await invoke("get_local_log_full", { filePath: localPath }) as LogFull;
       stats = res.stats;
       phaseStats = extractPhaseStats(res.raw, PHASE_BOON_META);
+      defenseSupport = extractDefenseSupport(res.raw);
+      skillNames = ((res.raw as any)?.skillMap as Record<string, { name?: string; icon?: string }>) || {};
+      buffNames = ((res.raw as any)?.buffMap as Record<string, { name?: string }>) || {};
       const mech = extractMechanics(res.raw, res.stats.boss_name);
       mechanics = mech;
-      statsCache.set(localPath, { stats: res.stats, mechanics: mech, phases: phaseStats });
-      try { await invoke("store_stats_cache", { filePath: localPath, data: { stats: res.stats, mechanics: mech, phases: phaseStats } }); } catch (e) {}
+      statsCache.set(localPath, { version: STATS_CACHE_VERSION, stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport });
+      try { await invoke("store_stats_cache", { filePath: localPath, data: { version: STATS_CACHE_VERSION, stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport } }); } catch (e) {}
     } catch (e: any) {
       error = typeof e === "string" ? e : (e?.message || "Failed to parse locally");
     } finally {
@@ -529,7 +997,7 @@
   }
 
   // Module-level cache so reopening a log is instant.
-  const statsCache = new Map<string, { stats: any; mechanics: any; phases?: PhaseStat[] | null }>();
+  const statsCache = new Map<string, { version?: number; stats: any; mechanics: any; phases?: PhaseStat[] | null; defenseSupport?: DefenseSupportStats | null }>();
   // concurrent fetches to dps.report — on a flaky WiFi link a burst of large
   // (30MB+) responses can saturate the link and drop the connection.
   let inflight: Promise<unknown> | null = null;
@@ -539,26 +1007,29 @@
     // Opening a different log resets the phase selection.
     selectedPhase = 0;
     const cachedMem = statsCache.get(cacheKey);
-    if (cachedMem) {
+    if (cachedMem && cachedMem.version === STATS_CACHE_VERSION) {
       stats = cachedMem.stats;
       mechanics = cachedMem.mechanics;
       phaseStats = cachedMem.phases ?? null;
+      defenseSupport = cachedMem.defenseSupport ?? null;
       loading = false;
       activeTab = "statistics";
       return;
     }
+    statsCache.delete(cacheKey);
     if (inflight) return;
-    loading = true; error = null; stats = null; mechanics = null; phaseStats = null;
+    loading = true; error = null; stats = null; mechanics = null; phaseStats = null; defenseSupport = null;
     activeTab = "statistics";
     inflight = (async () => {
       // Try compact cache first (instant)
       if (localPath) {
         try {
-          const cached = await invoke("load_stats_cache", { filePath: localPath }) as { stats: any; mechanics: any; phases?: PhaseStat[] | null } | null;
-          if (cached) {
+          const cached = await invoke("load_stats_cache", { filePath: localPath }) as { stats: any; mechanics: any; phases?: PhaseStat[] | null; defenseSupport?: DefenseSupportStats | null; version?: number } | null;
+          if (cached && cached.version === STATS_CACHE_VERSION) {
             stats = cached.stats;
             mechanics = cached.mechanics;
             phaseStats = cached.phases ?? null;
+            defenseSupport = cached.defenseSupport ?? null;
             loading = false;
             activeTab = "statistics";
             inflight = null;
@@ -591,6 +1062,9 @@
         }
         stats = res.stats;
         phaseStats = extractPhaseStats(res.raw, PHASE_BOON_META);
+        defenseSupport = extractDefenseSupport(res.raw);
+        skillNames = ((res.raw as any)?.skillMap as Record<string, { name?: string; icon?: string }>) || {};
+        buffNames = ((res.raw as any)?.buffMap as Record<string, { name?: string }>) || {};
         let mech = extractMechanics(res.raw, res.stats.boss_name);
         // If a local EVTC fallback is available, use it to fill in Revealed
         // source attribution that dps.report does not expose (skill/clone/
@@ -655,9 +1129,9 @@
           // Local merge skipped — no error to surface.
         }
         mechanics = mech;
-        statsCache.set(cacheKey, { stats: res.stats, mechanics: mech, phases: phaseStats });
+        statsCache.set(cacheKey, { version: STATS_CACHE_VERSION, stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport });
         if (localPath) {
-          try { await invoke("store_stats_cache", { filePath: localPath, data: { stats: res.stats, mechanics: mech, phases: phaseStats } }); } catch (e) {}
+          try { await invoke("store_stats_cache", { filePath: localPath, data: { version: STATS_CACHE_VERSION, stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport } }); } catch (e) {}
         }
         // Non-Cerus fights only get the Boon Uptime tab — skip Statistics.
         // Harvest Temple defaults to Revealed if break data is present.
@@ -772,6 +1246,12 @@
           <button class="top-tab" class:active={activeTab === "boon"} onclick={() => (activeTab = "boon")}>
             <i class="fa-solid fa-shield-halved"></i> Boon Uptime
           </button>
+          <button class="top-tab" class:active={activeTab === "defense"} onclick={() => (activeTab = "defense")}>
+            <i class="fa-solid fa-shield"></i> Defense
+          </button>
+          <button class="top-tab" class:active={activeTab === "support"} onclick={() => (activeTab = "support")}>
+            <i class="fa-solid fa-hand-holding-heart"></i> Support
+          </button>
           {#if isHT && revealFeatureReady}
           <button class="top-tab" class:active={activeTab === "revealed"} onclick={() => (activeTab = "revealed")}>
             <i class="fa-solid fa-eye"></i> Revealed
@@ -820,6 +1300,99 @@
             </div>
           {/if}
         {/snippet}
+
+        <!-- ── Axibridge-style blocks: MVP hero, runner-up, metric panel ── -->
+        {#snippet axHero(cfg: AxHeroCfg)}
+          <div class="ax-hero-card {cfg.tier}">
+            <div class="ax-hero-pill {cfg.tier}">
+              <i class="fa-solid {cfg.icon}"></i> {cfg.label}
+            </div>
+            <div class="ax-hero-main">
+              <span class="ax-hero-crown {cfg.tier}"><i class="fa-solid fa-crown"></i></span>
+              <div class="ax-hero-id">
+                <span class="ax-hero-name" title={cfg.player.account}>{cfg.player.name}</span>
+                <span class="ax-hero-prof">{cfg.player.profession}</span>
+              </div>
+              <div class="ax-hero-score" title={cfg.scoreTip}>
+                <b>{cfg.score}</b>
+                <span>{cfg.scoreLabel}</span>
+              </div>
+            </div>
+            <div class="ax-hero-quote">{cfg.quote}</div>
+            {#each cfg.rows as row}
+              <div class="ax-hero-row"><span>{row.label}</span><b>{row.value}</b></div>
+            {/each}
+          </div>
+        {/snippet}
+
+        {#snippet axRunner(cfg: AxRunnerCfg)}
+          <div class="ax-runner-card {cfg.tier}">
+            <div class="ax-runner-top">
+              <span class="ax-runner-tier {cfg.tier}">{cfg.tier}</span>
+              <b title={cfg.scoreTip}>{cfg.score}</b>
+            </div>
+            <div class="ax-runner-name" title={cfg.player.account}>
+              <span class="ax-runner-crown {cfg.tier}"><i class="fa-solid fa-crown"></i></span>{cfg.player.name}
+            </div>
+            <div class="ax-runner-prof">{cfg.player.profession}</div>
+            {#each cfg.rows as row}
+              <div class="ax-runner-row"><span>{row.label}</span><b>{row.value}</b></div>
+            {/each}
+          </div>
+        {/snippet}
+
+        {#snippet axFeed(title: string, hint: string, rows: AxFeedRow[], down: boolean)}
+          {#if rows.length > 0}
+            <div class="ds-block">
+              <div class="ds-block-title">{title} <span class="ds-block-hint">{hint}</span></div>
+              <div class="ax-death-feed">
+                {#each rows as r}
+                  <div class="ax-death-row">
+                    <span class="ax-death-time" class:ax-death-time-down={down}>{fmtTime(r.time)}</span>
+                    <img class="ax-row-icon" src={profIcon(r.player.profession)} alt={r.player.profession}
+                         onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                    <span class="ax-death-name" title={r.player.account}>{r.player.name}</span>
+                    <span class="ax-death-cause">
+                      {#each r.sources as k}
+                        <span title={k.src + (axIsCondition(k) ? " (condition damage)" : "")}
+                              class:ax-death-cond={axIsCondition(k)}>
+                          {axSkillName(k.id) || k.src}{k.damage > 0 ? ` · ${fmt(k.damage)}` : ""}
+                        </span>
+                      {/each}
+                    </span>
+                  </div>
+                {/each}
+              </div>
+            </div>
+          {/if}
+        {/snippet}
+
+        {#snippet axPanel(panel: AxPanel)}
+          <div class="ax-panel">
+            <div class="ax-panel-head">
+              <i class="{panel.icon}"></i>
+              <span class="ax-panel-title">{panel.title}</span>
+            </div>
+            <div class="ax-panel-total">{panel.total}</div>
+            {#if panel.top}
+              <div class="ax-panel-top" title={panel.top}>{panel.top}</div>
+            {/if}
+            <div class="ax-panel-hint">{panel.hint}</div>
+            <div class="ax-panel-rows">
+              {#each panel.rows as row}
+                <div class="ax-row">
+                  <span class="ax-row-rank">{row.rank}</span>
+                  <img class="ax-row-icon" src={profIcon(row.profession)} alt={row.profession}
+                       onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                  <span class="ax-row-name" title={row.account}>{row.name}</span>
+                  <span class="ax-row-val">{row.shown}</span>
+                  <span class="ax-row-bar"><i style="height:{row.pct}%"></i></span>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/snippet}
+
         <div class="stats-content">
           {#if activeTab === "statistics"}
             <!-- STATISTICS -->
@@ -1060,6 +1633,181 @@
                   </div>
                 {/if}
               </div>
+            {/if}
+
+          {:else if activeTab === "defense"}
+            <!-- DEFENSE -->
+            {@render phaseBar()}
+            <div class="ds-toolbar">
+              <span class="stats-hint">Hits mitigated = blocked + evaded + dodged + invulned</span>
+              <label class="ds-rate"><input type="checkbox" bind:checked={showPer10Min} /> Per 10 min</label>
+            </div>
+            {#if defensePlayers.length === 0}
+              <div class="stat-note">No defensive data for this log.</div>
+            {:else}
+              <div class="ax-heroes">
+                {#if defenseHero}
+                  {@render axHero(defenseHero)}
+                {/if}
+                {#each defenseRunners as cfg}
+                  {@render axRunner(cfg)}
+                {/each}
+              </div>
+
+              <div class="ax-panels">
+                {#each defensePanels as panel}
+                  {@render axPanel(panel)}
+                {/each}
+              </div>
+
+              {#if downRecap.length > 0}
+                <div class="ds-block ax-downrecap">
+                  <div class="ax-downrecap-icon">
+                    <img src={bossIcon} alt={bossName} />
+                    <span>{bossName}</span>
+                  </div>
+                  <div class="ax-downrecap-body">
+                    <div class="ds-block-title">Down recap <span class="ds-block-hint">top skills by players downed</span></div>
+                    {#each downRecap as r}
+                      <div class="ax-downrecap-row">
+                        <span class="ax-downrecap-name">{r.name}</span>
+                        <span class="ax-downrecap-val">{r.players} downed{r.deaths > 0 ? ` · ${r.deaths} died` : ""}</span>
+                        <span class="ax-downrecap-dmg">{fmt(r.damage)}</span>
+                      </div>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+
+              {@render axFeed("Downs", `${defenseDowns.length} led to a death`, defenseDowns, true)}
+              {@render axFeed("Deaths", `${defenseDeaths.length} in this log`, defenseDeaths, false)}
+
+              <div class="ds-block">
+                <div class="ds-block-title">Mitigation matrix <span class="ds-block-hint">click a row for the damage breakdown</span></div>
+                <div class="ds-legend">
+                  <span>Hits that never landed: blocked · evaded · dodged · invuln</span>
+                  <span>Enemy casts stopped: interrupted</span>
+                  <span>Went down / died: downed · dead</span>
+                </div>
+                <table class="ds-heat">
+                  <thead>
+                    <tr>
+                      <th>Player</th>
+                      {#each DEFENSE_HEAT_COLS as c}
+                        <th class="ds-heat-col" title={c.tip}>{c.label}</th>
+                      {/each}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#each defenseHeat as row}
+                      <tr class="ds-heat-row" class:open={defenseOpen === row.player.name}
+                          onclick={() => defenseOpen = defenseOpen === row.player.name ? null : row.player.name}>
+                        <td class="ds-heat-name">
+                          <img class="prof-icon" src={profIcon(row.player.profession)} alt={row.player.profession}
+                               onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                          <span>{row.player.name}</span>
+                        </td>
+                        {#each row.cells as cell}
+                          <td class="ds-heat-cell" title="{cell.tip} — {cell.value} · #{cell.rank} of {defensePlayers.length}"
+                              style="background: {heatBg(cell.pct)}">{cell.value}</td>
+                        {/each}
+                      </tr>
+                      {#if defenseOpen === row.player.name}
+                        <tr class="ds-detail-row">
+                          <td colspan={DEFENSE_HEAT_COLS.length + 1}>
+                            <div class="ds-detail">
+                              <div><span>Power</span><b>{fmt(row.player.powerDamageTaken * dsRate)}</b></div>
+                              <div><span>Condition</span><b>{fmt(row.player.conditionDamageTaken * dsRate)}</b></div>
+                              <div><span>Strike</span><b>{fmt(row.player.strikeDamageTaken * dsRate)}</b></div>
+                              <div><span>Barrier</span><b>{fmt(row.player.damageBarrier * dsRate)}</b></div>
+                              <div><span>Hits taken</span><b>{row.player.damageTakenCount}</b></div>
+                              <div><span>Downed</span><b>{row.player.downCount}× {fmtTime(row.player.downDuration / 1000)}</b></div>
+                              <div><span>Deaths</span><b>{row.player.deadCount}</b></div>
+                            </div>
+                          </td>
+                        </tr>
+                      {/if}
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
+            {/if}
+          {:else if activeTab === "support"}
+            <!-- SUPPORT -->
+            {@render phaseBar()}
+            <div class="ds-toolbar">
+              <span class="stats-hint">Cleanses, boon strips, revives and stun breaks from Elite Insights</span>
+            </div>
+            {#if supportPlayers.length === 0}
+              <div class="stat-note">No support data for this log.</div>
+            {:else}
+              <div class="ax-heroes">
+                {#if supportHero}
+                  {@render axHero(supportHero)}
+                {/if}
+                {#each supportRunners as cfg}
+                  {@render axRunner(cfg)}
+                {/each}
+              </div>
+
+              <div class="ax-panels">
+                {#each supportPanels as panel}
+                  {@render axPanel(panel)}
+                {/each}
+              </div>
+
+              <div class="ds-block">
+                <div class="ds-block-title">Boons generated for the group <span class="ds-block-hint">hover a chip for the exact uptime</span></div>
+                <div class="ax-boon-rows">
+                  {#each supportBoons as row}
+                    <div class="ax-boon-row">
+                      <span class="ax-row-rank">{competitionRank(supportBoons.map((r) => r.total), row.total)}</span>
+                      <img class="ax-row-icon" src={profIcon(row.player.profession)} alt={row.player.profession}
+                           onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                      <span class="ax-boon-name" title={row.player.account}>{row.player.name}</span>
+                      <span class="ax-boon-total" title="Sum of generated boon uptime">{row.total.toFixed(1)}</span>
+                      <span class="ax-boon-list">
+                        {#each row.boons as b}
+                          <span class="ax-boon-chip" title="{b.name}: {b.generation.toFixed(1)}% uptime generated">{b.name} {b.generation.toFixed(1)}%</span>
+                        {/each}
+                      </span>
+                    </div>
+                  {/each}
+                </div>
+              </div>
+
+              <div class="ds-block">
+                <div class="ds-block-title">Support detail</div>
+                <table class="ax-table">
+                  <thead>
+                    <tr>
+                      <th>#</th><th>Player</th><th>Score</th><th>Cleanses</th><th>Breakbar</th>
+                      <th>Self</th><th>Strips</th><th>Revives</th><th>Stun breaks</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#each supportRanked as p}
+                      <tr>
+                        <td class="ax-table-rank">{competitionRank(supportPlayers.map((x) => supportScore.get(x.name) ?? 0), supportScore.get(p.name) ?? 0)}</td>
+                        <td class="ax-table-name">
+                          <img class="ax-row-icon" src={profIcon(p.profession)} alt={p.profession}
+                               onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                          <span>{p.name}</span>
+                        </td>
+                        <td class="ax-table-score">{supportScore.get(p.name) ?? 0}</td>
+                        <td>{fmt(p.condiCleanse)}</td>
+                        <td>{fmt(p.breakbarDamage)}</td>
+                        <td>{fmt(p.condiCleanseSelf)}</td>
+                        <td>{fmt(p.boonStrips)}</td>
+                        <td>{fmt(p.resurrects)}</td>
+                        <td>{fmt(p.stunBreak)}</td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="stat-note">Healing is not shown — Elite Insights only reports it when its healing-stats module is enabled, and it is off for these logs.</div>
             {/if}
           {/if}
 
@@ -1418,6 +2166,10 @@
 
   @media (prefers-reduced-motion: reduce) {
     .stats-modal { animation: none !important; }
+    .ax-hero-card, .ax-runner-card, .ax-panel, .ax-boon-row, .ds-block, .ax-row, .ax-death-row, .ax-downrecap-row {
+      transition: none !important;
+      transform: none !important;
+    }
   }
 
   /* ── Mechanic tab summaries (charcoal cards, indigo accent) ── */
@@ -1589,6 +2341,253 @@
   .phase-parse:disabled { opacity: .6; cursor: default; }
   .stat-phase-note { margin: 8px 0 0; font-size: 11px; color: var(--text-muted); }
   .stat-phase-note b { color: var(--text); }
+
+  /* ── Defense / Support tabs ── */
+  .ds-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .ds-rate {
+    display: inline-flex; align-items: center; gap: 4px; margin-left: auto;
+    font-size: 10px; font-weight: 700; letter-spacing: .03em; color: var(--text-muted);
+    cursor: pointer; user-select: none;
+  }
+  /* ── MVP hero + runner-up cards ── */
+  .ax-heroes { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 10px; }
+  .ax-hero-card {
+    background: var(--bg-panel); border: 1px solid var(--border);
+    border-top: 2px solid var(--gold); border-radius: var(--radius);
+    padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;
+    transition: transform .18s var(--ease-smooth), border-color .18s, box-shadow .18s;
+  }
+  .ax-hero-card.gold { border-color: color-mix(in srgb, var(--gold) 55%, var(--border)); }
+  .ax-hero-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--gold);
+    box-shadow: 0 10px 24px -12px rgba(0, 0, 0, .85);
+  }
+  .ax-hero-pill {
+    align-self: flex-start; display: inline-flex; align-items: center; gap: 5px;
+    font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em;
+    padding: 3px 8px; border-radius: 6px;
+    color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+  .ax-hero-pill.gold {
+    color: var(--gold); background: color-mix(in srgb, var(--gold) 14%, transparent);
+    border-color: color-mix(in srgb, var(--gold) 40%, transparent);
+  }
+  .ax-hero-main { display: flex; align-items: center; gap: 10px; }
+  .ax-hero-crown {
+    display: grid; place-items: center; width: 34px; height: 34px; flex: none;
+    border-radius: 9px; font-size: 15px; color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  .ax-hero-crown.gold {
+    color: var(--gold); background: color-mix(in srgb, var(--gold) 14%, transparent);
+    border-color: color-mix(in srgb, var(--gold) 38%, transparent);
+  }
+  .ax-hero-id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .ax-hero-name {
+    font-size: 16px; font-weight: 800; color: #fff;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ax-hero-prof { font-size: 10px; color: var(--text-muted); }
+  .ax-hero-score { margin-left: auto; text-align: right; flex: none; }
+  .ax-hero-score b { display: block; font-size: 20px; font-weight: 800; color: var(--accent); line-height: 1; font-variant-numeric: tabular-nums; }
+  .ax-hero-score span { font-size: 8px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
+  .ax-hero-quote { font-size: 11px; font-style: italic; color: var(--text-muted); }
+  .ax-hero-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    font-size: 11px; padding: 5px 8px; border-radius: 6px;
+    background: color-mix(in srgb, #fff 3%, transparent);
+  }
+  .ax-hero-row span { color: var(--text-muted); }
+  .ax-hero-row b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+  .ax-runner-card {
+    background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 12px; display: flex; flex-direction: column; gap: 6px;
+    transition: transform .18s var(--ease-smooth), border-color .18s, box-shadow .18s;
+  }
+  .ax-runner-card.silver { border-color: color-mix(in srgb, var(--silver) 50%, var(--border)); }
+  .ax-runner-card.bronze { border-color: color-mix(in srgb, var(--bronze) 50%, var(--border)); }
+  .ax-runner-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 24px -12px rgba(0, 0, 0, .85);
+  }
+  .ax-runner-card.silver:hover { border-color: var(--silver); }
+  .ax-runner-card.bronze:hover { border-color: var(--bronze); }
+  .ax-runner-top { display: flex; align-items: center; justify-content: space-between; }
+  .ax-runner-tier {
+    font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em;
+    padding: 2px 6px; border-radius: 5px;
+  }
+  .ax-runner-tier.silver { color: var(--silver); background: color-mix(in srgb, var(--silver) 14%, transparent); }
+  .ax-runner-tier.bronze { color: var(--bronze); background: color-mix(in srgb, var(--bronze) 14%, transparent); }
+  .ax-runner-top b { font-size: 16px; color: #fff; font-variant-numeric: tabular-nums; }
+  .ax-runner-name {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 13px; font-weight: 700; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ax-runner-crown { font-size: 11px; flex: none; }
+  .ax-runner-crown.silver { color: var(--silver); }
+  .ax-runner-crown.bronze { color: var(--bronze); }
+  .ax-runner-prof { font-size: 10px; color: var(--text-muted); margin-top: -3px; }
+  .ax-runner-row { display: flex; align-items: center; justify-content: space-between; font-size: 10px; color: var(--text-muted); }
+  .ax-runner-row b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+  /* ── Metric panels ── */
+  .ax-panels {
+    display: grid; gap: 10px;
+    /* auto-fit collapses the tracks of hidden panels so the survivors stretch. */
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  }
+  .ax-panel {
+    background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; min-width: 0;
+    transition: transform .18s var(--ease-smooth), border-color .18s, box-shadow .18s;
+  }
+  .ax-panel:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+    box-shadow: 0 10px 24px -12px rgba(0, 0, 0, .85);
+  }
+  .ax-panel-head { display: flex; align-items: center; gap: 6px; color: var(--accent); }
+  .ax-panel-head i { font-size: 11px; }
+  .ax-panel-title { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; color: var(--text-muted); }
+  .ax-panel-total { font-size: 22px; font-weight: 800; color: #fff; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .ax-panel-top {
+    font-size: 11px; font-weight: 700; color: var(--accent);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ax-panel-hint { font-size: 9px; color: var(--text-muted); opacity: .8; margin-bottom: 6px; }
+  .ax-panel-rows { display: flex; flex-direction: column; gap: 1px; }
+  .ax-row {
+    display: grid; grid-template-columns: 16px 16px 1fr auto 10px; align-items: center;
+    gap: 5px; padding: 2px 4px; border-radius: 4px;
+    transition: background-color .14s, transform .18s var(--ease-smooth);
+  }
+  .ax-row:hover { background: color-mix(in srgb, #fff 5%, transparent); transform: translateX(2px); }
+  .ax-row-rank { font-size: 9px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .ax-row-icon { width: 14px; height: 14px; border-radius: 4px; object-fit: cover; background: #0c0c0f; }
+  .ax-row-name { font-size: 10px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ax-row-val { font-size: 10px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .ax-row-bar {
+    position: relative; width: 3px; height: 18px; border-radius: 2px;
+    background: color-mix(in srgb, #fff 7%, transparent); overflow: hidden;
+  }
+  .ax-row-bar i {
+    position: absolute; bottom: 0; left: 0; right: 0; display: block;
+    background: var(--accent); border-radius: 2px;
+    transition: height .5s var(--ease-smooth);
+  }
+
+  .ds-block {
+    background: var(--bg-panel); border: 1px solid var(--border); border-left: 2px solid var(--accent);
+    border-radius: 10px; padding: 12px 14px;
+    transition: transform .18s var(--ease-smooth), border-color .18s, box-shadow .18s;
+  }
+  .ds-block:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+    box-shadow: 0 10px 24px -12px rgba(0, 0, 0, .85);
+  }
+  .ds-block-title {
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--text); margin-bottom: 10px;
+  }
+  .ds-block-hint { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text-muted); }
+  .ds-legend {
+    display: flex; flex-wrap: wrap; gap: 4px 14px; margin-bottom: 8px;
+    font-size: 10px; color: var(--text-muted);
+  }
+  .ds-legend span { display: inline-flex; align-items: center; gap: 5px; }
+
+  .ds-heat { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 11px; }
+  .ds-heat th {
+    text-align: right; font-size: 9px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--text-muted); font-weight: 700; padding: 4px 6px;
+  }
+  .ds-heat th:first-child { text-align: left; }
+  .ds-heat-row { cursor: pointer; }
+  .ds-heat-row td { padding: 4px 6px; border-top: 1px solid var(--border); transition: background-color .14s; }
+  .ds-heat-row:hover td { background: color-mix(in srgb, #fff 4%, transparent); }
+  .ds-heat-row.open td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .ds-heat-name { display: flex; align-items: center; gap: 6px; color: var(--text); }
+  .ds-heat-name .prof-icon { width: 16px; height: 16px; border-radius: 4px; }
+  .ds-heat-cell { text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+  .ds-detail-row td { padding: 0 6px 8px; }
+  .ds-detail { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 8px 0 2px; }
+  .ds-detail div { display: flex; gap: 6px; font-size: 11px; color: var(--text-muted); }
+  .ds-detail b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+  /* ── Down recap ── */
+  .ax-downrecap { display: flex; gap: 14px; align-items: flex-start; }
+  .ax-downrecap-icon { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 76px; flex: none; }
+  .ax-downrecap-icon img { width: 60px; height: 60px; border-radius: 12px; object-fit: cover; border: 1px solid var(--border); }
+  .ax-downrecap-icon span { font-size: 10px; color: var(--text-muted); text-align: center; line-height: 1.25; }
+  .ax-downrecap-body { flex: 1; min-width: 0; }
+  .ax-downrecap-row {
+    display: grid; grid-template-columns: 1fr auto; align-items: center;
+    gap: 1px 12px; padding: 5px 6px; border-radius: 6px;
+    transition: background-color .14s;
+  }
+  .ax-downrecap-row:hover { background: color-mix(in srgb, #fff 4%, transparent); }
+  .ax-downrecap-name { font-size: 12px; font-weight: 700; color: var(--text); }
+  .ax-downrecap-val { grid-column: 1; font-size: 10px; color: var(--text-muted); }
+  .ax-downrecap-dmg { grid-column: 2; grid-row: 1 / span 2; font-size: 11px; font-weight: 700; color: var(--fail); font-variant-numeric: tabular-nums; }
+
+  /* ── Death feed ── */
+  .ax-death-feed { display: flex; flex-direction: column; gap: 3px; }
+  .ax-death-row {
+    display: grid; grid-template-columns: 38px 16px 1fr; align-items: center;
+    gap: 6px; padding: 4px 8px; border-radius: 6px;
+    background: color-mix(in srgb, #fff 3%, transparent);
+    transition: background-color .14s, transform .18s var(--ease-smooth);
+  }
+  .ax-death-row:hover { background: color-mix(in srgb, #fff 6%, transparent); transform: translateX(2px); }
+  .ax-death-time { font-size: 10px; font-weight: 700; color: var(--fail); font-variant-numeric: tabular-nums; }
+  .ax-death-time-down { color: var(--warn); }
+  .ax-death-name { font-size: 11px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ax-death-cause {
+    grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 3px 10px;
+    font-size: 10px; color: var(--text-muted);
+  }
+  .ax-death-cause span { color: var(--text); font-variant-numeric: tabular-nums; }
+  .ax-death-cond { color: var(--warn); }
+
+  /* ── Support: boons generated + detail table ── */
+  .ax-boon-rows { display: flex; flex-direction: column; gap: 4px; }
+  .ax-boon-row {
+    display: grid; grid-template-columns: 16px 16px 1fr auto; align-items: center;
+    gap: 6px; padding: 5px 8px; border-radius: 6px;
+    background: color-mix(in srgb, #fff 3%, transparent);
+    transition: background-color .14s, transform .18s var(--ease-smooth), box-shadow .18s;
+  }
+  .ax-boon-row:hover {
+    background: color-mix(in srgb, #fff 6%, transparent);
+    transform: translateX(2px);
+    box-shadow: 0 4px 12px -8px rgba(0, 0, 0, .8);
+  }
+  .ax-boon-name { font-size: 11px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ax-boon-total { font-size: 11px; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .ax-boon-list { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; }
+  .ax-boon-chip {
+    font-size: 9px; padding: 2px 6px; border-radius: 5px;
+    color: var(--text-muted); background: color-mix(in srgb, #fff 5%, transparent);
+    border: 1px solid var(--border); font-variant-numeric: tabular-nums;
+  }
+  .ax-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 11px; }
+  .ax-table th {
+    text-align: right; font-size: 9px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--text-muted); font-weight: 700; padding: 4px 6px;
+  }
+  .ax-table th:nth-child(2) { text-align: left; }
+  .ax-table td { padding: 5px 6px; border-top: 1px solid var(--border); text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+  .ax-table-rank { color: var(--text-muted) !important; }
+  .ax-table-score { color: var(--accent) !important; font-weight: 700; }
+  .ax-table-name { display: flex; align-items: center; gap: 6px; text-align: left !important; }
+  .ax-table .ax-row-icon { width: 16px; height: 16px; }
   .sg-chip {
     font-size: 10px; font-weight: 700; letter-spacing: .03em; font-family: inherit;
     color: var(--text-muted); background: color-mix(in srgb,#fff 5%,transparent);
