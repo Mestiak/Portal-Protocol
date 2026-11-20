@@ -102,7 +102,7 @@
     const shadMax = Math.max(1, cShad);
     const rageMax = Math.max(1, cRage);
     let rBlk = 0, rLk = 0, rSh = 0, rRage = 0;
-    const events: { x: number; y: number; color: string; label: string; t: number; eff: number; shad: number; rage: number; type: string; closeSpawn?: RegExpMatchArray | null }[] = [];
+    const events: { x: number; y: number; color: string; label: string; t: number; eff: number; shad: number; rage: number; type: string; closeName?: string; closeDist?: number }[] = [];
     for (const e of report.timeline) {
       if (e.t > dur) continue;
       if (e.type === 'orb_blocked' || e.type === 'orb_leaked') {
@@ -119,8 +119,7 @@
       else if (e.type === 'shadow_close') { color = '#ff7a3c'; label = 'Malice Dropped Near Boss'; y = tlYcnt(rSh, shadMax); }
       else if (e.type === 'shadow_reached') { color = '#a78bfa'; label = 'Shadow Reached Boss'; y = tlYcnt(rSh, shadMax); }
       else if (e.type === 'rage_hit') { color = '#fbbf24'; label = `Rage Hit: ${e.actor || 'Unknown'} (+${e.rageHit})`; y = tlYcnt(rRage, rageMax); }
-      const closeSpawn = e.detail ? e.detail.match(/\*\*([^*]+)\*\*\s*\((\d+)u\)/) : null;
-      events.push({ x, y, color, label, t: e.t, eff, shad: rSh, rage: rRage, type: e.type || '', closeSpawn });
+      events.push({ x, y, color, label, t: e.t, eff, shad: rSh, rage: rRage, type: e.type || '', closeName: e.closeName, closeDist: e.closeDist });
     }
     return { effPts, shadPts, ragePts, shadMax, rageMax, totalOrbs, events };
   });
@@ -133,7 +132,7 @@
     const s = Math.floor(ms / 1000);
     return `${Math.floor(s / 60).toString().padStart(2, "0")}:${(s % 60).toString().padStart(2, "0")}`;
   }
-  let hover = $state<{ x: number; y: number; eff: number; shad: number; rage: number; t: number; label?: string; color?: string; idx: number; dotY: number; side: 'left' | 'right'; closeSpawn?: RegExpMatchArray | null } | null>(null);
+  let hover = $state<{ x: number; y: number; eff: number; shad: number; rage: number; t: number; label?: string; color?: string; idx: number; dotY: number; side: 'left' | 'right'; closeName?: string; closeDist?: number } | null>(null);
   function onTlMove(ev: MouseEvent) {
     if (!timeline) return;
     const svg = ev.currentTarget as SVGSVGElement;
@@ -159,10 +158,62 @@
       rage: timeline.ragePts[bi]?.y ?? 0,
       t: timeline.effPts[bi]?.t ?? 0,
       label: near.label, color: near.color,
-      idx: nearIdx, dotY: near.y, side, closeSpawn: near.closeSpawn,
+      idx: nearIdx, dotY: near.y, side, closeName: near.closeName, closeDist: near.closeDist,
     };
   }
   function onTlLeave() { hover = null; }
+
+  /** Friendly labels for the empowered history timeline. The parser emits
+   *  internal type names (ShadowClose / ShadowWalk) that must not reach the UI. */
+  const EMP_LABEL: Record<string, string> = {
+    Orb: "Orb leaked",
+    ShadowClose: "Close Spawn",
+    ShadowWalk: "Walk-in",
+    Slam: "Slam",
+    "Rage Hit": "Cry of Rage",
+    Shadow: "Shadow reached",
+  };
+  function empLabel(type: string): string {
+    return EMP_LABEL[type] || type;
+  }
+
+  /** Timeline rows carry internal type names; map them to the CSS variants. */
+  function empRowClass(type: string): string {
+    if (type === "Orb") return "emp-tl-orb";
+    if (type === "Slam") return "emp-tl-slam";
+    if (type === "Rage Hit") return "emp-tl-rage";
+    return "emp-tl-shadow";
+  }
+  function empDot(type: string): string {
+    if (type === "Orb") return "dot-orb";
+    if (type === "Slam") return "dot-slam";
+    if (type === "Rage Hit") return "dot-rage";
+    return "dot-shadow";
+  }
+  function empBadge(type: string): string {
+    if (type === "Orb") return "badge-orb";
+    if (type === "Slam") return "badge-slam";
+    if (type === "Rage Hit") return "badge-rage";
+    return "badge-shadow";
+  }
+
+  /** Close-spawn rows carry the player and distance as fields, so no markup
+   *  travels through the timeline; other rows show their detail as-is. */
+  function empDetail(ev: { type: string; detail: string; closeName?: string; closeDist?: number }): string {
+    if (ev.type === "ShadowClose") return ev.closeName != null ? `${ev.closeName} (${ev.closeDist}u)` : "";
+    return ev.detail || "";
+  }
+
+  /** Stack sources for one empowered phase: orbs, shadows, slams and Cry of Rage. */
+  function empSources(p: any): { dot: string; bc: string; label: string; inst: number; stacks: number }[] {
+    const rows = [
+      p.orbsEaten > 0 ? { dot: "dot-orb", bc: "badge-orb", label: "Orbs Absorbed", inst: p.orbsEaten, stacks: p.orbsEaten } : null,
+      p.shadowCount > 0 ? { dot: "dot-shadow", bc: "badge-shadow", label: "Malicious Shadows", inst: p.shadowCount, stacks: p.maliceHits } : null,
+      p.smashStacks > 0 ? { dot: "dot-slam", bc: "badge-slam", label: "Enraged Smash Slams", inst: p.smashCount, stacks: p.smashStacks } : null,
+      p.rageHits > 0 ? { dot: "dot-rage", bc: "badge-rage", label: "Cry of Rage", inst: p.rageHits, stacks: p.rageHits } : null,
+    ];
+    return rows.filter((r): r is { dot: string; bc: string; label: string; inst: number; stacks: number } => r !== null);
+  }
 </script>
 
 {#if activeTab === "statistics"}
@@ -227,8 +278,8 @@
             style={`left:${(hover.x / TL_W) * 100}%; top:${(hover.dotY / TL_H) * 100}%;`}>
             <div class="tt-time">{fmtClock(hover.t)}</div>
             {#if hover.label}<div class="tt-event" style={`color:${hover.color};`}>{hover.label}</div>{/if}
-            {#if hover.closeSpawn}
-              <div class="tt-row"><span class="tt-dot tt-close"></span>Close Spawn: <b>{hover.closeSpawn[1]}</b> ({hover.closeSpawn[2]}u)</div>
+            {#if hover.closeName}
+              <div class="tt-row"><span class="tt-dot tt-close"></span>Close Spawn: <b>{hover.closeName}</b> ({hover.closeDist}u)</div>
             {/if}
             <div class="tt-row"><span class="tt-dot lg-cyan"></span>Orb Block Eff: <b>{hover.eff}%</b></div>
             <div class="tt-row"><span class="tt-dot lg-purple"></span>Shadows Reached: <b>{hover.shad}</b></div>
@@ -504,17 +555,14 @@
       <div class="emp-cards">
         {#each report.phases as p}
           {@const open = empOpen.has(p.phaseName) ? empOpen.get(p.phaseName) : false}
-          {@const sources = ([
-            p.orbsEaten > 0 ? { dot: "dot-orb", bc: "badge-orb", label: "Orbs Absorbed", inst: p.orbsEaten, stacks: p.orbsEaten } : null,
-            p.shadowCount > 0 ? { dot: "dot-shadow", bc: "badge-shadow", label: "Malicious Shadows", inst: p.shadowCount, stacks: p.maliceHits } : null,
-            p.smashStacks > 0 ? { dot: "dot-slam", bc: "badge-slam", label: "Enraged Smash Slams", inst: p.smashCount, stacks: p.smashStacks } : null,
-          ]).filter((s): s is { dot: string; bc: string; label: string; inst: number; stacks: number } => s !== null)}
+          {@const sources = empSources(p)}
+          {@const maxStacks = Math.max(1, ...sources.map((s) => s.stacks))}
           <div class="emp-card" class:final={p.phaseName === "Enraged Smash"}>
             <button class="emp-card-head" onclick={() => toggleEmp(p.phaseName)}>
               <div class="emp-card-titles">
                 {#if p.phaseName === "Enraged Smash"}<img class="emp-flame" src="/mechanics/enraged.png" alt="" />{/if}
                 <span class="emp-card-kicker">{'P' + (report.phases.indexOf(p) + 1)} · ENCOUNTER STAGE</span>
-                <span class="emp-card-name">{p.phaseName === "50%-10%" ? "50%-10%" : p.phaseName}</span>
+                <span class="emp-card-name" title={p.phaseName}>{p.phaseName}</span>
               </div>
               <div class="emp-card-total">
                 <span class="emp-card-tlabel">CERUS TOTAL</span>
@@ -533,6 +581,7 @@
                     <div class="emp-source">
                       <span class="emp-dot {src.dot}"></span>
                       <span class="emp-source-label">{src.label}</span>
+                      <span class="emp-bar"><i style="height:{Math.round((src.stacks / maxStacks) * 100)}%"></i></span>
                       <span class="emp-source-val">
                         <span class="emp-count">{fmt(src.inst)}</span>
                         <span class="emp-stack-badge {src.bc}">+{fmt(src.stacks)} Stacks</span>
@@ -543,16 +592,6 @@
               {:else}
                 <div class="emp-no-src">No stacks gained</div>
               {/if}
-              {#if p.rageHits > 0}
-                <div class="emp-source">
-                  <span class="emp-dot dot-rage"></span>
-                  <span class="emp-source-label">Cry of Rage</span>
-                  <span class="emp-source-val">
-                    <span class="emp-count">{fmt(p.rageHits)}</span>
-                    <span class="emp-stack-badge badge-rage">+{fmt(p.rageHits)} Stacks</span>
-                  </span>
-                </div>
-              {/if}
             </div>
             {#if p.timeline.length}
               <button class="emp-tl-btn" onclick={() => toggleEmp(p.phaseName)}>
@@ -561,20 +600,12 @@
               {#if open}
                 <div class="emp-timeline" transition:slide={{ duration: 200, easing: cubicInOut }}>
                   {#each p.timeline as ev}
-                    <div class="emp-tl-row emp-tl-{ev.type.toLowerCase().replace(' ', '-')}">
+                    <div class="emp-tl-row {empRowClass(ev.type)}">
                       <span class="emp-tl-time">{fmtTime(ev.rawTime / 1000)}</span>
-                      <span class="emp-tl-dot emp-dot {ev.type === 'Orb' ? 'dot-orb' : ev.type === 'Shadow' ? 'dot-shadow' : ev.type === 'Slam' ? 'dot-slam' : 'dot-rage'}"></span>
-                      <span class="emp-tl-label">
-                        {#if ev.type === 'Orb'}Orb leaked
-                        {:else if ev.type === 'Shadow'}Shadow reached
-                        {:else if ev.type === 'Slam'}Slam
-                        {:else if ev.type === 'Rage Hit'}Cry of Rage
-                        {:else}{ev.type}{/if}
-                      </span>
-                      <span class="emp-tl-detail">
-                        {#if ev.type === 'Rage Hit' && ev.detail}{ev.detail}{:else if ev.type === 'Shadow'}{@html ev.detail.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')}{:else}{ev.detail}{/if}
-                      </span>
-                      <span class="emp-tl-stacks emp-stack-badge {ev.type === 'Orb' ? 'badge-orb' : ev.type === 'Shadow' ? 'badge-shadow' : ev.type === 'Slam' ? 'badge-slam' : 'badge-rage'}">+{fmt(ev.stacks)} Stacks</span>
+                      <span class="emp-tl-dot emp-dot {empDot(ev.type)}"></span>
+                      <span class="emp-tl-label" title={empLabel(ev.type)}>{empLabel(ev.type)}</span>
+                      <span class="emp-tl-detail" title={empDetail(ev) || undefined}>{empDetail(ev)}</span>
+                      <span class="emp-tl-stacks emp-stack-badge {empBadge(ev.type)}">+{fmt(ev.stacks)} Stacks</span>
                     </div>
                   {/each}
                 </div>
@@ -802,9 +833,9 @@
     background: color-mix(in srgb, var(--accent) 5%, var(--bg-sidebar));
     border: 1px solid var(--border); border-radius: 12px;
     display: flex; flex-direction: column; overflow: hidden;
-    transition: border-color .14s ease, transform .14s ease, box-shadow .14s ease;
+    transition: border-color .18s var(--ease-smooth), transform .18s var(--ease-smooth), box-shadow .18s var(--ease-smooth);
   }
-  .emp-card:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); box-shadow: 0 4px 18px color-mix(in srgb, #000 40%, transparent); }
+  .emp-card:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); box-shadow: 0 4px 18px color-mix(in srgb, #000 40%, transparent); }
   .emp-card.final { border-color: color-mix(in srgb, #ff7a3c 35%, var(--border)); }
   .emp-card-head {
     display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
@@ -826,7 +857,9 @@
   .emp-stacks-val { font-size: 14px; font-weight: 800; color: #c08bff; letter-spacing: .02em; }
   .emp-sources { display: flex; flex-direction: column; gap: 5px; }
   .emp-no-src { font-size: 11px; font-style: italic; color: var(--text-muted); padding: 2px 0; }
-  .emp-source { display: grid; grid-template-columns: 12px 1fr auto; align-items: center; gap: 8px; font-size: 12px; }
+  .emp-source { display: grid; grid-template-columns: 12px 1fr 3px auto; align-items: center; gap: 8px; font-size: 12px; }
+  .emp-bar { position: relative; width: 3px; height: 16px; border-radius: 2px; background: color-mix(in srgb, #fff 7%, transparent); overflow: hidden; }
+  .emp-bar i { position: absolute; bottom: 0; left: 0; right: 0; display: block; background: var(--accent); border-radius: 2px; transition: height .5s var(--ease-smooth); }
   .emp-source-label { color: var(--text); }
   .emp-source-val { display: inline-flex; align-items: center; gap: 7px; }
   .emp-count { color: #fff; font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -851,8 +884,8 @@
   }
   .emp-tl-btn:hover { background: color-mix(in srgb, var(--accent) 16%, transparent); color: #fff; }
   .emp-timeline { padding: 8px 12px 12px; display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow-y: auto; }
-  .emp-tl-row { display: grid; grid-template-columns: 36px 12px auto 1fr auto; align-items: center; gap: 8px; font-size: 11px; padding: 3px 6px; border-radius: 6px; transition: background .1s ease; }
-  .emp-tl-row:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .emp-tl-row { display: grid; grid-template-columns: 36px 12px auto 1fr auto; align-items: center; gap: 8px; font-size: 11px; padding: 3px 6px; border-radius: 6px; transition: background .14s ease, transform .18s var(--ease-smooth); }
+  .emp-tl-row:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); transform: translateX(2px); }
   .emp-tl-time { color: var(--text-muted); font-variant-numeric: tabular-nums; font-size: 10px; }
   .emp-tl-dot { width: 8px; height: 8px; border-radius: 50%; }
   .emp-tl-label { color: var(--text); font-weight: 600; white-space: nowrap; }

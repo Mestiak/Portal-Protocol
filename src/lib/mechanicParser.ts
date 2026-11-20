@@ -86,7 +86,7 @@ export interface MechanicPhase {
   smashStacks: number;
   smashCount: number;
   rageHitsList: string[];
-  timeline: { rawTime: number; type: string; detail: string; stacks: number }[];
+  timeline: { rawTime: number; type: string; detail: string; stacks: number; closeName?: string; closeDist?: number }[];
 }
 
 export interface TimelinePoint {
@@ -97,7 +97,9 @@ export interface TimelinePoint {
   rageHit: number; // true dome failures this tick
   type?: 'orb_blocked' | 'orb_leaked' | 'shadow_close' | 'shadow_reached' | 'rage_hit'; // event kind (chart dots)
   actor?: string; // who blocked / leaked / raged
-  detail?: string; // Close Spawn text for shadow_reached events (player + distance)
+  detail?: string; // event text (Slam cast time, close-spawn label)
+  closeName?: string; // player who dropped malice near Cerus
+  closeDist?: number; // drop distance in units
 }
 
 // Per-player squad ledger (Cerus Statistics view — Squad Mechanics table).
@@ -719,7 +721,7 @@ function extractCerus(logData: Json): MechanicReport {
     });
 
     let remainingEmpA: number[] = [];
-    const timeline: { rawTime: number; type: string; detail: string; stacks: number }[] = [];
+    const timeline: { rawTime: number; type: string; detail: string; stacks: number; closeName?: string; closeDist?: number }[] = [];
     pEmpA.forEach((t, idx) => {
       // Cry of Rage is an autonomous empowered-gain source (+1) — it does NOT consume
       // a stack from remainingEmpA (orbs/shadows/slams stay attributed correctly).
@@ -897,8 +899,10 @@ function extractCerus(logData: Json): MechanicReport {
       // orbs gained via this shadow (cluster length).
       if (close) {
         // CLOSE SPAWN — dropped near Cerus; name the dropper (MalInt.A actor).
-        const detail = `${sMin}:${sSec.toString().padStart(2, "0")} ⚠️ Close Spawn: **${close.name}** (${close.dist}u)`;
-        timeline.push({ rawTime: e.reachT, type: "ShadowClose", detail, stacks: cluster.length });
+        // The player and distance are carried as fields so no markup travels
+        // through the timeline and reaches the UI as literal `**`.
+        const detail = `${sMin}:${sSec.toString().padStart(2, "0")} ⚠️ Close Spawn`;
+        timeline.push({ rawTime: e.reachT, type: "ShadowClose", detail, closeName: close.name, closeDist: close.dist, stacks: cluster.length });
       } else {
         // WALK-IN — spawned far, squad failed to stop it; no close-spawn player.
         timeline.push({ rawTime: e.reachT, type: "ShadowWalk", detail: "", stacks: cluster.length });
@@ -909,11 +913,14 @@ function extractCerus(logData: Json): MechanicReport {
     // (Slam/Shadow grouped by detail, Orb grouped by second, Rage kept as-is).
     remainingEmpA.forEach((t) => timeline.push({ rawTime: t, type: "Orb", detail: "", stacks: 1 }));
     timeline.sort((a, b) => a.rawTime - b.rawTime);
-    const groupedTimeline: { rawTime: number; type: string; detail: string; stacks: number }[] = [];
+    const groupedTimeline: { rawTime: number; type: string; detail: string; stacks: number; closeName?: string; closeDist?: number }[] = [];
     const sg: Record<string, any> = {}, og: Record<string, any> = {};
     timeline.forEach((ev) => {
-      if ((ev.type === "Shadow" || ev.type === "Slam") && ev.detail) {
-        if (!sg[ev.detail]) { sg[ev.detail] = { rawTime: ev.rawTime, type: ev.type, detail: ev.detail, stacks: 1 }; groupedTimeline.push(sg[ev.detail]); }
+      if (ev.type === "Slam" && ev.detail) {
+        // Slams group by cast text. Close spawns stay one row per drop on
+        // purpose: merging by player would sum their stacks and misstate the
+        // contribution of a single shadow.
+        if (!sg[ev.detail]) { sg[ev.detail] = { rawTime: ev.rawTime, type: ev.type, detail: ev.detail, closeName: ev.closeName, closeDist: ev.closeDist, stacks: 1 }; groupedTimeline.push(sg[ev.detail]); }
         else sg[ev.detail].stacks++;
       } else if (ev.type === "Orb") {
         const key = Math.floor(ev.rawTime / 1000).toString();
@@ -1019,7 +1026,7 @@ function extractCerus(logData: Json): MechanicReport {
   empPhases.forEach((ph) => {
     ph.timeline.forEach((ev: any) => {
       if (ev.type === "Orb") timelineEvents.push({ t: ev.rawTime, orbBlocked: 0, orbLeaked: ev.stacks || 1, shadowReached: 0, rageHit: 0, type: 'orb_leaked' });
-      else if (ev.type === "ShadowClose") timelineEvents.push({ t: ev.rawTime, orbBlocked: 0, orbLeaked: 0, shadowReached: ev.stacks || 1, rageHit: 0, type: 'shadow_close', detail: ev.detail });
+      else if (ev.type === "ShadowClose") timelineEvents.push({ t: ev.rawTime, orbBlocked: 0, orbLeaked: 0, shadowReached: ev.stacks || 1, rageHit: 0, type: 'shadow_close', detail: ev.detail, closeName: ev.closeName, closeDist: ev.closeDist });
       else if (ev.type === "ShadowWalk") timelineEvents.push({ t: ev.rawTime, orbBlocked: 0, orbLeaked: 0, shadowReached: ev.stacks || 1, rageHit: 0, type: 'shadow_reached' });
       else if (ev.type === "Rage Hit") timelineEvents.push({ t: ev.rawTime, orbBlocked: 0, orbLeaked: 0, shadowReached: 0, rageHit: 1, type: 'rage_hit', actor: ev.detail });
     });
