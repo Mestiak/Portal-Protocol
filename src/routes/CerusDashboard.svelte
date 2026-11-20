@@ -198,9 +198,16 @@
   }
 
   /** Close-spawn rows carry the player and distance as fields, so no markup
-   *  travels through the timeline; other rows show their detail as-is. */
+   *  travels through the timeline; other rows show their detail as-is. Caches
+   *  written before those fields existed have the name inside `detail`, so fall
+   *  back to parsing it. */
   function empDetail(ev: { type: string; detail: string; closeName?: string; closeDist?: number }): string {
-    if (ev.type === "ShadowClose") return ev.closeName != null ? `${ev.closeName} (${ev.closeDist}u)` : "";
+    if (ev.type === "ShadowClose") {
+      if (ev.closeName) return `${ev.closeName} (${ev.closeDist}u)`;
+      const m = (ev.detail || "").match(/\*\*([^*]+)\*\*\s*\((\d+)u\)/);
+      if (m) return `${m[1]} (${m[2]}u)`;
+      return "";
+    }
     return ev.detail || "";
   }
 

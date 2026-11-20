@@ -705,6 +705,10 @@ function extractCerus(logData: Json): MechanicReport {
   // counted when its orb-burst lands in a different phase than its spawn).
   const spawnClusters: Record<number, number[]> = {};
   const emittedShadows = new Set<number>();
+  // Shadow rows are collected globally and filed into the phase that contains
+  // their reach moment afterwards — a shadow's orb burst can be assigned in a
+  // different phase than the one it reached in.
+  const pendingShadowRows: { rawTime: number; type: string; detail: string; closeName?: string; closeDist?: number; stacks: number }[] = [];
   let globalReachedBuilt = false;
   let globalReached: { idx: number; spawnT: number; sh: Json | null; reachT: number; minDist: number }[] = [];
   empPhaseWindows.forEach((phase) => {
@@ -716,7 +720,13 @@ function extractCerus(logData: Json): MechanicReport {
     const pRageEvents: number[] = [];
     rageEvents.forEach((t, idx) => { if (t >= start && t <= end && !usedRage.has(idx)) { pRageEvents.push(t); usedRage.add(idx); } });
 
-    // matchedRage = rage hits that coincide with an Emp.A within 100ms.
+    // matchedRage = rage hits that coincide with an Emp.A. Cry of Rage grants its
+    // stack when the dome resolves, a few hundred ms after the hit, so the match
+    // needs a bound — without one the nearest-orb search steals from an unrelated
+    // shadow cluster (observed: a rage 12s late took one of a shadow's five orbs,
+    // which then displayed +4). Genuine matches sit within ~314ms; the steals are
+    // seconds away.
+    const RAGE_MATCH_WINDOW = 500;
     const rageIndices = new Set<number>();
     const matchedRageMap: Record<number, string> = {};
     pRageEvents.forEach((rt) => {
@@ -726,7 +736,7 @@ function extractCerus(logData: Json): MechanicReport {
         const diff = Math.abs(t - rt);
         if (diff < closestDiff) { closestDiff = diff; closestT = idx; }
       });
-      if (closestT !== -1) {
+      if (closestT !== -1 && closestDiff <= RAGE_MATCH_WINDOW) {
         rageIndices.add(closestT);
         let actor = "Unknown Player";
         if (logData.mechanics) {
@@ -870,17 +880,26 @@ function extractCerus(logData: Json): MechanicReport {
     //    (malice that actually reached Cerus via a shadow); reached-without-burst
     //    = blocked. Keying by idx keeps the 3 shadows that share one spawn instant
     //    distinct, so all of them can be counted.
-    const burstUsed = new Set<number>();
+    // A shadow's orbs are absorbed as one tight cluster. Cluster by GAP, not by
+    // a window anchored on an event: a 5-orb absorption can span a few hundred
+    // milliseconds, and an anchored ±200ms window splits it (e.g. 3 orbs at
+    // 279960 + 2 at 280204 became a 3-burst and a leftover, so the shadow was
+    // reported with fewer than 5 stacks). Measured across the cached logs:
+    // intra-cluster gaps top out at 394ms, inter-cluster gaps start at 520ms.
+    const BURST_GAP = 400;
     const bursts: { t: number; times: number[] }[] = [];
-    remainingEmpA.forEach((t, idx) => {
-      if (burstUsed.has(idx)) return;
-      const burst: number[] = [];
-      for (let j = 0; j < remainingEmpA.length; j++) {
-        if (Math.abs(remainingEmpA[j] - t) <= 200) burst.push(j);
+    {
+      let cur: number[] = [];
+      const flush = () => {
+        if (cur.length >= 4) bursts.push({ t: remainingEmpA[cur[0]], times: cur.map((i) => remainingEmpA[i]) });
+        cur = [];
+      };
+      for (let i = 0; i < remainingEmpA.length; i++) {
+        if (cur.length && remainingEmpA[i] - remainingEmpA[cur[cur.length - 1]] > BURST_GAP) flush();
+        cur.push(i);
       }
-      burst.forEach((j) => burstUsed.add(j));
-      if (burst.length >= 4) bursts.push({ t, times: burst.map((j) => remainingEmpA[j]) });
-    });
+      flush();
+    }
     const burstCount: Record<number, number> = {}; // idx -> #bursts
     const CAP = 1;
     bursts.forEach((b) => {
@@ -924,10 +943,10 @@ function extractCerus(logData: Json): MechanicReport {
         // The player and distance are carried as fields so no markup travels
         // through the timeline and reaches the UI as literal `**`.
         const detail = `${sMin}:${sSec.toString().padStart(2, "0")} ⚠️ Close Spawn`;
-        timeline.push({ rawTime: e.reachT, type: "ShadowClose", detail, closeName: close.name, closeDist: close.dist, stacks: cluster.length });
+        pendingShadowRows.push({ rawTime: e.reachT, type: "ShadowClose", detail, closeName: close.name, closeDist: close.dist, stacks: cluster.length });
       } else {
         // WALK-IN — spawned far, squad failed to stop it; no close-spawn player.
-        timeline.push({ rawTime: e.reachT, type: "ShadowWalk", detail: "", stacks: cluster.length });
+        pendingShadowRows.push({ rawTime: e.reachT, type: "ShadowWalk", detail: "", stacks: cluster.length });
       }
     });
 
@@ -971,6 +990,23 @@ function extractCerus(logData: Json): MechanicReport {
       timeline: groupedTimeline,
     });
   });
+
+  // File each shadow row under the phase its reach moment falls in. The burst
+  // that fed it may have been assigned in an earlier phase, so emitting during
+  // the loop put rows under a phase their own timestamp did not belong to.
+  for (const row of pendingShadowRows) {
+    let host = empPhases.find((p) => row.rawTime >= p.start && row.rawTime <= p.end);
+    if (!host) {
+      // reach moments can sit just outside a phase boundary; use the nearest.
+      let bestDiff = Infinity;
+      for (const p of empPhases) {
+        const diff = Math.min(Math.abs(row.rawTime - p.start), Math.abs(row.rawTime - p.end));
+        if (diff < bestDiff) { bestDiff = diff; host = p; }
+      }
+    }
+    if (host) host.timeline.push({ ...row });
+  }
+  for (const p of empPhases) p.timeline.sort((a: any, b: any) => a.rawTime - b.rawTime);
 
   // ── Orb collection/leak per player (Gluttony buff 70253 stack gains) ──
   // mainPhases (deduped leaf phases) is defined earlier.

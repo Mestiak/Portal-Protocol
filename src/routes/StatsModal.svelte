@@ -37,7 +37,9 @@
   // 2: deathRecap gained toDown/downTime. 3: defenseSupport gained `downs`.
   // 4: the name maps (skillMap/buffMap) ride along, so a cached open can still
   //    resolve skill names instead of falling back to the boss name.
-  const STATS_CACHE_VERSION = 4;
+  // 5: mechanics timeline entries gained `closeName`/`closeDist` — caches from
+  //    before that carry the close-spawn name inside `detail` and no fields.
+  const STATS_CACHE_VERSION = 5;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;
