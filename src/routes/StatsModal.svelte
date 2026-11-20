@@ -2111,7 +2111,7 @@
 
   /* ── Toolbar / boon picker ── */
   .stats-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; position: relative; }
-  .stats-hint { font-size: 10px; color: var(--text-muted); font-style: italic; }
+  .stats-hint { font-size: 9px; color: var(--text-muted); font-style: italic; opacity: .8; }
   .stats-boon-toggle {
     margin-left: auto; background: color-mix(in srgb,#fff 6%,transparent); border: 1px solid var(--border);
     color: var(--text); border-radius: 8px; padding: 6px 10px; font-size: 11px; cursor: pointer; transition: background-color .15s, color .15s;
@@ -2119,48 +2119,68 @@
   .stats-boon-toggle:hover { background: color-mix(in srgb,#fff 12%,transparent); color: #fff; }
   .stats-boon-picker {
     position: absolute; top: 34px; right: 0; z-index: 5; width: 200px;
-    background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 10px;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px;
     display: grid; grid-template-columns: 1fr 1fr; gap: 6px; box-shadow: 0 16px 40px rgba(0,0,0,.5);
     max-height: 240px; overflow-y: auto;
   }
   .stats-boon-opt { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text); cursor: pointer; }
   .stats-boon-opt img { width: 16px; height: 16px; }
 
-  .stats-scroll { overflow: auto; flex: 1; border: 1px solid var(--border); border-radius: 10px; }
+  /* ── Boon Uptime table card ── */
+  .stats-scroll {
+    overflow: auto; flex: 1; background: var(--bg-panel);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    transition: border-color .18s var(--ease-smooth), box-shadow .18s var(--ease-smooth);
+  }
+  .stats-scroll:hover {
+    border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+    box-shadow: 0 10px 24px -12px rgba(0, 0, 0, .85);
+  }
   .stats-table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 12px; }
   .stats-table thead th {
-    position: sticky; top: 0; z-index: 2; background: #15151a; color: var(--text-muted);
-    text-align: right; padding: 8px 10px; font-weight: 600; border-bottom: 1px solid var(--border); white-space: nowrap;
+    position: sticky; top: 0; z-index: 2; background: var(--bg-panel); color: var(--text-muted);
+    text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap;
   }
   .stats-table th.col-player { text-align: left; }
   .stats-table th.col-boon { text-align: center; }
-  .th-sort { background: none; border: none; color: inherit; cursor: pointer; font: inherit; padding: 0; }
-  .th-sort:hover { color: #fff; }
+  .th-sort {
+    background: none; border: none; cursor: pointer; padding: 0; font: inherit;
+    font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--text-muted); transition: color .15s;
+  }
+  .th-sort:hover { color: var(--text); }
   .col-num { text-align: right; }
   .col-boon { text-align: center; }
-  .boon-hd-icon { width: 18px; height: 18px; vertical-align: middle; margin-right: 4px; }
-  .boon-hd-label { vertical-align: middle; }
+  .boon-hd-icon { width: 16px; height: 16px; vertical-align: middle; margin-right: 4px; }
+  .boon-hd-label {
+    vertical-align: middle; font-size: 9px; font-weight: 800;
+    text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted);
+  }
 
   .resizer { position: absolute; right: 0; top: 0; width: 6px; height: 100%; cursor: col-resize; border: 0; padding: 0; background: transparent; user-select: none; }
   .resizer:hover { background: color-mix(in srgb, var(--accent) 50%, transparent); }
 
   .stats-table tbody td {
-    padding: 7px 10px; border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
-    color: var(--text); text-align: right; white-space: nowrap;
+    padding: 6px 10px; border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+    color: var(--text); text-align: right; white-space: nowrap; font-size: 11px;
+    transition: background-color .14s;
   }
   .stats-table tbody td.col-player { text-align: left; }
+  .stats-table tbody tr { transition: transform .18s var(--ease-smooth); }
+  .stats-table tbody tr:not(.subtotal-row):not(.total-row):hover { transform: translateX(2px); }
+  .stats-table tbody tr:not(.subtotal-row):not(.total-row):hover td { background: color-mix(in srgb, #fff 5%, transparent); }
   .player-cell { display: flex; align-items: center; gap: 8px; }
-  .prof-icon { width: 24px; height: 24px; border-radius: 6px; background: #0c0c0f; flex-shrink: 0; }
+  .prof-icon { width: 20px; height: 20px; border-radius: 5px; background: #0c0c0f; flex-shrink: 0; }
   .player-names { display: flex; flex-direction: column; line-height: 1.15; }
-  .toon { font-weight: 700; color: #fff; }
-  .account { font-size: 10px; font-style: italic; color: var(--text-muted); }
+  .toon { font-size: 11px; font-weight: 600; color: var(--text); }
+  .account { font-size: 9px; font-style: italic; color: var(--text-muted); }
   .sub-badge {
     margin-left: auto; flex-shrink: 0; font-size: 9px; font-weight: 700; letter-spacing: .03em;
     color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent);
     border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
-    border-radius: 6px; padding: 2px 6px; white-space: nowrap;
+    border-radius: 5px; padding: 2px 6px; white-space: nowrap;
   }
-  .boon-val { font-weight: 600; }
+  .boon-val { font-weight: 600; font-variant-numeric: tabular-nums; }
   .boon-val .pct { font-size: 9px; color: var(--text-muted); margin-left: 1px; }
   .boon-empty { color: var(--text-muted); opacity: .4; }
 
@@ -2180,12 +2200,13 @@
   .targets-chevron.open { transform: rotate(90deg); }
   .targets-label { font-size: 11px; color: inherit; }
   .target-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-  .target-chip { font-size: 11px; color: var(--text); background: color-mix(in srgb,#fff 5%,transparent); border: 1px solid var(--border); border-radius: 8px; padding: 4px 8px; }
+  .target-chip { font-size: 10px; color: var(--text); background: color-mix(in srgb,#fff 5%,transparent); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; }
   .target-chip b { color: #fff; }
 
   @media (prefers-reduced-motion: reduce) {
     .stats-modal { animation: none !important; }
-    .ax-hero-card, .ax-runner-card, .ax-panel, .ax-boon-row, .ds-block, .ax-row, .ax-death-row, .ax-downrecap-row {
+    .ax-hero-card, .ax-runner-card, .ax-panel, .ax-boon-row, .ds-block, .ax-row, .ax-death-row, .ax-downrecap-row,
+    .stats-scroll, .stats-table tbody tr, .th-sort, .sg-collapse, .targets-chevron {
       transition: none !important;
       transform: none !important;
     }
