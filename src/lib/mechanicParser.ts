@@ -592,6 +592,21 @@ function extractCerus(logData: Json): MechanicReport {
     phaseStats.filter((p) =>
     !phaseStats.some((q) => q !== p && q.start >= p.start && q.end <= p.end && (q.start > p.start || q.end < p.end)));
 
+  // Empowered phases cover EVERY non-breakbar/non-split phase, not just the ones
+  // that happened to have Malicious Shadow damage. Filtering on shadow damage
+  // dropped whole phases — and every stack Cerus gained in them.
+  let empPhaseWindows: { phaseName: string; start: number; end: number; phaseIdx: number }[] = [];
+  if (logData.phases) {
+    for (let phaseIdx = 1; phaseIdx < logData.phases.length; phaseIdx++) {
+      const phase = logData.phases[phaseIdx];
+      const pName = (phase.name || "").toLowerCase();
+      if (pName.includes("breakbar") || pName.includes("split")) continue;
+      empPhaseWindows.push({ phaseName: normPhase(phase.name), start: phase.start, end: phase.end, phaseIdx });
+    }
+    empPhaseWindows = empPhaseWindows.filter((p) =>
+      !empPhaseWindows.some((q) => q !== p && q.start >= p.start && q.end <= p.end && (q.start > p.start || q.end < p.end)));
+  }
+
   // ── Overall damage to Shadows + per-player share ──
   let overallTotalDamage = 0;
   const overallPlayersMap: Record<string, { account: string; toonName: string; profession: string; damage: number }> = {};
@@ -626,11 +641,18 @@ function extractCerus(logData: Json): MechanicReport {
     cerusPos[1] = logData.targets[0].combatReplayData.positions[0][1];
   }
 
+  // EI's Emp.A mechanic fires for ANY enemy that gains the Empowered buff — the
+  // Empowered Embodiments gain it too. This tab is Cerus's, so keep only the
+  // events on the boss target.
+  const bossTarget: Json | null =
+    (logData.targets || []).find((t: Json) => /cerus/i.test(t.name || "")) || logData.targets?.[0] || null;
+  const bossTargetId = bossTarget ? bossTarget.id : null;
+
   if (logData.mechanics) {
     logData.mechanics.forEach((mech: Json) => {
       const name = mech.name || "";
-      const events: { time: number }[] = mech.mechanicsData || [];
-      if (name === "Emp.A") events.forEach((ev) => empAByTime.push(ev.time));
+      const events: { time: number; id?: number }[] = mech.mechanicsData || [];
+      if (name === "Emp.A") events.forEach((ev) => { if (bossTargetId == null || ev.id === bossTargetId) empAByTime.push(ev.time); });
       else if (name === "MalInt.A") events.forEach((ev) => malIntAEvents.push(ev.time));
       else if (name === "Emp.CryRage.H" || name === "CryRage.H") events.forEach((ev) => rageEvents.push(ev.time));
       else if (name === "CryRage.C") events.forEach((ev) => cryRageCasts.push(ev.time));
@@ -685,7 +707,7 @@ function extractCerus(logData: Json): MechanicReport {
   const emittedShadows = new Set<number>();
   let globalReachedBuilt = false;
   let globalReached: { idx: number; spawnT: number; sh: Json | null; reachT: number; minDist: number }[] = [];
-  mainPhases.forEach((phase) => {
+  empPhaseWindows.forEach((phase) => {
     const start = phase.start, end = phase.end, phaseIdx = phase.phaseIdx;
     const pEmpA: number[] = [];
     empAByTime.forEach((t, idx) => { if (t >= start && t <= end && !usedEmpA.has(idx)) { pEmpA.push(t); usedEmpA.add(idx); } });

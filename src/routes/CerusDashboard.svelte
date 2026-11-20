@@ -536,8 +536,8 @@
             <span class="sh-head-title">EMPOWERED STACKS</span>
           </div>
           <div class="sh-head-total">
-            <span class="sh-head-num"><span class="hl-orb">{fmt(report.phases.reduce((s, p) => s + p.orbsEaten, 0))}</span><span class="sh-head-sep"> / </span><span class="hl-shadow">{fmt(report.phases.reduce((s, p) => s + p.maliceHits, 0))}</span><span class="sh-head-sep"> / </span><span class="hl-enraged">{fmt(report.phases.reduce((s, p) => s + p.smashStacks, 0))}</span></span>
-            <span class="sh-head-sub">FROM ORBS / SHADOWS / ENRAGED</span>
+            <span class="sh-head-num"><span class="hl-orb">{fmt(report.phases.reduce((s, p) => s + p.orbsEaten, 0))}</span><span class="sh-head-sep"> / </span><span class="hl-shadow">{fmt(report.phases.reduce((s, p) => s + p.maliceHits, 0))}</span><span class="sh-head-sep"> / </span><span class="hl-enraged">{fmt(report.phases.reduce((s, p) => s + p.smashStacks, 0))}</span><span class="sh-head-sep"> / </span><span class="hl-rage">{fmt(report.phases.reduce((s, p) => s + p.rageHits, 0))}</span></span>
+            <span class="sh-head-sub">FROM ORBS / SHADOWS / ENRAGED / RAGE</span>
           </div>
         </div>
         <div class="sh-contrib-label">EMPOWERED GAINED</div>
@@ -720,6 +720,7 @@
   .hl-orb { color: #3fa9f5; }
   .hl-shadow { color: #b06bff; }
   .hl-enraged { color: #ff8a3c; }
+  .hl-rage { color: #ffb27a; }
   .orb-count { font-size: 14px; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
   .orb-chart { background: color-mix(in srgb, var(--accent) 6%, var(--bg-sidebar)); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
   .orb-chart-label { font-size: 10px; letter-spacing: .12em; color: color-mix(in srgb, var(--accent) 75%, #fff); text-transform: uppercase; }
