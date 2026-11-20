@@ -39,7 +39,7 @@
   let shadowOpen = $state<Map<string, boolean>>(new Map());
   let shadowMaliceOpen = $state<Map<number, boolean>>(new Map());
   let badgeOpen = $state<string | null>(null);
-  let empOpen = $state<Map<string, boolean>>(new Map());
+  let epOpen = $state<Map<string, boolean>>(new Map());
   let openOrbPhase = $state<string | null>(null);
   function toggleShadow(name: string) {
     const m = new Map(shadowOpen);
@@ -54,10 +54,10 @@
   function toggleBadge(id: string) {
     badgeOpen = badgeOpen === id ? null : id;
   }
-  function toggleEmp(name: string) {
-    const m = new Map(empOpen);
+  function toggleEp(name: string) {
+    const m = new Map(epOpen);
     m.set(name, !m.get(name));
-    empOpen = m;
+    epOpen = m;
   }
 
   // ── Squad Mechanics table sort ──
@@ -241,24 +241,14 @@
     return EMP_LABEL[type] || type;
   }
 
-  /** Timeline rows carry internal type names; map them to the CSS variants. */
-  function empRowClass(type: string): string {
-    if (type === "Orb") return "emp-tl-orb";
-    if (type === "Slam") return "emp-tl-slam";
-    if (type === "Rage Hit") return "emp-tl-rage";
-    return "emp-tl-shadow";
-  }
-  function empDot(type: string): string {
-    if (type === "Orb") return "dot-orb";
-    if (type === "Slam") return "dot-slam";
-    if (type === "Rage Hit") return "dot-rage";
-    return "dot-shadow";
-  }
-  function empBadge(type: string): string {
-    if (type === "Orb") return "badge-orb";
-    if (type === "Slam") return "badge-slam";
-    if (type === "Rage Hit") return "badge-rage";
-    return "badge-shadow";
+  /** Feed dots: the parser's internal type names map to one lane colour each. */
+  function etlDot(type: string): string {
+    if (type === "Orb") return "etl-dot-orb";
+    if (type === "ShadowClose") return "etl-dot-close";
+    if (type === "ShadowWalk") return "etl-dot-walk";
+    if (type === "Slam") return "etl-dot-slam";
+    if (type === "Rage Hit") return "etl-dot-rage";
+    return "etl-dot-orb";
   }
 
   /** Close-spawn rows carry the player and distance as fields, so no markup
@@ -275,15 +265,17 @@
     return ev.detail || "";
   }
 
-  /** Stack sources for one empowered phase: orbs, shadows, slams and Cry of Rage. */
-  function empSources(p: any): { dot: string; bc: string; label: string; inst: number; stacks: number }[] {
-    const rows = [
-      p.orbsEaten > 0 ? { dot: "dot-orb", bc: "badge-orb", label: "Orbs Absorbed", inst: p.orbsEaten, stacks: p.orbsEaten } : null,
-      p.shadowCount > 0 ? { dot: "dot-shadow", bc: "badge-shadow", label: "Malicious Shadows", inst: p.shadowCount, stacks: p.maliceHits } : null,
-      p.smashStacks > 0 ? { dot: "dot-slam", bc: "badge-slam", label: "Enraged Smash Slams", inst: p.smashCount, stacks: p.smashStacks } : null,
-      p.rageHits > 0 ? { dot: "dot-rage", bc: "badge-rage", label: "Cry of Rage", inst: p.rageHits, stacks: p.rageHits } : null,
+  /** Recap rows for one phase: the empowered sources, ranked by stacks. */
+  type EpSource = { label: string; instLabel: string; stacks: number; cls: string };
+  const plural = (n: number, word: string) => `${fmt(n)} ${word}${n === 1 ? "" : "s"}`;
+  function epSources(p: any): EpSource[] {
+    const rows: (EpSource | null)[] = [
+      p.orbsEaten > 0 ? { label: "Orbs Absorbed", instLabel: plural(p.orbsEaten, "orb"), stacks: p.orbsEaten, cls: "etl-dot-orb" } : null,
+      p.shadowCount > 0 ? { label: "Malicious Shadows", instLabel: plural(p.shadowCount, "shadow"), stacks: p.maliceHits, cls: "etl-dot-walk" } : null,
+      p.smashStacks > 0 ? { label: "Enraged Smash Slams", instLabel: plural(p.smashCount, "slam"), stacks: p.smashStacks, cls: "etl-dot-slam" } : null,
+      p.rageHits > 0 ? { label: "Cry of Rage", instLabel: plural(p.rageHits, "player"), stacks: p.rageHits, cls: "etl-dot-rage" } : null,
     ];
-    return rows.filter((r): r is { dot: string; bc: string; label: string; inst: number; stacks: number } => r !== null);
+    return rows.filter((r): r is EpSource => r !== null).sort((a, b) => b.stacks - a.stacks);
   }
 </script>
 
@@ -676,65 +668,63 @@
           </div>
         </div>
       </div>
-      <div class="emp-cards">
-        {#each report.phases as p}
-          {@const open = empOpen.has(p.phaseName) ? empOpen.get(p.phaseName) : false}
-          {@const sources = empSources(p)}
+      <div class="ep-phases">
+        {#each report.phases as p, i}
+          {@const open = epOpen.has(p.phaseName) ? epOpen.get(p.phaseName) : false}
+          {@const sources = epSources(p)}
           {@const maxStacks = Math.max(1, ...sources.map((s) => s.stacks))}
-          <div class="emp-card" class:final={p.phaseName === "Enraged Smash"}>
-            <button class="emp-card-head" onclick={() => toggleEmp(p.phaseName)}>
-              <div class="emp-card-titles">
-                {#if p.phaseName === "Enraged Smash"}<img class="emp-flame" src="/mechanics/enraged.png" alt="" />{/if}
-                <span class="emp-card-kicker">{'P' + (report.phases.indexOf(p) + 1)} · ENCOUNTER STAGE</span>
-                <span class="emp-card-name" title={p.phaseName}>{p.phaseName}</span>
-              </div>
-              <div class="emp-card-total">
-                <span class="emp-card-tlabel">CERUS TOTAL</span>
-                <span class="emp-card-tnum accent-red">{fmt(p.empEnd)}</span>
-                <img class="emp-card-cerus" src="/mechanics/empowered.png" alt="" />
-              </div>
-            </button>
-            <div class="emp-card-body">
-              <div class="emp-stacks-row">
-                <span class="emp-stacks-label">Phase Stacks:</span>
-                <span class="emp-stacks-val">+{fmt(p.empGained)} STACKS</span>
+          <div class="ep-phase">
+            <div class="ep-icon">
+              <img src={p.phaseName === "Enraged Smash" ? "/mechanics/enraged.png" : "/mechanics/empowered.png"} alt="" />
+              <span>{'P' + (i + 1)}</span>
+            </div>
+            <div class="ep-body">
+              <div class="ep-head">
+                <span class="ep-name">{p.phaseName}</span>
+                <span class="ep-hint">phase stacks <b>+{fmt(p.empGained)}</b></span>
+                <span class="ep-total">Cerus {fmt(p.empEnd)}</span>
               </div>
               {#if sources.length}
-                <div class="emp-sources">
-                  {#each sources as src}
-                    <div class="emp-source">
-                      <span class="emp-dot {src.dot}"></span>
-                      <span class="emp-source-label">{src.label}</span>
-                      <span class="emp-bar"><i style="height:{Math.round((src.stacks / maxStacks) * 100)}%"></i></span>
-                      <span class="emp-source-val">
-                        <span class="emp-count">{fmt(src.inst)}</span>
-                        <span class="emp-stack-badge {src.bc}">+{fmt(src.stacks)} Stacks</span>
+                <div class="ep-sources">
+                  {#each sources as s}
+                    <div class="ep-row">
+                      <span class="ep-dot {s.cls}"></span>
+                      <span class="ep-text">
+                        <span class="ep-label">{s.label}</span>
+                        <span class="ep-inst">{s.instLabel}</span>
+                      </span>
+                      <span class="ep-right">
+                        <span class="ep-bar"><i style="height:{Math.round((s.stacks / maxStacks) * 100)}%"></i></span>
+                        <span class="ep-val">+{fmt(s.stacks)}</span>
                       </span>
                     </div>
                   {/each}
                 </div>
               {:else}
-                <div class="emp-no-src">No stacks gained</div>
+                <div class="ep-empty">No stacks gained</div>
+              {/if}
+              {#if p.timeline.length}
+                <button class="etl-toggle" onclick={() => toggleEp(p.phaseName)}>
+                  History timeline <span class="etl-count">{p.timeline.length} events</span>
+                  <i class="fa-solid {open ? 'fa-chevron-up' : 'fa-chevron-down'}"></i>
+                </button>
+                {#if open}
+                  <div class="etl-feed" transition:slide={{ duration: 200, easing: cubicInOut }}>
+                    {#each p.timeline as ev}
+                      <div class="etl-row">
+                        <span class="etl-time">{fmtTime(ev.rawTime / 1000)}</span>
+                        <span class="etl-dot {etlDot(ev.type)}"></span>
+                        <span class="etl-what">
+                          <span class="etl-label">{empLabel(ev.type)}</span>
+                          <span class="etl-detail">{empDetail(ev)}</span>
+                        </span>
+                        <span class="etl-stacks">+{fmt(ev.stacks)}</span>
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
               {/if}
             </div>
-            {#if p.timeline.length}
-              <button class="emp-tl-btn" onclick={() => toggleEmp(p.phaseName)}>
-                {open ? "HIDE HISTORY TIMELINE" : "VIEW HISTORY TIMELINE"}
-              </button>
-              {#if open}
-                <div class="emp-timeline" transition:slide={{ duration: 200, easing: cubicInOut }}>
-                  {#each p.timeline as ev}
-                    <div class="emp-tl-row {empRowClass(ev.type)}">
-                      <span class="emp-tl-time">{fmtTime(ev.rawTime / 1000)}</span>
-                      <span class="emp-tl-dot emp-dot {empDot(ev.type)}"></span>
-                      <span class="emp-tl-label" title={empLabel(ev.type)}>{empLabel(ev.type)}</span>
-                      <span class="emp-tl-detail" title={empDetail(ev) || undefined}>{empDetail(ev)}</span>
-                      <span class="emp-tl-stacks emp-stack-badge {empBadge(ev.type)}">+{fmt(ev.stacks)} Stacks</span>
-                    </div>
-                  {/each}
-                </div>
-              {/if}
-            {/if}
           </div>
         {/each}
       </div>
@@ -882,7 +872,8 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .tl-card, .tl-lane, .tl-dot, .sm-card, .sm-row, .stat-card { transition: none !important; transform: none !important; }
+    .tl-card, .tl-lane, .tl-dot, .sm-card, .sm-row, .stat-card,
+    .sh-header, .ep-phase, .ep-row, .ep-bar i, .etl-row { transition: none !important; transform: none !important; }
   }
 
   /* ── Squad Mechanics table ── */
@@ -930,21 +921,30 @@
   .sm-acct { font-size: 9px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   /* ── Shadows tab (premium drill-down) ── */
-  .sh-header { background: color-mix(in srgb, var(--accent) 8%, var(--bg-sidebar)); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+  .sh-header {
+    background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 12px 14px; display: flex; flex-direction: column; gap: 10px;
+    transition: transform .18s var(--ease-smooth), border-color .18s, box-shadow .18s;
+  }
+  .sh-header:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+    box-shadow: 0 10px 24px -12px rgba(0, 0, 0, .85);
+  }
   .sh-head-top { display: flex; align-items: center; gap: 14px; }
-  .sh-head-icon { width: 46px; height: 46px; border-radius: 11px; }
+  .sh-head-icon { width: 40px; height: 40px; border-radius: 9px; }
   .sh-head-titles { display: flex; flex-direction: column; gap: 2px; flex: 1; }
   .sh-head-kicker { font-size: 9px; letter-spacing: .14em; color: var(--text-muted); text-transform: uppercase; }
-  .sh-head-title { font-size: 17px; font-weight: 800; letter-spacing: .02em; color: #fff; }
+  .sh-head-title { font-size: 15px; font-weight: 800; letter-spacing: .02em; color: #fff; }
   .sh-head-total { display: flex; flex-direction: column; align-items: flex-end; }
-  .sh-head-num { font-size: 26px; font-weight: 800; color: #fff; letter-spacing: .01em; }
+  .sh-head-num { font-size: 22px; font-weight: 800; color: #fff; letter-spacing: .01em; font-variant-numeric: tabular-nums; }
   .sh-head-sub { font-size: 9px; letter-spacing: .1em; color: var(--text-muted); text-transform: uppercase; }
   .sh-head-sep { color: var(--text-muted); font-weight: 600; }
   .sh-head-subtle { color: var(--text-muted); }
-  .hl-orb { color: #3fa9f5; }
-  .hl-shadow { color: #b06bff; }
-  .hl-enraged { color: #ff8a3c; }
-  .hl-rage { color: #ffb27a; }
+  .hl-orb { color: #22d3ee; }
+  .hl-shadow { color: #a78bfa; }
+  .hl-enraged { color: #f472b6; }
+  .hl-rage { color: #fbbf24; }
   .orb-count { font-size: 14px; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
   .orb-chart { background: color-mix(in srgb, var(--accent) 6%, var(--bg-sidebar)); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
   .orb-chart-label { font-size: 10px; letter-spacing: .12em; color: color-mix(in srgb, var(--accent) 75%, #fff); text-transform: uppercase; }
@@ -1051,71 +1051,74 @@
   /* ── Mechanic tab summaries ── */
   .mech-body { display: flex; flex-direction: column; gap: 12px; }
 
-  /* ── Empowered tab — MA-style phase cards ── */
-  .emp-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
-  @media (max-width: 720px) { .emp-cards { grid-template-columns: 1fr; } }
-  .emp-card {
-    background: color-mix(in srgb, var(--accent) 5%, var(--bg-sidebar));
-    border: 1px solid var(--border); border-radius: 12px;
-    display: flex; flex-direction: column; overflow: hidden;
-    transition: border-color .18s var(--ease-smooth), transform .18s var(--ease-smooth), box-shadow .18s var(--ease-smooth);
+  /* ── Empowered tab — per-phase recap + history feed ── */
+  .ep-phases { display: flex; flex-direction: column; gap: 10px; }
+  .ep-phase {
+    display: flex; gap: 14px; align-items: flex-start;
+    background: var(--bg-panel); border: 1px solid var(--border); border-left: 2px solid var(--accent);
+    border-radius: var(--radius); padding: 12px 14px;
+    transition: transform .18s var(--ease-smooth), border-color .18s, box-shadow .18s;
   }
-  .emp-card:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); box-shadow: 0 4px 18px color-mix(in srgb, #000 40%, transparent); }
-  .emp-card.final { border-color: color-mix(in srgb, #ff7a3c 35%, var(--border)); }
-  .emp-card-head {
-    display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
-    width: 100%; text-align: left; background: none; border: none; cursor: pointer;
-    padding: 14px 16px 12px; color: var(--text);
-    border-bottom: 1px solid color-mix(in srgb, #fff 7%, transparent);
+  .ep-phase:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+    box-shadow: 0 10px 24px -12px rgba(0, 0, 0, .85);
   }
-  .emp-card-titles { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-  .emp-card-kicker { font-size: 9px; letter-spacing: .08em; color: var(--text-muted); text-transform: uppercase; }
-  .emp-card-name { font-size: 16px; font-weight: 800; color: #fff; }
-  .emp-flame { width: 14px; height: 14px; margin-right: 4px; display: inline-block; vertical-align: -1px; object-fit: contain; }
-  .emp-card-total { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0; }
-  .emp-card-tlabel { font-size: 8px; letter-spacing: .08em; color: var(--text-muted); }
-  .emp-card-tnum { font-size: 22px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; }
-  .emp-card-cerus { width: 22px; height: 22px; border-radius: 6px; margin-top: 2px; opacity: .9; }
-  .emp-card-body { padding: 0 16px 12px; display: flex; flex-direction: column; gap: 8px; }
-  .emp-stacks-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-  .emp-stacks-label { font-size: 11px; color: var(--text-muted); }
-  .emp-stacks-val { font-size: 14px; font-weight: 800; color: #c08bff; letter-spacing: .02em; }
-  .emp-sources { display: flex; flex-direction: column; gap: 5px; }
-  .emp-no-src { font-size: 11px; font-style: italic; color: var(--text-muted); padding: 2px 0; }
-  .emp-source { display: grid; grid-template-columns: 12px 1fr 3px auto; align-items: center; gap: 8px; font-size: 12px; }
-  .emp-bar { position: relative; width: 3px; height: 16px; border-radius: 2px; background: color-mix(in srgb, #fff 7%, transparent); overflow: hidden; }
-  .emp-bar i { position: absolute; bottom: 0; left: 0; right: 0; display: block; background: var(--accent); border-radius: 2px; transition: height .5s var(--ease-smooth); }
-  .emp-source-label { color: var(--text); }
-  .emp-source-val { display: inline-flex; align-items: center; gap: 7px; }
-  .emp-count { color: #fff; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .emp-stack-badge {
-    font-size: 10.5px; font-weight: 800; color: #fff;
-    border-radius: 5px; padding: 1px 7px; font-variant-numeric: tabular-nums;
-    letter-spacing: .02em; white-space: nowrap;
+  .ep-icon { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 76px; flex: none; }
+  .ep-icon img { width: 56px; height: 56px; border-radius: 12px; object-fit: cover; border: 1px solid var(--border); }
+  .ep-icon span { font-size: 9px; font-weight: 800; letter-spacing: .08em; color: var(--text-muted); }
+  .ep-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .ep-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .ep-name { font-size: 12px; font-weight: 800; color: #fff; }
+  .ep-hint { font-size: 9px; color: var(--text-muted); }
+  .ep-hint b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .ep-total { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  .ep-sources { display: flex; flex-direction: column; gap: 1px; }
+  .ep-row {
+    display: grid; grid-template-columns: 10px 1fr auto; align-items: center; gap: 8px;
+    padding: 4px 6px; border-radius: 6px;
+    transition: background-color .14s, transform .18s var(--ease-smooth);
   }
-  .badge-orb   { background: color-mix(in srgb, #3fa9f5 30%, #000 55%); border: 1px solid color-mix(in srgb, #3fa9f5 55%, transparent); }
-  .badge-shadow{ background: color-mix(in srgb, #b06bff 30%, #000 55%); border: 1px solid color-mix(in srgb, #b06bff 55%, transparent); }
-  .badge-slam  { background: color-mix(in srgb, #ff8a3c 30%, #000 55%); border: 1px solid color-mix(in srgb, #ff8a3c 55%, transparent); }
-  .badge-rage  { background: color-mix(in srgb, #ffb27a 30%, #000 55%); border: 1px solid color-mix(in srgb, #ffb27a 55%, transparent); }
-  .dot-orb { background: #3fa9f5; box-shadow: 0 0 6px #3fa9f588; }
-  .dot-shadow { background: #b06bff; box-shadow: 0 0 6px #b06bff88; }
-  .dot-slam { background: #ff8a3c; box-shadow: 0 0 6px #ff8a3c88; }
-  .dot-rage { background: #ffb27a; box-shadow: 0 0 6px #ffb27a88; }
-  .emp-tl-btn {
-    width: 100%; text-align: center; background: color-mix(in srgb, var(--accent) 8%, transparent);
-    border: none; border-top: 1px solid var(--border); color: var(--text-muted);
-    font-size: 10px; font-weight: 700; letter-spacing: .08em; padding: 8px; cursor: pointer;
-    transition: background .14s ease, color .14s ease;
+  .ep-row:hover { background: color-mix(in srgb, #fff 5%, transparent); transform: translateX(2px); }
+  .ep-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .ep-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .ep-label { font-size: 11px; font-weight: 700; color: var(--text); }
+  .ep-inst { font-size: 9px; color: var(--text-muted); }
+  .ep-right { display: inline-flex; align-items: center; gap: 8px; }
+  .ep-val { font-size: 12px; font-weight: 800; color: #fff; font-variant-numeric: tabular-nums; }
+  .ep-bar { position: relative; width: 3px; height: 18px; border-radius: 2px; background: color-mix(in srgb, #fff 7%, transparent); overflow: hidden; }
+  .ep-bar i { position: absolute; bottom: 0; left: 0; right: 0; display: block; background: var(--accent); border-radius: 2px; transition: height .5s var(--ease-smooth); }
+  .ep-empty { font-size: 10px; font-style: italic; color: var(--text-muted); padding: 2px 0; }
+
+  /* one colour per empowered source, shared with the Statistics lanes */
+  .etl-dot-orb { background: #22d3ee; }
+  .etl-dot-close { background: #ff7a3c; }
+  .etl-dot-walk { background: #a78bfa; }
+  .etl-dot-slam { background: #f472b6; }
+  .etl-dot-rage { background: #fbbf24; }
+
+  .etl-toggle {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    background: none; border: none; border-top: 1px solid var(--border);
+    color: var(--text-muted); font-size: 9px; font-weight: 800; letter-spacing: .07em;
+    text-transform: uppercase; padding: 8px 2px 2px; cursor: pointer;
+    transition: color .15s;
   }
-  .emp-tl-btn:hover { background: color-mix(in srgb, var(--accent) 16%, transparent); color: #fff; }
-  .emp-timeline { padding: 8px 12px 12px; display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow-y: auto; }
-  .emp-tl-row { display: grid; grid-template-columns: 36px 12px auto 1fr auto; align-items: center; gap: 8px; font-size: 11px; padding: 3px 6px; border-radius: 6px; transition: background .14s ease, transform .18s var(--ease-smooth); }
-  .emp-tl-row:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); transform: translateX(2px); }
-  .emp-tl-time { color: var(--text-muted); font-variant-numeric: tabular-nums; font-size: 10px; }
-  .emp-tl-dot { width: 8px; height: 8px; border-radius: 50%; }
-  .emp-tl-label { color: var(--text); font-weight: 600; white-space: nowrap; }
-  .emp-tl-detail { color: var(--text-muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .emp-tl-stacks { font-weight: 800; font-variant-numeric: tabular-nums; }
-  .emp-tl-shadow .emp-tl-label, .emp-tl-slam .emp-tl-label { color: #ffe; }
-  .emp-tl-shadow .emp-tl-detail { color: #ffd0d0; }
+  .etl-toggle:hover { color: var(--text); }
+  .etl-count { color: var(--text-muted); opacity: .7; font-weight: 600; letter-spacing: .02em; text-transform: none; }
+  .etl-toggle i { margin-left: auto; font-size: 9px; }
+  .etl-feed { display: flex; flex-direction: column; gap: 2px; padding-top: 4px; }
+  .etl-row {
+    display: grid; grid-template-columns: 34px 10px 1fr auto; align-items: center; gap: 8px;
+    font-size: 10px; padding: 4px 6px; border-radius: 6px;
+    background: color-mix(in srgb, #fff 3%, transparent);
+    transition: background-color .14s, transform .18s var(--ease-smooth);
+  }
+  .etl-row:hover { background: color-mix(in srgb, #fff 5%, transparent); transform: translateX(2px); }
+  .etl-time { color: var(--text-muted); font-variant-numeric: tabular-nums; font-size: 9px; }
+  .etl-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .etl-what { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+  .etl-label { color: var(--text); font-weight: 600; white-space: nowrap; }
+  .etl-detail { color: var(--text-muted); font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .etl-stacks { font-size: 10px; font-weight: 800; color: #fff; font-variant-numeric: tabular-nums; }
 </style>
