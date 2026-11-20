@@ -39,7 +39,9 @@
   //    resolve skill names instead of falling back to the boss name.
   // 5: mechanics timeline entries gained `closeName`/`closeDist` — caches from
   //    before that carry the close-spawn name inside `detail` and no fields.
-  const STATS_CACHE_VERSION = 5;
+  // 6: rage-hit rows carry their own actor. Caches from version 5 were parsed
+  //    before that and credit one player with a whole simultaneous dome.
+  const STATS_CACHE_VERSION = 6;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;
