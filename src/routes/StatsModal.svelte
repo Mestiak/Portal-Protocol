@@ -1974,49 +1974,6 @@
     border: 1px solid var(--accent); border-radius: 10px; padding: 10px 14px; margin-bottom: 10px;
   }
 
-  /* ── Timeline chart ── */
-  .timeline { background: var(--bg-sidebar); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
-  .timeline-title { font-size: 11px; font-weight: 700; color: var(--text); margin-bottom: 6px; letter-spacing: .03em; }
-  .timeline-chart-wrap { position: relative; }
-  .timeline-svg { width: 100%; height: 220px; display: block; }
-  .tl-grid { stroke: color-mix(in srgb, var(--border) 60%, transparent); stroke-width: 1.2; }
-  .tl-axis { fill: var(--text-muted); font-size: 9px; }
-  .tl-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
-  .tl-cyan { stroke: #22d3ee; }
-  .tl-purple { stroke: #a78bfa; }
-  .tl-gold { stroke: #fbbf24; }
-  .tl-hover-line { stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 4 3; opacity: 0.65; }
-  /* Event dots: HTML overlay => always circular (SVG stretched via preserveAspectRatio="none" would oval them) */
-  .tl-dots { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
-  .tl-dot {
-    position: absolute; width: 9px; height: 9px; border-radius: 50%;
-    transform: translate(-50%, -50%);
-    border: 1.5px solid #050403; box-shadow: 0 0 0 1px rgba(0,0,0,.4);
-    transition: transform .12s ease, box-shadow .12s ease;
-  }
-  /* emphasized hovered dot (CSS :hover can't fire — dots are pointer-events:none) */
-  .tl-dot.active {
-    transform: translate(-50%, -50%) scale(1.7);
-    box-shadow: 0 0 0 2px #fff, 0 0 8px 1px currentColor;
-  }
-  .timeline-legend { display: flex; gap: 16px; margin-top: 8px; flex-wrap: wrap; }
-  .lg { font-size: 10px; color: var(--text-muted); display: flex; align-items: center; gap: 5px; }
-  .lg::before { content: ""; width: 10px; height: 3px; border-radius: 2px; display: inline-block; }
-  .lg-cyan::before { background: #22d3ee; }
-  .lg-purple::before { background: #a78bfa; }
-  .lg-gold::before { background: #fbbf24; }
-  .timeline-tip {
-    position: absolute; transform: translateY(-50%);
-    background: #101015; border: 1px solid var(--border); border-radius: 8px;
-    padding: 6px 9px; font-size: 10px; color: var(--text); pointer-events: none;
-    box-shadow: 0 8px 22px rgba(0,0,0,.5); white-space: nowrap; z-index: 5;
-    max-width: 220px;
-    transition: opacity 0.15s ease-out;
-  }
-  /* place beside the dot, never on top of it; flip near the right edge */
-  .timeline-tip.right { transform: translate(14px, -50%); }
-  .timeline-tip.left  { transform: translate(calc(-100% - 14px), -50%); }
-
   /* ── Squad Mechanics table ── */
   .squad-mechanics { background: var(--bg-sidebar); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
   .sm-title { font-size: 11px; font-weight: 700; color: var(--text); margin-bottom: 8px; letter-spacing: .03em; }
@@ -2039,10 +1996,7 @@
   .sm-num { text-align: right; font-variant-numeric: tabular-nums; padding-right: 6px; }
   .sm-num.sm-warn { color: #f472b6; font-weight: 700; }
   @media (prefers-reduced-motion: reduce) {
-    .sm-row, .tl-dot { transition: none; }
-  }
-  @media (prefers-reduced-motion: no-preference) {
-    .timeline-tip { transition: top 0.12s var(--ease-spring), left 0.12s var(--ease-spring), opacity 0.15s ease-out; }
+    .sm-row { transition: none; }
   }
   .tt-time { font-weight: 800; color: #fff; margin-bottom: 3px; }
   .tt-event { font-weight: 700; font-size: 0.72rem; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 2px; margin-bottom: 2px; }

@@ -71,97 +71,161 @@
 
   // profIcon is now shared from analyticsEngine (lowercases + strips spaces,
   // matches the lowercase static/professions/*.png filenames).
-  // ── Timeline chart (single-log only; aggregate omits offset math) ──
-  const TL_BUCKETS = 60;
-  let timeline = $derived.by(() => {
-    if (!singleLog || !report.timeline || report.timeline.length === 0) return null;
-    const dur = durationSec * 1000 || 1;
-    const totalOrbs = report.totalOrbs + report.totalOrbsLeaked || 1;
-    const bBlk = new Array(TL_BUCKETS).fill(0);
-    const bLk = new Array(TL_BUCKETS).fill(0);
-    const bShad = new Array(TL_BUCKETS).fill(0);
-    const bRage = new Array(TL_BUCKETS).fill(0);
-    for (const e of report.timeline) {
-      let bi = Math.floor((e.t / dur) * TL_BUCKETS);
-      if (bi < 0) bi = 0; if (bi >= TL_BUCKETS) bi = TL_BUCKETS - 1;
-      bBlk[bi] += e.orbBlocked; bLk[bi] += e.orbLeaked;
-      bShad[bi] += e.shadowReached; bRage[bi] += e.rageHit;
-    }
-    let cBlk = 0, cLk = 0, cShad = 0, cRage = 0;
-    const effPts: { x: number; y: number; t: number }[] = [];
-    const shadPts: { x: number; y: number; t: number }[] = [];
-    const ragePts: { x: number; y: number; t: number }[] = [];
-    for (let i = 0; i < TL_BUCKETS; i++) {
-      cBlk += bBlk[i]; cLk += bLk[i]; cShad += bShad[i]; cRage += bRage[i];
-      const t = Math.round(((i + 0.5) / TL_BUCKETS) * dur);
-      const eff = (cBlk + cLk) > 0 ? Math.round((cBlk / (cBlk + cLk)) * 1000) / 10 : 100;
-      effPts.push({ x: i, y: eff, t });
-      shadPts.push({ x: i, y: cShad, t });
-      ragePts.push({ x: i, y: cRage, t });
-    }
-    const shadMax = Math.max(1, cShad);
-    const rageMax = Math.max(1, cRage);
-    let rBlk = 0, rLk = 0, rSh = 0, rRage = 0;
-    const events: { x: number; y: number; color: string; label: string; t: number; eff: number; shad: number; rage: number; type: string; closeName?: string; closeDist?: number }[] = [];
-    for (const e of report.timeline) {
-      if (e.t > dur) continue;
-      if (e.type === 'orb_blocked' || e.type === 'orb_leaked') {
-        if (e.orbBlocked) rBlk += e.orbBlocked;
-        if (e.orbLeaked) rLk += e.orbLeaked;
-      } else if (e.type === 'shadow_close' || e.type === 'shadow_reached') rSh += e.shadowReached;
-      else if (e.type === 'rage_hit') rRage += e.rageHit;
-      const total = rBlk + rLk;
-      const eff = total > 0 ? Math.round((rBlk / total) * 1000) / 10 : 100;
-      const x = Math.round((e.t / dur) * (TL_BUCKETS - 1));
-      let color = '#22d3ee', label = '', y = tlYpct(eff);
-      if (e.type === 'orb_blocked') { label = `Orb Blocked by ${e.actor || 'Unknown'}`; }
-      else if (e.type === 'orb_leaked') { color = '#ef4444'; label = `Orb Leaked (+${e.orbLeaked})`; }
-      else if (e.type === 'shadow_close') { color = '#ff7a3c'; label = 'Malice Dropped Near Boss'; y = tlYcnt(rSh, shadMax); }
-      else if (e.type === 'shadow_reached') { color = '#a78bfa'; label = 'Shadow Reached Boss'; y = tlYcnt(rSh, shadMax); }
-      else if (e.type === 'rage_hit') { color = '#fbbf24'; label = `Rage Hit: ${e.actor || 'Unknown'} (+${e.rageHit})`; y = tlYcnt(rRage, rageMax); }
-      events.push({ x, y, color, label, t: e.t, eff, shad: rSh, rage: rRage, type: e.type || '', closeName: e.closeName, closeDist: e.closeDist });
-    }
-    return { effPts, shadPts, ragePts, shadMax, rageMax, totalOrbs, events };
-  });
+  // ── Fight timeline (single-log only) ──
+  // One lane per mechanic, each event a dot at its true timestamp. Counts are
+  // never drawn as lines — only orb-block efficiency is, and it gets its own
+  // 0-100% axis. Dots are CSS circles, so they stay circular at any width.
+  const LANES = [
+    { id: "orb_blocked",    label: "Orbs blocked", cls: "tl-dot-orb",   size: "sm" },
+    { id: "orb_leaked",     label: "Orbs leaked",  cls: "tl-dot-leak",  size: "lg" },
+    { id: "shadow_close",   label: "Close spawn",  cls: "tl-dot-close", size: "lg" },
+    { id: "shadow_reached", label: "Walk-in",      cls: "tl-dot-walk",  size: "lg" },
+    { id: "rage_hit",       label: "Cry of Rage",  cls: "tl-dot-rage",  size: "lg" },
+  ] as const;
+  const DOT_COLOR: Record<string, string> = {
+    orb_blocked: "#22d3ee", orb_leaked: "#ef4444", shadow_close: "#ff7a3c",
+    shadow_reached: "#a78bfa", rage_hit: "#fbbf24",
+  };
+  const LANE_CLUSTER_PX = 10;   // same-lane events closer than this merge into one dot
+  const TL_LABEL_W = 96, TL_TOTAL_W = 34, TL_GAP = 8;
+  const TL_EFF_H = 28;
+  const EFF_BUCKETS = 100;
 
-  const TL_W = 640, TL_H = 220, TL_L = 54, TL_R = 580, TL_T = 18, TL_B = 202;
-  const tlX = (i: number) => TL_L + (i / (TL_BUCKETS - 1)) * (TL_R - TL_L);
-  const tlYpct = (p: number) => TL_B - (p / 100) * (TL_B - TL_T);
-  const tlYcnt = (v: number, max: number) => TL_B - (v / max) * (TL_B - TL_T);
+  type TlMember = { t: number; label: string };
+  type TlDot = {
+    lane: string; xPct: number; t: number; label: string; color: string;
+    cls: string; size: string; count: number; members: TlMember[];
+    closeName?: string; closeDist?: number;
+    eff: number; shad: number; rage: number;
+  };
+  type TlLane = { id: string; label: string; total: number; dots: TlDot[] };
+
   function fmtClock(ms: number): string {
     const s = Math.floor(ms / 1000);
     return `${Math.floor(s / 60).toString().padStart(2, "0")}:${(s % 60).toString().padStart(2, "0")}`;
   }
-  let hover = $state<{ x: number; y: number; eff: number; shad: number; rage: number; t: number; label?: string; color?: string; idx: number; dotY: number; side: 'left' | 'right'; closeName?: string; closeDist?: number } | null>(null);
-  function onTlMove(ev: MouseEvent) {
-    if (!timeline) return;
-    const svg = ev.currentTarget as SVGSVGElement;
-    const rect = svg.getBoundingClientRect();
-    const sx = ((ev.clientX - rect.left) / rect.width) * TL_W;
-    const sy = ((ev.clientY - rect.top) / rect.height) * TL_H;
-    let near = null as any;
-    let nearIdx = -1;
-    let best = 18;
-    const evs = timeline.events || [];
-    for (let i = 0; i < evs.length; i++) {
-      const e = evs[i];
-      const d = Math.hypot(tlX(e.x) - sx, e.y - sy);
-      if (d <= best) { best = d; near = e; nearIdx = i; }
+  function dotLabel(e: any): string {
+    if (e.type === "orb_blocked") return `Orb blocked by ${e.actor || "Unknown"}`;
+    if (e.type === "orb_leaked") return `Orb leaked (+${e.orbLeaked})`;
+    if (e.type === "shadow_close") return e.closeName ? `Malice dropped by ${e.closeName}` : "Malice dropped near boss";
+    if (e.type === "shadow_reached") return "Shadow reached boss";
+    if (e.type === "rage_hit") return `Cry of Rage — ${e.actor || "Unknown"}`;
+    return "";
+  }
+
+  // The cluster rule is defined in pixels, so the track width has to be measured
+  // rather than assumed from the modal's maximum.
+  let lanesWrap = $state<HTMLElement | null>(null);
+  let trackW = $state(1160 - TL_LABEL_W - TL_TOTAL_W - TL_GAP * 2);
+  $effect(() => {
+    const el = lanesWrap;
+    if (!el) return;
+    const measure = () => { trackW = el.clientWidth - TL_LABEL_W - TL_TOTAL_W - TL_GAP * 2; };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  });
+
+  let timeline = $derived.by(() => {
+    if (!singleLog || !report.timeline || report.timeline.length === 0) return null;
+    const dur = durationSec * 1000;
+    if (!dur || dur <= 0) return null;
+    const pct = (t: number) => Math.max(0, Math.min(100, (t / dur) * 100));
+
+    // Efficiency sparkline — cumulative blocked / (blocked + leaked).
+    const bBlk = new Array(EFF_BUCKETS).fill(0);
+    const bLk = new Array(EFF_BUCKETS).fill(0);
+    for (const e of report.timeline) {
+      let bi = Math.floor((e.t / dur) * EFF_BUCKETS);
+      if (bi < 0) bi = 0; if (bi >= EFF_BUCKETS) bi = EFF_BUCKETS - 1;
+      bBlk[bi] += e.orbBlocked; bLk[bi] += e.orbLeaked;
     }
-    if (!near) { hover = null; return; }
-    const bi = near.x;
-    const side: 'left' | 'right' = bi > TL_BUCKETS * 0.68 ? 'left' : 'right';
+    let cBlk = 0, cLk = 0;
+    const effPts: { x: number; y: number }[] = [];
+    for (let i = 0; i < EFF_BUCKETS; i++) {
+      cBlk += bBlk[i]; cLk += bLk[i];
+      effPts.push({ x: (i + 0.5) / EFF_BUCKETS, y: (cBlk + cLk) > 0 ? (cBlk / (cBlk + cLk)) * 100 : 100 });
+    }
+    const effLine = effPts.map((p) => `${(p.x * 100).toFixed(2)},${(TL_EFF_H - (p.y / 100) * TL_EFF_H).toFixed(2)}`).join(" ");
+    const effArea = `0,${TL_EFF_H} ${effLine} 100,${TL_EFF_H}`;
+
+    // Dots, each carrying the running counters the tooltip reports.
+    let rBlk = 0, rLk = 0, rShad = 0, rRage = 0;
+    const dots: TlDot[] = [];
+    for (const e of report.timeline) {
+      if (e.type === "orb_blocked" || e.type === "orb_leaked") {
+        if (e.orbBlocked) rBlk += e.orbBlocked;
+        if (e.orbLeaked) rLk += e.orbLeaked;
+      } else if (e.type === "shadow_close" || e.type === "shadow_reached") rShad += e.shadowReached;
+      else if (e.type === "rage_hit") rRage += e.rageHit;
+      if (!e.type) continue;
+      const lane = LANES.find((l) => l.id === e.type);
+      if (!lane) continue;
+      const total = rBlk + rLk;
+      dots.push({
+        lane: lane.id, xPct: pct(e.t), t: e.t, label: dotLabel(e),
+        color: DOT_COLOR[e.type] || "#22d3ee", cls: lane.cls, size: lane.size,
+        count: 1, members: [{ t: e.t, label: dotLabel(e) }],
+        closeName: e.closeName, closeDist: e.closeDist,
+        eff: total > 0 ? Math.round((rBlk / total) * 1000) / 10 : 100,
+        shad: rShad, rage: rRage,
+      });
+    }
+
+    const clusterPct = trackW > 0 ? (LANE_CLUSTER_PX / trackW) * 100 : 0.9;
+    const lanes: TlLane[] = LANES.map((l) => ({ id: l.id, label: l.label, total: 0, dots: [] }));
+    for (const lane of lanes) {
+      const mine = dots.filter((d) => d.lane === lane.id).sort((a, b) => a.xPct - b.xPct);
+      lane.total = mine.length;
+      let cluster: TlDot[] = [];
+      const flush = () => {
+        if (!cluster.length) return;
+        const first = cluster[0];
+        lane.dots.push(cluster.length === 1
+          ? first
+          : {
+              ...first,
+              xPct: cluster.reduce((s, d) => s + d.xPct, 0) / cluster.length,
+              count: cluster.length,
+              label: `${cluster.length} events`,
+              members: cluster.map((d) => ({ t: d.t, label: d.label })),
+            });
+        cluster = [];
+      };
+      for (const d of mine) {
+        // Anchor-based: a cluster spans at most LANE_CLUSTER_PX from its first
+        // event, so a dense stretch cannot chain into one enormous dot.
+        if (cluster.length && d.xPct - cluster[0].xPct > clusterPct) flush();
+        cluster.push(d);
+      }
+      flush();
+    }
+
+    const phases = (report.phases || []).map((p: any, i: number) => ({
+      name: p.phaseName, xPct: pct(p.start),
+      wPct: Math.max(0.6, pct(p.end) - pct(p.start)), alt: i % 2 === 1,
+    }));
+
+    return {
+      lanes, phases, dur, effLine, effArea,
+      effFinal: effPts.length ? Math.round(effPts[effPts.length - 1].y * 10) / 10 : 0,
+    };
+  });
+
+  let hover = $state<{
+    lane: string; xPct: number; color: string; label: string; t: number;
+    count: number; members: TlMember[]; closeName?: string; closeDist?: number;
+    eff: number; shad: number; rage: number;
+  } | null>(null);
+  function onDotEnter(lane: string, d: TlDot) {
     hover = {
-      x: tlX(bi), y: TL_T + 8,
-      eff: timeline.effPts[bi]?.y ?? 0,
-      shad: timeline.shadPts[bi]?.y ?? 0,
-      rage: timeline.ragePts[bi]?.y ?? 0,
-      t: timeline.effPts[bi]?.t ?? 0,
-      label: near.label, color: near.color,
-      idx: nearIdx, dotY: near.y, side, closeName: near.closeName, closeDist: near.closeDist,
+      lane, xPct: d.xPct, color: d.color, label: d.label, t: d.t, count: d.count,
+      members: d.members, closeName: d.closeName, closeDist: d.closeDist,
+      eff: d.eff, shad: d.shad, rage: d.rage,
     };
   }
-  function onTlLeave() { hover = null; }
+  function onDotLeave() { hover = null; }
 
   /** Friendly labels for the empowered history timeline. The parser emits
    *  internal type names (ShadowClose / ShadowWalk) that must not reach the UI. */
@@ -261,46 +325,82 @@
     </div>
   {/if}
   {#if timeline}
-    <div class="timeline">
-      <div class="timeline-title">Fight Timeline Chart</div>
-      <div class="timeline-chart-wrap">
-        <svg class="timeline-svg" viewBox={`0 0 ${TL_W} ${TL_H}`} preserveAspectRatio="none" role="img" aria-label="Fight timeline chart" onmousemove={onTlMove} onmouseleave={onTlLeave}>
-          {#each [0, 25, 50, 75, 100] as p}
-            <line x1={TL_L} x2={TL_R} y1={tlYpct(p)} y2={tlYpct(p)} class="tl-grid" />
-            <text x={TL_L - 8} y={tlYpct(p) + 3} class="tl-axis" text-anchor="end">{p}%</text>
-          {/each}
-          {#each [0, 0.25, 0.5, 0.75, 1] as g}
-            <text x={tlX(Math.round(g * (TL_BUCKETS - 1)))} y={TL_B + 16} class="tl-axis" text-anchor="middle">{fmtClock(g * (durationSec * 1000))}</text>
-          {/each}
-          <polyline class="tl-line tl-cyan" points={timeline.effPts.map(pt => `${tlX(pt.x)},${tlYpct(pt.y)}`).join(" ")} />
-          <polyline class="tl-line tl-purple" points={timeline.shadPts.map(pt => `${tlX(pt.x)},${tlYcnt(pt.y, timeline.shadMax)}`).join(" ")} />
-          <polyline class="tl-line tl-gold" points={timeline.ragePts.map(pt => `${tlX(pt.x)},${tlYcnt(pt.y, timeline.rageMax)}`).join(" ")} />
-          {#each timeline.events as e, i}
-            <circle cx={tlX(e.x)} cy={e.y} r={hover && hover.idx === i ? 5.5 : 4} fill={e.color} class="tl-dot-svg" class:active={hover && hover.idx === i} />
-          {/each}
-          {#if hover}<line x1={hover.x} x2={hover.x} y1={TL_T} y2={TL_B} class="tl-hover-line" />{/if}
-        </svg>
-        {#if hover}
-          <div class="timeline-tip" class:right={hover.side === 'right'} class:left={hover.side === 'left'}
-            style={`left:${(hover.x / TL_W) * 100}%; top:${(hover.dotY / TL_H) * 100}%;`}>
-            <div class="tt-time">{fmtClock(hover.t)}</div>
-            {#if hover.label}<div class="tt-event" style={`color:${hover.color};`}>{hover.label}</div>{/if}
-            {#if hover.closeName}
-              <div class="tt-row"><span class="tt-dot tt-close"></span>Close Spawn: <b>{hover.closeName}</b> ({hover.closeDist}u)</div>
-            {/if}
-            <div class="tt-row"><span class="tt-dot lg-cyan"></span>Orb Block Eff: <b>{hover.eff}%</b></div>
-            <div class="tt-row"><span class="tt-dot lg-purple"></span>Shadows Reached: <b>{hover.shad}</b></div>
-            <div class="tt-row"><span class="tt-dot lg-gold"></span>Rage Hits: <b>{hover.rage}</b></div>
-          </div>
-        {/if}
+    <div class="tl-card">
+      <div class="tl-head">
+        <div class="tl-title"><i class="fa-solid fa-timeline"></i> Fight Timeline</div>
+        <div class="tl-hint">one row per mechanic — each dot is the moment it happened</div>
       </div>
-      <div class="timeline-legend">
-        <span class="lg lg-cyan">Orb Block Efficiency (%)</span>
-        <span class="lg lg-orange">Malice Dropped Near Boss</span>
-        <span class="lg lg-purple">Shadow Reached Cerus (walk-in)</span>
-        <span class="lg lg-gold">Rage Hits (Count)</span>
+
+      <div class="tl-eff">
+        <div class="tl-eff-label">Orb block efficiency</div>
+        <div class="tl-eff-track">
+          {#each [0, 50, 100] as g}
+            <span class="tl-eff-grid" style="left:{g}%"></span>
+            <span class="tl-eff-tick" style="left:{g}%">{g}%</span>
+          {/each}
+          <svg class="tl-eff-svg" viewBox="0 0 100 {TL_EFF_H}" preserveAspectRatio="none" aria-hidden="true">
+            <polygon class="tl-eff-area" points={timeline.effArea} />
+            <polyline class="tl-eff-line" points={timeline.effLine} vector-effect="non-scaling-stroke" />
+          </svg>
+          <div class="tl-eff-val">{timeline.effFinal.toFixed(1)}%</div>
+        </div>
+      </div>
+
+      <div class="tl-axis-row">
+        <div class="tl-lane-label"></div>
+        <div class="tl-axis-track">
+          {#each [0, 0.25, 0.5, 0.75, 1] as g}
+            <span class="tl-axis-tick" style="left:{(g * 100).toFixed(2)}%">{fmtClock(g * timeline.dur)}</span>
+          {/each}
+        </div>
+        <div class="tl-lane-total"></div>
+      </div>
+
+      <div class="tl-lanes" bind:this={lanesWrap}>
+        {#each timeline.lanes as lane}
+          <div class="tl-lane" class:tl-lane-empty={lane.dots.length === 0}>
+            <div class="tl-lane-label">{lane.label}</div>
+            <div class="tl-track">
+              {#each timeline.phases as ph}
+                <div class="tl-band" class:tl-band-alt={ph.alt} style="left:{ph.xPct}%;width:{ph.wPct}%">
+                  <span class="tl-band-name">{ph.name}</span>
+                </div>
+              {/each}
+              {#each lane.dots as dot}
+                <button type="button" class="tl-dot {dot.size} {dot.cls}" style="left:{dot.xPct}%"
+                        aria-label={dot.label}
+                        onmouseenter={() => onDotEnter(lane.id, dot)} onmouseleave={onDotLeave}
+                        onfocus={() => onDotEnter(lane.id, dot)} onblur={onDotLeave}>
+                  {#if dot.count > 1}<span class="tl-dot-badge">{dot.count}×</span>{/if}
+                </button>
+              {/each}
+              {#if hover && hover.lane === lane.id}
+                <div class="tl-tip" class:right={hover.xPct < 62} class:left={hover.xPct >= 62} style="left:{hover.xPct}%">
+                  <div class="tt-time">{fmtClock(hover.t)}</div>
+                  <div class="tt-event" style="color:{hover.color}">{hover.label}</div>
+                  {#if hover.closeName}
+                    <div class="tt-row"><span class="tt-dot tt-close"></span>Close Spawn: <b>{hover.closeName}</b> ({hover.closeDist}u)</div>
+                  {/if}
+                  {#if hover.members.length > 1}
+                    <div class="tt-row"><span class="tt-dot" style="background:{hover.color}"></span>{hover.members.length} events</div>
+                    {#each hover.members.slice(0, 8) as m}
+                      <div class="tt-sub">{m.label}</div>
+                    {/each}
+                  {:else}
+                    <div class="tt-row"><span class="tt-dot lg-cyan"></span>Orb Block Eff: <b>{hover.eff}%</b></div>
+                    <div class="tt-row"><span class="tt-dot lg-purple"></span>Shadows Reached: <b>{hover.shad}</b></div>
+                    <div class="tt-row"><span class="tt-dot lg-gold"></span>Rage Hits: <b>{hover.rage}</b></div>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+            <div class="tl-lane-total">{lane.total}</div>
+          </div>
+        {/each}
       </div>
     </div>
+  {:else}
+    <div class="tl-empty">No mechanic events were recorded for this log.</div>
   {/if}
   {#if report.squadLedger && report.squadLedger.length > 0}
     <div class="squad-mechanics">
@@ -650,35 +750,97 @@
   .accent-red { color: #f87171; }
   .accent-pink { color: #f472b6; }
 
-  /* ── Timeline chart ── */
-  .timeline { background: var(--bg-sidebar); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
-  .timeline-title { font-size: 11px; font-weight: 700; color: var(--text); margin-bottom: 6px; letter-spacing: .03em; }
-  .timeline-chart-wrap { position: relative; }
-  .timeline-svg { width: 100%; height: 220px; display: block; }
-  .tl-grid { stroke: color-mix(in srgb, var(--border) 60%, transparent); stroke-width: 1.2; }
-  .tl-axis { fill: var(--text-muted); font-size: 9px; }
-  .tl-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
-  .tl-cyan { stroke: #22d3ee; }
-  .tl-purple { stroke: #a78bfa; }
-  .tl-gold { stroke: #fbbf24; }
-  .tl-hover-line { stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 4 3; opacity: 0.65; }
-  .tl-dot-svg { stroke: #050403; stroke-width: 1.3; pointer-events: none; transition: r .12s ease; }
-  .tl-dot-svg.active { stroke: #fff; stroke-width: 2; filter: drop-shadow(0 0 4px currentColor); }
-  .timeline-legend { display: flex; gap: 16px; margin-top: 8px; flex-wrap: wrap; }
-  .lg { font-size: 10px; color: var(--text-muted); display: flex; align-items: center; gap: 5px; }
-  .lg::before { content: ""; width: 10px; height: 3px; border-radius: 2px; display: inline-block; }
-  .lg-cyan::before { background: #22d3ee; }
-  .lg-purple::before { background: #a78bfa; }
-  .lg-orange::before { background: #ff7a3c; }
-  .lg-gold::before { background: #fbbf24; }
-  .timeline-tip {
-    position: absolute; transform: translateY(-50%);
-    background: #101015; border: 1px solid var(--border); border-radius: 8px;
-    padding: 6px 9px; font-size: 10px; color: var(--text); pointer-events: none;
-    box-shadow: 0 8px 22px rgba(0,0,0,.5); white-space: nowrap; z-index: 5;
+  /* ── Fight timeline: event lanes ── */
+  .tl-card {
+    background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 10px 12px; display: flex; flex-direction: column; gap: 8px;
+    transition: transform .18s var(--ease-smooth), border-color .18s, box-shadow .18s;
   }
-  .timeline-tip.right { transform: translate(14px, -50%); }
-  .timeline-tip.left  { transform: translate(calc(-100% - 14px), -50%); }
+  .tl-card:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+    box-shadow: 0 10px 24px -12px rgba(0, 0, 0, .85);
+  }
+  .tl-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .tl-title { font-size: 11px; font-weight: 700; color: var(--text); letter-spacing: .03em; }
+  .tl-title i { color: var(--accent); font-size: 10px; }
+  .tl-hint { font-size: 9px; color: var(--text-muted); opacity: .8; }
+
+  .tl-eff { display: flex; align-items: center; gap: 8px; }
+  .tl-eff-label {
+    flex: none; width: 96px; font-size: 9px; font-weight: 800; text-transform: uppercase;
+    letter-spacing: .07em; color: var(--text-muted);
+  }
+  .tl-eff-track { position: relative; flex: 1; height: 28px; min-width: 0; }
+  .tl-eff-svg { position: absolute; inset: 0; width: 100%; height: 28px; display: block; }
+  .tl-eff-line { fill: none; stroke: #22d3ee; stroke-width: 1.6; }
+  .tl-eff-area { fill: color-mix(in srgb, #22d3ee 16%, transparent); }
+  .tl-eff-grid { position: absolute; top: 0; bottom: 0; width: 1px; background: color-mix(in srgb, var(--border) 70%, transparent); }
+  .tl-eff-tick { position: absolute; top: -1px; transform: translateX(-50%); font-size: 8px; color: var(--text-muted); }
+  .tl-eff-val { flex: none; font-size: 12px; font-weight: 800; color: #fff; font-variant-numeric: tabular-nums; }
+
+  .tl-axis-row, .tl-lane { display: grid; grid-template-columns: 96px 1fr 34px; gap: 8px; align-items: center; }
+  .tl-axis-track { position: relative; height: 12px; min-width: 0; }
+  .tl-axis-tick {
+    position: absolute; top: 0; transform: translateX(-50%); font-size: 8px; color: var(--text-muted);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .tl-lanes { display: flex; flex-direction: column; gap: 1px; }
+  .tl-lane { padding: 2px 4px; border-radius: 4px; transition: background-color .14s, transform .18s var(--ease-smooth); }
+  .tl-lane:hover { background: color-mix(in srgb, #fff 5%, transparent); transform: translateX(2px); }
+  .tl-lane-label {
+    font-size: 9px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;
+    letter-spacing: .05em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .tl-lane-total { font-size: 11px; font-weight: 800; color: #fff; text-align: right; font-variant-numeric: tabular-nums; }
+  .tl-lane-empty .tl-lane-total { color: var(--text-muted); opacity: .5; }
+
+  .tl-track { position: relative; height: 22px; min-width: 0; overflow: visible; }
+  .tl-band { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, #fff 2.5%, transparent); }
+  .tl-band-alt { background: color-mix(in srgb, #fff 5%, transparent); }
+  .tl-band-name {
+    position: absolute; top: 0; left: 3px; font-size: 7px; letter-spacing: .04em;
+    color: var(--text-muted); white-space: nowrap; overflow: hidden; opacity: .75;
+  }
+  .tl-dot {
+    position: absolute; top: 50%; width: 9px; height: 9px; padding: 0;
+    border: 1.5px solid #050403; border-radius: 50%; cursor: pointer;
+    transform: translate(-50%, -50%);
+    transition: transform .18s var(--ease-spring), box-shadow .18s var(--ease-smooth);
+  }
+  .tl-dot.lg { width: 12px; height: 12px; }
+  .tl-dot:hover, .tl-dot:focus-visible {
+    transform: translate(-50%, -50%) scale(1.7);
+    box-shadow: 0 0 0 2px #fff, 0 0 8px 1px currentColor;
+    z-index: 3;
+  }
+  .tl-dot:focus-visible { outline: none; }
+  .tl-dot-orb   { background: #22d3ee; color: #22d3ee; }
+  .tl-dot-leak  { background: #ef4444; color: #ef4444; }
+  .tl-dot-close { background: #ff7a3c; color: #ff7a3c; }
+  .tl-dot-walk  { background: #a78bfa; color: #a78bfa; }
+  .tl-dot-rage  { background: #fbbf24; color: #fbbf24; }
+  .tl-dot-badge {
+    position: absolute; top: -7px; right: -9px; font-size: 7px; font-weight: 800; line-height: 1.3;
+    color: #fff; background: #0c0c0f; border: 1px solid var(--border); border-radius: 4px; padding: 0 2px;
+  }
+
+  .tl-tip {
+    position: absolute; top: 50%; z-index: 5; background: #101015; border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 9px; font-size: 10px; color: var(--text); pointer-events: none;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, .5); white-space: nowrap; transform: translate(10px, -50%);
+  }
+  .tl-tip.left { transform: translate(calc(-100% - 10px), -50%); }
+  .tt-sub { font-size: 9px; color: var(--text-muted); padding-left: 13px; }
+
+  .tl-empty {
+    background: var(--bg-panel); border: 1px dashed var(--border); border-radius: var(--radius);
+    padding: 22px; text-align: center; font-size: 11px; color: var(--text-muted);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tl-card, .tl-lane, .tl-dot { transition: none !important; transform: none !important; }
+  }
 
   /* ── Squad Mechanics table ── */
   .squad-mechanics { background: var(--bg-sidebar); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
