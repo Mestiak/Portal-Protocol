@@ -1115,10 +1115,10 @@
     transition: background-color .14s, transform .18s var(--ease-smooth);
   }
   .etl-row:hover { background: color-mix(in srgb, #fff 5%, transparent); transform: translateX(2px); }
-  .etl-time { color: var(--text-muted); font-variant-numeric: tabular-nums; font-size: 9px; }
+  .etl-time { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; font-size: 9px; }
   .etl-dot { width: 8px; height: 8px; border-radius: 50%; }
   .etl-what { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
   .etl-label { color: var(--text); font-weight: 600; white-space: nowrap; }
-  .etl-detail { color: var(--text-muted); font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .etl-detail { color: var(--text); opacity: .85; font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .etl-stacks { font-size: 10px; font-weight: 800; color: #fff; font-variant-numeric: tabular-nums; }
 </style>
