@@ -290,27 +290,27 @@
 {#if activeTab === "statistics"}
   <!-- STATISTICS (Cerus) -->
   <div class="stat-cards">
-    <div class="stat-card">
+    <div class="stat-card sc-cyan">
       <span class="stat-val accent-cyan">{fmtPct(report.orbEfficiency)}<span class="stat-unit">%</span></span>
       <span class="stat-label">Orb Block Efficiency</span>
       <span class="stat-sub">{fmt(report.totalOrbs)} / {fmt(report.totalOrbs + report.totalOrbsLeaked)} intercepted</span>
     </div>
-    <div class="stat-card">
+    <div class="stat-card sc-purple">
       <span class="stat-val accent-purple">{fmt(report.shadowsReached)}</span>
       <span class="stat-label">Shadows Reached Cerus</span>
       <span class="stat-sub">Shadows Gained Stacks</span>
     </div>
-    <div class="stat-card">
+    <div class="stat-card sc-red">
       <span class="stat-val accent-red">{fmt(report.empoweredGained)}</span>
       <span class="stat-label">Empowered Stacks</span>
       <span class="stat-sub">Total Stacks Gained</span>
     </div>
-    <div class="stat-card">
+    <div class="stat-card sc-gold">
       <span class="stat-val accent-gold">{fmt(report.rageHits)}</span>
       <span class="stat-label">Squad Rage Hits</span>
       <span class="stat-sub">True Dome Failures</span>
     </div>
-    <div class="stat-card">
+    <div class="stat-card sc-pink">
       <span class="stat-val accent-pink">{fmt(report.totalEnvyStrips)}</span>
       <span class="stat-label">Total of Boon Stripped</span>
       <span class="stat-sub">Sum of Envy Wall Touches</span>
@@ -743,16 +743,28 @@
 {/if}
 
 <style>
-  /* ── Stat cards (charcoal / indigo, responsive wrap) ── */
-  .stat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+  /* ── Stat cards ── */
+  .stat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
   .stat-card {
-    background: var(--bg-sidebar); border: 1px solid var(--border); border-radius: 12px;
-    padding: 14px 16px; display: flex; flex-direction: column; gap: 3px;
+    background: var(--bg-panel); border: 1px solid var(--border); border-top: 2px solid var(--border);
+    border-radius: var(--radius); padding: 10px 12px;
+    display: flex; flex-direction: column; gap: 3px; min-width: 0;
+    transition: transform .18s var(--ease-smooth), border-color .18s, box-shadow .18s;
   }
-  .stat-val { font-size: 28px; font-weight: 800; color: #fff; letter-spacing: .01em; line-height: 1; font-variant-numeric: tabular-nums; }
-  .stat-val .stat-unit { font-size: 14px; font-weight: 700; color: var(--text-muted); margin-left: 1px; }
-  .stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
-  .stat-sub { font-size: 10px; color: var(--text-muted); opacity: .8; }
+  .stat-card:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+    box-shadow: 0 10px 24px -12px rgba(0, 0, 0, .85);
+  }
+  .stat-card.sc-cyan { border-top-color: #22d3ee; }
+  .stat-card.sc-purple { border-top-color: #a78bfa; }
+  .stat-card.sc-red { border-top-color: #f87171; }
+  .stat-card.sc-gold { border-top-color: #fbbf24; }
+  .stat-card.sc-pink { border-top-color: #f472b6; }
+  .stat-val { font-size: 22px; font-weight: 800; color: #fff; letter-spacing: .01em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .stat-val .stat-unit { font-size: 12px; font-weight: 700; color: var(--text-muted); margin-left: 1px; }
+  .stat-label { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; color: var(--text-muted); }
+  .stat-sub { font-size: 9px; color: var(--text-muted); opacity: .8; }
   .phase-strip {
     display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
     margin-top: 10px; padding: 6px 10px;
@@ -870,7 +882,7 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .tl-card, .tl-lane, .tl-dot, .sm-card, .sm-row { transition: none !important; transform: none !important; }
+    .tl-card, .tl-lane, .tl-dot, .sm-card, .sm-row, .stat-card { transition: none !important; transform: none !important; }
   }
 
   /* ── Squad Mechanics table ── */
