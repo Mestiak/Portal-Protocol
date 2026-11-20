@@ -2166,8 +2166,8 @@
     transition: background-color .14s;
   }
   .stats-table tbody td.col-player { text-align: left; }
-  .stats-table tbody tr { transition: transform .18s var(--ease-smooth); }
-  .stats-table tbody tr:not(.subtotal-row):not(.total-row):hover { transform: translateX(2px); }
+  /* No translateX here: a shifted row extends the scrollable overflow area and
+     summons a horizontal scrollbar with nothing to scroll to. */
   .stats-table tbody tr:not(.subtotal-row):not(.total-row):hover td { background: color-mix(in srgb, #fff 5%, transparent); }
   .player-cell { display: flex; align-items: center; gap: 8px; }
   .prof-icon { width: 20px; height: 20px; border-radius: 5px; background: #0c0c0f; flex-shrink: 0; }
@@ -2206,7 +2206,7 @@
   @media (prefers-reduced-motion: reduce) {
     .stats-modal { animation: none !important; }
     .ax-hero-card, .ax-runner-card, .ax-panel, .ax-boon-row, .ds-block, .ax-row, .ax-death-row, .ax-downrecap-row,
-    .stats-scroll, .stats-table tbody tr, .th-sort, .sg-collapse, .targets-chevron {
+    .stats-scroll, .th-sort, .sg-collapse, .targets-chevron {
       transition: none !important;
       transform: none !important;
     }
