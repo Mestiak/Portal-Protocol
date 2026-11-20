@@ -631,7 +631,7 @@ function extractCerus(logData: Json): MechanicReport {
   // ── Mechanic event times ──
   const empAByTime: number[] = [];
   const malIntAEvents: number[] = [];
-  const rageEvents: number[] = [];
+  const rageEvents: { time: number; actor: string }[] = [];
   const cryRageCasts: number[] = [];
   const enrSmashCasts: number[] = [];
   const cerusPos = [373.396, 363.581];
@@ -651,17 +651,17 @@ function extractCerus(logData: Json): MechanicReport {
   if (logData.mechanics) {
     logData.mechanics.forEach((mech: Json) => {
       const name = mech.name || "";
-      const events: { time: number; id?: number }[] = mech.mechanicsData || [];
+      const events: { time: number; id?: number; actor?: string }[] = mech.mechanicsData || [];
       if (name === "Emp.A") events.forEach((ev) => { if (bossTargetId == null || ev.id === bossTargetId) empAByTime.push(ev.time); });
       else if (name === "MalInt.A") events.forEach((ev) => malIntAEvents.push(ev.time));
-      else if (name === "Emp.CryRage.H" || name === "CryRage.H") events.forEach((ev) => rageEvents.push(ev.time));
+      else if (name === "Emp.CryRage.H" || name === "CryRage.H") events.forEach((ev) => rageEvents.push({ time: ev.time, actor: ev.actor || "Unknown Player" }));
       else if (name === "CryRage.C") events.forEach((ev) => cryRageCasts.push(ev.time));
       else if (name === "EnrSmash.C") events.forEach((ev) => enrSmashCasts.push(ev.time));
     });
   }
   empAByTime.sort((a, b) => a - b);
   malIntAEvents.sort((a, b) => a - b);
-  rageEvents.sort((a, b) => a - b);
+  rageEvents.sort((a, b) => a.time - b.time);
   cryRageCasts.sort((a, b) => a - b);
   enrSmashCasts.sort((a, b) => a - b);
 
@@ -717,8 +717,8 @@ function extractCerus(logData: Json): MechanicReport {
     empAByTime.forEach((t, idx) => { if (t >= start && t <= end && !usedEmpA.has(idx)) { pEmpA.push(t); usedEmpA.add(idx); } });
     const pShadowSpawns = shadowSpawnTimes.filter((t) => t >= start && t <= end);
     const pSmashCasts = enrSmashCasts.filter((t) => t >= start && t <= end);
-    const pRageEvents: number[] = [];
-    rageEvents.forEach((t, idx) => { if (t >= start && t <= end && !usedRage.has(idx)) { pRageEvents.push(t); usedRage.add(idx); } });
+    const pRageEvents: { time: number; actor: string }[] = [];
+    rageEvents.forEach((ev, idx) => { if (ev.time >= start && ev.time <= end && !usedRage.has(idx)) { pRageEvents.push(ev); usedRage.add(idx); } });
 
     // matchedRage = rage hits that coincide with an Emp.A. Cry of Rage grants its
     // stack when the dome resolves, a few hundred ms after the hit, so the match
@@ -726,10 +726,17 @@ function extractCerus(logData: Json): MechanicReport {
     // shadow cluster (observed: a rage 12s late took one of a shadow's five orbs,
     // which then displayed +4). Genuine matches sit within ~314ms; the steals are
     // seconds away.
-    const RAGE_MATCH_WINDOW = 500;
+    // Each rage hit grants Cerus one stack, so each hit pairs with its own
+    // Emp.A. Pairing by "first event within 100ms" collapsed a simultaneous
+    // dome (six players hit at once) onto whichever player happened to be
+    // listed first — the tab credited one player with all six stacks.
+    // The dome resolves a couple of seconds after the hit, so the window has to
+    // cover that: measured delays run 0..2177ms, while the nearest-orb steals
+    // start at 6406ms. 3000ms separates them.
+    const RAGE_MATCH_WINDOW = 3000;
     const rageIndices = new Set<number>();
     const matchedRageMap: Record<number, string> = {};
-    pRageEvents.forEach((rt) => {
+    pRageEvents.forEach(({ time: rt, actor }) => {
       let closestT = -1, closestDiff = Infinity;
       pEmpA.forEach((t, idx) => {
         if (rageIndices.has(idx)) return;
@@ -738,16 +745,6 @@ function extractCerus(logData: Json): MechanicReport {
       });
       if (closestT !== -1 && closestDiff <= RAGE_MATCH_WINDOW) {
         rageIndices.add(closestT);
-        let actor = "Unknown Player";
-        if (logData.mechanics) {
-          for (const mech of logData.mechanics) {
-            if (mech.name === "Emp.CryRage.H" || mech.name === "CryRage.H") {
-              for (const ev of (mech.mechanicsData || [])) {
-                if (Math.abs(ev.time - rt) <= 100) { actor = ev.actor; break; }
-              }
-            }
-          }
-        }
         matchedRageMap[closestT] = actor;
       }
     });
@@ -976,7 +973,10 @@ function extractCerus(logData: Json): MechanicReport {
     const orbStacks = remainingEmpA.length; // remaining Emp.A after slam/shadow = orbs eaten
     const empGained = pEmpA.length; // every Emp.A gain is empowered: orbs + shadows + slam + cry of rage
     const rageHitsList = phaseRageHits(phaseIdx);
-    const rageHits = pRageEvents.length;
+    // Count the stacks Cry of Rage actually contributed, not every dome that
+    // landed — a hit whose Emp.A falls outside the match window must not be
+    // counted, or the source split stops footing to empGained.
+    const rageHits = rageIndices.size;
 
     empPhases.push({
       phaseName: phase.phaseName, start, end,
