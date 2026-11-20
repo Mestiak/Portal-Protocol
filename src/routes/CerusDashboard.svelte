@@ -374,64 +374,81 @@
                   {#if dot.count > 1}<span class="tl-dot-badge">{dot.count}×</span>{/if}
                 </button>
               {/each}
-              {#if hover && hover.lane === lane.id}
-                <div class="tl-tip" class:right={hover.xPct < 62} class:left={hover.xPct >= 62} style="left:{hover.xPct}%">
-                  <div class="tt-time">{fmtClock(hover.t)}</div>
-                  <div class="tt-event" style="color:{hover.color}">{hover.label}</div>
-                  {#if hover.closeName}
-                    <div class="tt-row"><span class="tt-dot tt-close"></span>Close Spawn: <b>{hover.closeName}</b> ({hover.closeDist}u)</div>
-                  {/if}
-                  {#if hover.members.length > 1}
-                    <div class="tt-row"><span class="tt-dot" style="background:{hover.color}"></span>{hover.members.length} events</div>
-                    {#each hover.members.slice(0, 8) as m}
-                      <div class="tt-sub">{m.label}</div>
-                    {/each}
-                  {:else}
-                    <div class="tt-row"><span class="tt-dot lg-cyan"></span>Orb Block Eff: <b>{hover.eff}%</b></div>
-                    <div class="tt-row"><span class="tt-dot lg-purple"></span>Shadows Reached: <b>{hover.shad}</b></div>
-                    <div class="tt-row"><span class="tt-dot lg-gold"></span>Rage Hits: <b>{hover.rage}</b></div>
-                  {/if}
-                </div>
-              {/if}
             </div>
             <div class="tl-lane-total">{lane.total}</div>
           </div>
         {/each}
+      </div>
+
+      <!-- Reserved detail strip: a floating tooltip grew to 126 px tall and
+           covered the lanes below, so the hovered moment is shown here instead. -->
+      <div class="tl-detail">
+        {#if hover}
+          <div class="tl-detail-top">
+            <span class="tl-detail-time">{fmtClock(hover.t)}</span>
+            <span class="tl-detail-event" style="color:{hover.color}">{hover.label}</span>
+            {#if hover.closeName}
+              <span class="tl-detail-chip">close spawn <b>{hover.closeName}</b> · {hover.closeDist}u</span>
+            {/if}
+          </div>
+          {#if hover.members.length > 1}
+            <div class="tl-detail-members">
+              {#each hover.members.slice(0, 8) as m}
+                <span class="tl-detail-member">{m.label}</span>
+              {/each}
+              {#if hover.members.length > 8}
+                <span class="tl-detail-member tl-detail-more">+{hover.members.length - 8} more</span>
+              {/if}
+            </div>
+          {:else}
+            <div class="tl-detail-stats">
+              <span>Orb block eff <b>{hover.eff}%</b></span>
+              <span>Shadows reached <b>{hover.shad}</b></span>
+              <span>Rage hits <b>{hover.rage}</b></span>
+            </div>
+          {/if}
+        {:else}
+          <div class="tl-detail-hint">Hover a dot to see what happened at that moment</div>
+        {/if}
       </div>
     </div>
   {:else}
     <div class="tl-empty">No mechanic events were recorded for this log.</div>
   {/if}
   {#if report.squadLedger && report.squadLedger.length > 0}
-    <div class="squad-mechanics">
-      <div class="sm-title">Squad Mechanics</div>
+    <div class="sm-card">
+      <div class="sm-head">
+        <div class="sm-title">Squad Mechanics</div>
+        <div class="sm-hint">orbs collected · Cry of Rage dome failures · Envy Wall strips — click a column to sort</div>
+      </div>
       <div class="sm-table">
-        <div class="sm-row sm-head">
-          <span class="sm-cell sm-player">Player</span>
-          <button class="sm-cell sm-num sm-sort" class:active={smSort.key === "orbs"} onclick={() => smSortBy("orbs")}>
-            Orbs Collected
-            {#if smSort.key === "orbs"}<i class="fa-solid {smSort.dir === 1 ? 'fa-chevron-up' : 'fa-chevron-down'}" style="margin-left: 4px; font-size: 8px;"></i>{/if}
+        <div class="sm-row sm-cols">
+          <span class="sm-rank">#</span>
+          <span class="sm-proc"></span>
+          <span class="sm-col-label">Player</span>
+          <button class="sm-num sm-sort" class:active={smSort.key === "orbs"} onclick={() => smSortBy("orbs")}>
+            Orbs
+            {#if smSort.key === "orbs"}<i class="fa-solid {smSort.dir === 1 ? 'fa-chevron-up' : 'fa-chevron-down'}"></i>{/if}
           </button>
-          <button class="sm-cell sm-num sm-sort" class:active={smSort.key === "cryRage"} onclick={() => smSortBy("cryRage")}>
-            Cry of Rage Hits
-            {#if smSort.key === "cryRage"}<i class="fa-solid {smSort.dir === 1 ? 'fa-chevron-up' : 'fa-chevron-down'}" style="margin-left: 4px; font-size: 8px;"></i>{/if}
+          <button class="sm-num sm-sort" class:active={smSort.key === "cryRage"} onclick={() => smSortBy("cryRage")}>
+            Cry of Rage
+            {#if smSort.key === "cryRage"}<i class="fa-solid {smSort.dir === 1 ? 'fa-chevron-up' : 'fa-chevron-down'}"></i>{/if}
           </button>
-          <button class="sm-cell sm-num sm-sort" class:active={smSort.key === "envyStrip"} onclick={() => smSortBy("envyStrip")}>
-            Envy Wall Strips
-            {#if smSort.key === "envyStrip"}<i class="fa-solid {smSort.dir === 1 ? 'fa-chevron-up' : 'fa-chevron-down'}" style="margin-left: 4px; font-size: 8px;"></i>{/if}
+          <button class="sm-num sm-sort" class:active={smSort.key === "envyStrip"} onclick={() => smSortBy("envyStrip")}>
+            Envy Strips
+            {#if smSort.key === "envyStrip"}<i class="fa-solid {smSort.dir === 1 ? 'fa-chevron-up' : 'fa-chevron-down'}"></i>{/if}
           </button>
         </div>
         {#each (smSort.key
           ? report.squadLedger.slice().sort((a, b) => (a[smSort.key!] - b[smSort.key!]) * smSort.dir)
-          : report.squadLedger.slice().sort((a, b) => b.orbs - a.orbs)) as p}
+          : report.squadLedger.slice().sort((a, b) => b.orbs - a.orbs)) as p, i}
           <div class="sm-row">
-            <span class="sm-cell sm-player">
-              <img class="sm-prof" src={profIcon(p.profession)} alt={p.profession} onerror={(e) => ((e.currentTarget as HTMLImageElement).src = "/professions/guardian.png")} />
-              <span class="sm-names"><span class="sm-toon">{p.name}</span><span class="sm-acct">{p.account}</span></span>
-            </span>
-            <span class="sm-cell sm-num">{fmt(p.orbs)}</span>
-            <span class="sm-cell sm-num">{fmt(p.cryRage)}</span>
-            <span class="sm-cell sm-num" class:sm-warn={p.envyStrip > 0}>{fmt(p.envyStrip)}</span>
+            <span class="sm-rank">{i + 1}</span>
+            <img class="sm-prof" src={profIcon(p.profession)} alt={p.profession} onerror={(e) => ((e.currentTarget as HTMLImageElement).src = "/professions/guardian.png")} />
+            <span class="sm-player"><span class="sm-names"><span class="sm-toon">{p.name}</span><span class="sm-acct">{p.account}</span></span></span>
+            <span class="sm-num">{fmt(p.orbs)}</span>
+            <span class="sm-num">{fmt(p.cryRage)}</span>
+            <span class="sm-num" class:sm-warn={p.envyStrip > 0}>{fmt(p.envyStrip)}</span>
           </div>
         {/each}
       </div>
@@ -825,13 +842,27 @@
     color: #fff; background: #0c0c0f; border: 1px solid var(--border); border-radius: 4px; padding: 0 2px;
   }
 
-  .tl-tip {
-    position: absolute; top: 50%; z-index: 5; background: #101015; border: 1px solid var(--border);
-    border-radius: 8px; padding: 6px 9px; font-size: 10px; color: var(--text); pointer-events: none;
-    box-shadow: 0 8px 22px rgba(0, 0, 0, .5); white-space: nowrap; transform: translate(10px, -50%);
+  .tl-detail {
+    border-top: 1px solid var(--border); padding-top: 8px;
+    min-height: 46px; display: flex; flex-direction: column; gap: 6px;
   }
-  .tl-tip.left { transform: translate(calc(-100% - 10px), -50%); }
-  .tt-sub { font-size: 9px; color: var(--text-muted); padding-left: 13px; }
+  .tl-detail-hint { font-size: 10px; color: var(--text-muted); opacity: .7; padding: 4px 0; }
+  .tl-detail-top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .tl-detail-time { font-size: 11px; font-weight: 800; color: #fff; font-variant-numeric: tabular-nums; }
+  .tl-detail-event { font-size: 11px; font-weight: 700; }
+  .tl-detail-chip {
+    font-size: 9px; color: var(--text-muted); background: color-mix(in srgb, #fff 4%, transparent);
+    border: 1px solid var(--border); border-radius: 6px; padding: 2px 6px;
+  }
+  .tl-detail-chip b { color: var(--text); }
+  .tl-detail-stats { display: flex; gap: 14px; flex-wrap: wrap; font-size: 10px; color: var(--text-muted); }
+  .tl-detail-stats b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .tl-detail-members { display: flex; gap: 5px; flex-wrap: wrap; }
+  .tl-detail-member {
+    font-size: 9px; color: var(--text); background: color-mix(in srgb, #fff 4%, transparent);
+    border: 1px solid var(--border); border-radius: 6px; padding: 2px 6px;
+  }
+  .tl-detail-more { color: var(--text-muted); }
 
   .tl-empty {
     background: var(--bg-panel); border: 1px dashed var(--border); border-radius: var(--radius);
@@ -839,40 +870,52 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .tl-card, .tl-lane, .tl-dot { transition: none !important; transform: none !important; }
+    .tl-card, .tl-lane, .tl-dot, .sm-card, .sm-row { transition: none !important; transform: none !important; }
   }
 
   /* ── Squad Mechanics table ── */
-  .squad-mechanics { background: var(--bg-sidebar); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
-  .sm-title { font-size: 11px; font-weight: 700; color: var(--text); margin-bottom: 8px; letter-spacing: .03em; }
-  .sm-table { display: flex; flex-direction: column; gap: 2px; }
-  .sm-row { display: grid; grid-template-columns: 1fr 120px 120px 120px; align-items: center;
-    padding: 6px 8px; border-radius: 8px; transition: background .12s ease; }
-  .sm-row:not(.sm-head):hover { background: color-mix(in srgb, #fff 4%, transparent); }
-  .sm-head { background: color-mix(in srgb, #fff 3%, transparent); border: 1px solid var(--border); }
-  .sm-head .sm-cell { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); font-weight: 600; }
-  .sm-num.sm-sort { background: transparent; border: none; cursor: pointer; color: var(--text-muted);
-    font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
-    transition: color .15s; padding-right: 6px; display: inline-flex; align-items: center; justify-content: flex-end; }
+  .sm-card {
+    background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 10px 12px; display: flex; flex-direction: column; gap: 8px;
+    transition: transform .18s var(--ease-smooth), border-color .18s, box-shadow .18s;
+  }
+  .sm-card:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+    box-shadow: 0 10px 24px -12px rgba(0, 0, 0, .85);
+  }
+  .sm-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .sm-title { font-size: 11px; font-weight: 700; color: var(--text); letter-spacing: .03em; }
+  .sm-hint { font-size: 9px; color: var(--text-muted); opacity: .8; }
+  .sm-table { display: flex; flex-direction: column; gap: 1px; }
+  .sm-row {
+    display: grid; grid-template-columns: 18px 24px 1fr 92px 92px 92px; align-items: center;
+    gap: 6px; padding: 3px 4px; border-radius: 6px;
+    transition: background-color .14s, transform .18s var(--ease-smooth);
+  }
+  .sm-row:not(.sm-cols):hover { background: color-mix(in srgb, #fff 5%, transparent); transform: translateX(2px); }
+  .sm-cols { padding: 0 4px 5px; border-bottom: 1px solid var(--border); border-radius: 0; }
+  .sm-cols .sm-col-label, .sm-cols .sm-rank, .sm-cols .sm-proc {
+    font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted);
+  }
+  .sm-rank { font-size: 9px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .sm-proc { width: 20px; height: 20px; flex: none; }
+  .sm-num { font-size: 11px; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
+  .sm-num.sm-warn { color: #f472b6; font-weight: 700; }
+  .sm-num.sm-sort {
+    background: transparent; border: none; cursor: pointer; color: var(--text-muted); padding: 0;
+    display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px;
+    font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em;
+    transition: color .15s;
+  }
   .sm-num.sm-sort:hover { color: var(--text); }
   .sm-num.sm-sort.active { color: var(--accent); }
-  .sm-cell { font-size: 12px; color: var(--text); }
-  .sm-player { display: flex; align-items: center; gap: 9px; min-width: 0; }
-  .sm-prof { width: 22px; height: 22px; border-radius: 5px; flex: 0 0 auto; background: #0c0d12; }
+  .sm-num.sm-sort i { font-size: 8px; }
+  .sm-player { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .sm-prof { width: 20px; height: 20px; border-radius: 5px; flex: 0 0 auto; background: #0c0d12; }
   .sm-names { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
-  .sm-toon { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .sm-acct { font-size: 10px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .sm-num { text-align: right; font-variant-numeric: tabular-nums; padding-right: 6px; }
-  .sm-num.sm-warn { color: #f472b6; font-weight: 700; }
-  .tt-time { font-weight: 800; color: #fff; margin-bottom: 3px; }
-  .tt-event { font-weight: 700; font-size: 0.72rem; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 2px; margin-bottom: 2px; }
-  .tt-row { display: flex; align-items: center; gap: 5px; }
-  .tt-row b { color: #fff; }
-  .tt-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-  .tt-dot.lg-cyan { background: #22d3ee; }
-  .tt-dot.lg-purple { background: #a78bfa; }
-  .tt-dot.lg-gold { background: #fbbf24; }
-  .tt-dot.tt-close { background: #ff7a3c; }
+  .sm-toon { font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sm-acct { font-size: 9px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   /* ── Shadows tab (premium drill-down) ── */
   .sh-header { background: color-mix(in srgb, var(--accent) 8%, var(--bg-sidebar)); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
