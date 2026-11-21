@@ -533,7 +533,10 @@
     const g = dpsGeom;
     if (!g || g.empty || g.hitboxes.length === 0) return;
     const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
-    const mx = e.clientX - rect.left;
+    // The geometry is in viewBox units; max-width:100% can scale the rendered
+    // SVG, so convert the cursor into viewBox space before comparing.
+    const scale = rect.width / g.W || 1;
+    const mx = (e.clientX - rect.left) / scale;
     let closest: { x: number; point: MultiPlayerDpsPoint } | null = null;
     let minDist = 24;
     for (const h of g.hitboxes) {
@@ -1108,7 +1111,7 @@
         </div>
       </div>
       
-      <div bind:this={dpsBox}>
+      <div class="an-chart-box" bind:this={dpsBox}>
         {#if dpsGeom && !dpsGeom.empty}
           <svg class="an-svg" width={dpsGeom.W} height={dpsGeom.H} viewBox="0 0 {dpsGeom.W} {dpsGeom.H}"
                role="img" aria-label="Player DPS comparison"
@@ -1238,7 +1241,7 @@
             <span class="an-leg-dot" style="background:var(--fail);"></span><span class="an-leg-label">Wipes</span>
           </div>
         </div>
-        <div bind:this={activityBox}>
+        <div class="an-chart-box" bind:this={activityBox}>
           {#if activityGeom}
             <svg class="an-svg" width={activityGeom.W} height={activityGeom.H} viewBox="0 0 {activityGeom.W} {activityGeom.H}"
                  role="img" aria-label="Encounter activity">
@@ -1264,7 +1267,7 @@
         <div class="an-section-head">
           <span class="an-section-title"><i class="fa-solid fa-heart-crack"></i> Wipe Depth</span>
         </div>
-        <div bind:this={wipeBox}>
+        <div class="an-chart-box" bind:this={wipeBox}>
           {#if wipeGeom}
             <svg class="an-svg" width={wipeGeom.W} height={wipeGeom.H} viewBox="0 0 {wipeGeom.W} {wipeGeom.H}"
                  role="img" aria-label="Wipe depth">
@@ -1359,15 +1362,19 @@
   .analytics-wrap{display:flex;flex-direction:column;gap:20px;width:100%;min-width:0;}
   .an-charts-grid {
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 20px;
     width: 100%;
+    min-width: 0;
   }
   @media (min-width: 1024px) {
     .an-charts-grid {
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     }
   }
+  /* Flex items default to min-width:auto, so a card holding a wide SVG would
+     refuse to shrink and the chart would clip instead of rescaling. */
+  .an-chart-box{min-width:0;}
   .an-filter-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
   .an-select{
     background:var(--bg-card);border:1px solid var(--border);border-radius:8px;
@@ -1427,7 +1434,7 @@
   .an-insight.bad i{color:var(--fail);}
   .an-section{
     background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius);
-    padding:14px 16px;display:flex;flex-direction:column;gap:12px;
+    padding:14px 16px;display:flex;flex-direction:column;gap:12px;min-width:0;
   }
   .an-section-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
   .an-section-title{
@@ -1448,7 +1455,7 @@
 
   .an-leg-dot{width:10px;height:10px;border-radius:50%;display:inline-block;}
   .an-leg-label{font-size:10px;color:var(--text-muted);}
-  .an-svg{display:block;}
+  .an-svg{display:block;max-width:100%;}
   .an-grid{stroke:var(--border);stroke-width:1;}
   .an-axis{stroke:var(--border);stroke-width:1;}
   .an-axis-text{fill:var(--text-muted);font-size:10px;font-family:var(--font);}
