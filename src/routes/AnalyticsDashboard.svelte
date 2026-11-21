@@ -511,13 +511,82 @@
   // mechanic extractor.
   const ATTEMPT_LIMIT = 100;
 
-  let attempts = $derived.by(() => {
-    const inScope = filterLogs(logs, activeFilters)
-      .filter(l => l.success === true || l.success === false);
-    return [...inScope]
-      .sort((a, b) => parseLogDate(b.timestamp).getTime() - parseLogDate(a.timestamp).getTime())
-      .slice(0, ATTEMPT_LIMIT);
+  let scopedAttempts = $derived(
+    filterLogs(logs, activeFilters).filter(l => l.success === true || l.success === false),
+  );
+
+  let attempts = $derived.by(() => [...scopedAttempts]
+    .sort((a, b) => parseLogDate(b.timestamp).getTime() - parseLogDate(a.timestamp).getTime())
+    .slice(0, ATTEMPT_LIMIT));
+
+  // ─── Attempt timeline ──────────────────────────────────────────────────────
+  // One lane per boss, a dot per attempt along the filter's time span. Anchor-
+  // based clustering (not gap-chained) so a dense session stays readable.
+  const LANE_LABEL_W = 96;
+  const LANE_GAP = 8;
+  const CLUSTER_PX = 8;
+
+  let laneBox = $state<HTMLDivElement | null>(null);
+  let laneW = $state(0);
+  let laneHover = $state<{ x: number; items: AnalyticsLog[] } | null>(null);
+
+  $effect(() => {
+    const el = laneBox;
+    if (!el) return;
+    const ro = new ResizeObserver(() => { laneW = el.clientWidth; });
+    ro.observe(el);
+    laneW = el.clientWidth;
+    return () => ro.disconnect();
   });
+
+  let attemptLanes = $derived.by(() => {
+    const list = scopedAttempts;
+    if (list.length === 0 || laneW === 0) return null;
+
+    const times = list.map(l => parseLogDate(l.timestamp).getTime());
+    let min = Math.min(...times), max = Math.max(...times);
+    if (min === max) { min -= 3600_000; max += 3600_000; }
+    const pad = (max - min) * 0.02;
+    min -= pad; max += pad;
+
+    const counts = new Map<string, number>();
+    for (const l of list) {
+      const b = l.boss_name ?? 'Unknown';
+      counts.set(b, (counts.get(b) ?? 0) + 1);
+    }
+    const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => n);
+    const laneNames = ranked.slice(0, 6);
+    const hasOther = ranked.length > laneNames.length;
+    const lanes = hasOther ? [...laneNames, 'Other'] : laneNames;
+    const laneOf = (name: string) => {
+      const i = laneNames.indexOf(name);
+      return i >= 0 ? i : lanes.length - 1;
+    };
+
+    const trackW = Math.max(0, laneW - LANE_LABEL_W - LANE_GAP);
+    const radiusPct = trackW > 0 ? (CLUSTER_PX / trackW) * 100 : 0;
+
+    const buckets: { x: number; items: AnalyticsLog[] }[][] = lanes.map(() => []);
+    const sorted = [...list].sort((a, b) => parseLogDate(a.timestamp).getTime() - parseLogDate(b.timestamp).getTime());
+    for (const l of sorted) {
+      const t = parseLogDate(l.timestamp).getTime();
+      const x = ((t - min) / (max - min)) * 100;
+      const lane = buckets[laneOf(l.boss_name ?? 'Unknown')];
+      const anchor = lane[lane.length - 1];
+      if (anchor && radiusPct > 0 && Math.abs(x - anchor.x) <= radiusPct) lane[lane.length - 1].items.push(l);
+      else lane.push({ x, items: [l] });
+    }
+
+    const tickAt = (i: number) => min + ((max - min) * i) / 4;
+    return {
+      lanes, buckets,
+      ticks: [0, 1, 2, 3, 4].map(i => ({ x: (i / 4) * 100, label: fmtDateShort(new Date(tickAt(i))) })),
+    };
+  });
+
+  function fmtDateShort(d: Date): string {
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  }
 
   function modeLabel(l: AnalyticsLog): string {
     if (l.is_lcm) return 'LCM';
@@ -1383,6 +1452,74 @@
       </div>
     </div>
 
+    <!-- Attempt timeline: one lane per boss, one dot per attempt -->
+    <div class="an-section">
+      <div class="an-section-head">
+        <span class="an-section-title"><i class="fa-solid fa-timeline"></i> Attempt Timeline</span>
+        <span class="an-muted-sm">{scopedAttempts.length} attempt{scopedAttempts.length !== 1 ? 's' : ''}</span>
+      </div>
+      <div class="ln-wrap" bind:this={laneBox}>
+        {#if attemptLanes}
+          <div class="ln-lanes">
+            {#each attemptLanes.lanes as name, i}
+              <div class="ln-lane">
+                <span class="ln-label" title={name}>{name}</span>
+                <span class="ln-track">
+                  {#each attemptLanes.buckets[i] as c}
+                    <button
+                      class="ln-dot {c.items[0].success === true ? 'kill' : 'wipe'}"
+                      style="left:{c.x}%"
+                      onmouseover={() => { laneHover = c; }}
+                      onfocus={() => { laneHover = c; }}
+                      onmouseleave={() => { laneHover = null; }}
+                      onblur={() => { laneHover = null; }}
+                      aria-label="{c.items.length} attempt{c.items.length !== 1 ? 's' : ''} on {name}"
+                    >
+                      {#if c.items.length > 1}<span class="ln-count">×{c.items.length}</span>{/if}
+                    </button>
+                  {/each}
+                </span>
+              </div>
+            {/each}
+          </div>
+          <div class="ln-axis">
+            <span></span>
+            <span class="ln-axis-track">
+              {#each attemptLanes.ticks as t}
+                <span class="ln-axis-label" style="left:{t.x}%">{t.label}</span>
+              {/each}
+            </span>
+          </div>
+        {:else}
+          <p class="an-chart-empty">No attempts in this filter</p>
+        {/if}
+      </div>
+      <div class="an-detail" aria-live="polite">
+        {#if laneHover}
+          {@const lh = laneHover}
+          <span class="an-detail-title">{lh.items[0].boss_name ?? 'Unknown'}</span>
+          <span class="an-muted-sm">{lh.items.length} attempt{lh.items.length !== 1 ? 's' : ''}</span>
+          <div class="an-detail-rows">
+            {#each [...lh.items].sort((a, b) => parseLogDate(b.timestamp).getTime() - parseLogDate(a.timestamp).getTime()) as a}
+              <div class="an-detail-row">
+                <span class="an-detail-player">
+                  <span class="an-dot {a.success === true ? 'kill' : 'wipe'}"></span>
+                  <span class="an-detail-acct">{fmtWhen(a.timestamp)}</span>
+                </span>
+                <span class="an-detail-val">
+                  {a.success === true
+                    ? (a.duration != null ? fmtDur(a.duration) : '—')
+                    : (a.boss_hp_left != null ? fmtPct(a.boss_hp_left) + '%' : '—')}
+                </span>
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <span class="an-detail-hint">Hover a dot for details</span>
+        {/if}
+      </div>
+    </div>
+
     <!-- Attempt feed: every attempt in the current filter, newest first -->
     <div class="an-section">
       <div class="an-section-head">
@@ -1550,6 +1687,31 @@
   .at-boss{font-size:11px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .at-mode{font-size:9px;font-weight:700;color:var(--text-muted);text-align:right;}
   .at-time,.at-dur,.at-party{font-size:10px;color:var(--text-muted);text-align:right;font-variant-numeric:tabular-nums;}
+  /* Attempt timeline */
+  .ln-wrap{min-width:0;}
+  .ln-lanes{display:flex;flex-direction:column;gap:2px;min-width:0;}
+  .ln-lane{display:grid;grid-template-columns:96px minmax(0,1fr);gap:8px;align-items:center;height:26px;min-width:0;}
+  .ln-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .ln-track{position:relative;display:block;height:100%;min-width:0;background:color-mix(in srgb,#fff 2%,transparent);border-radius:4px;}
+  .ln-dot{
+    position:absolute;top:50%;transform:translate(-50%,-50%);
+    width:10px;height:10px;border-radius:50%;padding:0;border:none;cursor:pointer;
+    background:var(--success);
+    transition:transform .18s var(--ease-spring);
+  }
+  .ln-dot.wipe{background:var(--fail);}
+  .ln-dot:hover,.ln-dot:focus-visible{transform:translate(-50%,-50%) scale(1.5);z-index:2;outline:none;}
+  .ln-count{
+    position:absolute;top:-8px;right:-10px;
+    font-size:8px;font-weight:800;line-height:1;
+    background:var(--bg-card);border:1px solid var(--border);border-radius:6px;
+    padding:1px 3px;color:var(--text);
+  }
+  .ln-axis{display:grid;grid-template-columns:96px minmax(0,1fr);gap:8px;margin-top:4px;}
+  .ln-axis-track{position:relative;height:14px;min-width:0;}
+  .ln-axis-label{position:absolute;transform:translateX(-50%);font-size:9px;color:var(--text-muted);white-space:nowrap;}
+  .an-detail-player .an-dot.kill{background:var(--success);}
+  .an-detail-player .an-dot.wipe{background:var(--fail);}
   .an-table-wrap{overflow-x:auto;border-radius:10px;border:1px solid var(--border);}
   .an-table{width:100%;border-collapse:collapse;font-size:12px;}
   .an-table thead tr{
@@ -2037,7 +2199,8 @@
     .skeleton-chart-body,
     .an-acc-menu,
     .an-toast,
-    .an-progress-bar {
+    .an-progress-bar,
+    .ln-dot {
       animation: none !important;
       transition: none !important;
     }
