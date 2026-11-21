@@ -11,6 +11,7 @@
   import { extractMechanics, mergeCerusReports, MAX_AGGREGATE_LOGS, type MechanicReport } from '../lib/mechanicParser';
   import { extractDefenseSupport } from '../lib/defenseSupport';
   import { summarizeDefense, summarizeTrend, type DefenseTrendPoint } from '../lib/defenseTrend';
+  import { summarizeHealing, summarizeHealingTrend, type HealingTrendPoint } from '../lib/healingTrend';
   import { fmtTime } from '../lib/format';
   import { wipeLayout, professionRows, dpsLayout } from '../lib/chartScale';
   import { buildProfessionGroups, ELITE_SPEC_ICONS, PROFESSIONS, type ProfessionGroup } from '../lib/professionData';
@@ -551,42 +552,139 @@
     defHover = closest ? closest.point.raw : null;
   }
 
+  /**
+   * Fan out one get_log_full per log in the filter and parse each report.
+   * Shared by the Squad Defense and Squad Healing sections — both are loaded on
+   * demand because each call reads a full EI report.
+   */
+  async function loadLogReports<T>(
+    parse: (raw: any, rec: AnalyticsLog, res: any) => T | null,
+  ): Promise<{ points: T[]; failed: number; total: number }> {
+    const recs = filterLogs(logs, activeFilters).filter(l => l.url);
+    const points: T[] = [];
+    let failed = 0;
+    await Promise.all(recs.map(async (rec) => {
+      try {
+        const res = await invoke('get_log_full', { permalink: rec.url }) as any;
+        const pt = parse(res.raw, rec, res);
+        if (pt) points.push(pt);
+      } catch { failed++; }
+    }));
+    return { points, failed, total: recs.length };
+  }
+
   async function loadDefenseTrend() {
     const recs = filterLogs(logs, activeFilters).filter(l => l.url);
     if (recs.length === 0) { defError = 'No logs in the current filter scope.'; defLoaded = false; return; }
     defError = null;
     defLoading = true;
     try {
-      const pts: DefenseTrendPoint[] = [];
-      let failed = 0;
-      await Promise.all(recs.map(async (rec) => {
-        try {
-          const res = await invoke('get_log_full', { permalink: rec.url }) as any;
-          const ds = extractDefenseSupport(res.raw);
-          if (!ds) return;
-          const durationSec = typeof res.raw?.durationMS === 'number'
-            ? res.raw.durationMS / 1000
-            : (rec.duration ?? 0);
-          const pt = summarizeDefense(ds, {
-            date: parseLogDate(rec.timestamp),
-            boss: rec.boss_name ?? 'Unknown',
-            success: rec.success === true,
-            durationSec,
-          });
-          if (pt) pts.push(pt);
-        } catch { failed++; }
-      }));
-      pts.sort((a, b) => a.date.getTime() - b.date.getTime());
-      defPoints = pts;
-      defLoaded = pts.length > 0;
-      if (pts.length === 0) {
-        defError = `No defense data found. ${pts.length}/${recs.length} logs parsed; ${failed} unreachable.`;
+      const { points, failed, total } = await loadLogReports((raw, rec) => {
+        const ds = extractDefenseSupport(raw);
+        if (!ds) return null;
+        return summarizeDefense(ds, {
+          date: parseLogDate(rec.timestamp),
+          boss: rec.boss_name ?? 'Unknown',
+          success: rec.success === true,
+          durationSec: typeof raw?.durationMS === 'number' ? raw.durationMS / 1000 : (rec.duration ?? 0),
+        });
+      });
+      points.sort((a, b) => a.date.getTime() - b.date.getTime());
+      defPoints = points;
+      defLoaded = points.length > 0;
+      if (points.length === 0) {
+        defError = `No defense data found. ${points.length}/${total} logs parsed; ${failed} unreachable.`;
       }
     } catch (e) {
       defError = String(e);
       defLoaded = false;
     } finally {
       defLoading = false;
+    }
+  }
+
+  // ─── Squad healing trend ───────────────────────────────────────────────────
+  let healPoints = $state<HealingTrendPoint[] | null>(null);
+  let healLoading = $state(false);
+  let healLoaded = $state(false);
+  let healError = $state<string | null>(null);
+  let healBox = $state<HTMLDivElement | null>(null);
+  let healW = $state(0);
+  let healHover = $state<HealingTrendPoint | null>(null);
+
+  $effect(() => {
+    const el = healBox;
+    if (!el) return;
+    const ro = new ResizeObserver(() => { healW = el.clientWidth; });
+    ro.observe(el);
+    healW = el.clientWidth;
+    return () => ro.disconnect();
+  });
+
+  let healSeries = $derived((healPoints ?? []).map(p => ({
+    label: fmtDateShort(p.date),
+    players: { heal: { value: p.healingPerHour } },
+    raw: p,
+  })));
+  let healGeom = $derived(dpsLayout(healSeries, healW, {
+    keys: ['heal'],
+    color: () => 'var(--success)',
+    hovered: null,
+  }));
+  let healHitW = $derived(
+    healSeries.length > 1 && healGeom
+      ? (healGeom.W - healGeom.PL - healGeom.PR) / (healSeries.length - 1)
+      : 20,
+  );
+  let healSummary = $derived(summarizeHealingTrend(healPoints ?? []));
+
+  function fmtCompact(n: number): string {
+    if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+    if (n >= 1e3) return `${(n / 1e3).toFixed(0)}k`;
+    return String(Math.round(n));
+  }
+
+  function handleHealMouseMove(e: MouseEvent) {
+    const g = healGeom;
+    if (!g || g.hitboxes.length === 0) return;
+    const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+    const scale = rect.width / g.W || 1;
+    const mx = (e.clientX - rect.left) / scale;
+    let closest: (typeof g.hitboxes)[number] | null = null;
+    let minDist = healHitW / 2;
+    for (const h of g.hitboxes) {
+      const d = Math.abs(mx - h.x);
+      if (d < minDist) { minDist = d; closest = h; }
+    }
+    healHover = closest ? closest.point.raw : null;
+  }
+
+  async function loadHealingTrend() {
+    const recs = filterLogs(logs, activeFilters).filter(l => l.url);
+    if (recs.length === 0) { healError = 'No logs in the current filter scope.'; healLoaded = false; return; }
+    healError = null;
+    healLoading = true;
+    try {
+      const { points, failed, total } = await loadLogReports((raw, rec) => {
+        const durationSec = typeof raw?.durationMS === 'number' ? raw.durationMS / 1000 : (rec.duration ?? 0);
+        return summarizeHealing(raw, {
+          date: parseLogDate(rec.timestamp),
+          boss: rec.boss_name ?? 'Unknown',
+          success: rec.success === true,
+          durationSec,
+        });
+      });
+      points.sort((a, b) => a.date.getTime() - b.date.getTime());
+      healPoints = points;
+      healLoaded = points.length > 0;
+      if (points.length === 0) {
+        healError = `No healing data found. ${points.length}/${total} logs had the healing extension; ${failed} unreachable.`;
+      }
+    } catch (e) {
+      healError = String(e);
+      healLoaded = false;
+    } finally {
+      healLoading = false;
     }
   }
 
@@ -1713,6 +1811,85 @@
       {/if}
     </div>
 
+    <!-- Squad healing trend: healing per hour per log, loaded on demand -->
+    <div class="an-section">
+      <div class="an-section-head">
+        <span class="an-section-title"><i class="fa-solid fa-heart-pulse"></i> Squad Healing</span>
+        {#if healSummary}
+          <span class="an-muted-sm">
+            {healSummary.logs} log{healSummary.logs !== 1 ? 's' : ''} · avg {fmtCompact(healSummary.avgHealingPerHour)}/h
+          </span>
+        {/if}
+      </div>
+
+      <div class="an-chart-box" bind:this={healBox}>
+        {#if healLoading}
+          <div class="an-loading"><i class="fa-solid fa-spinner fa-spin"></i> Reading healing stats from {scopedAttempts.length} log{scopedAttempts.length !== 1 ? 's' : ''}…</div>
+        {:else if healError}
+          <div class="an-error">{healError}</div>
+          <button class="an-btn" onclick={loadHealingTrend}><i class="fa-solid fa-rotate"></i> Retry</button>
+        {:else if healLoaded && healGeom}
+          <svg class="an-svg" width={healGeom.W} height={healGeom.H} viewBox="0 0 {healGeom.W} {healGeom.H}"
+               role="img" aria-label="Squad healing per hour over time"
+               onmousemove={handleHealMouseMove}
+               onmouseleave={() => { healHover = null; }}>
+            {#each healGeom.grid as g}
+              <line x1={healGeom.PL} y1={g.y} x2={healGeom.W - healGeom.PR} y2={g.y} class="an-grid" />
+              <text x={healGeom.PL - 6} y={g.y + 4} class="an-axis-text" text-anchor="end">{fmtCompact(g.val)}</text>
+            {/each}
+            {#each healGeom.lines as l}
+              <polyline points={l.points} fill="none" stroke={l.color} stroke-width="2" stroke-linejoin="round" />
+              {#each l.dots as d}
+                <circle cx={d.x} cy={d.y} r="3.5" fill={l.color} />
+              {/each}
+            {/each}
+            {#each healGeom.xLabels as xl}
+              <text x={xl.x} y={healGeom.H - 12} class="an-axis-text" text-anchor="middle">{xl.label}</text>
+            {/each}
+          </svg>
+        {:else if healLoaded}
+          <p class="an-chart-empty">No healing data in this range</p>
+        {:else}
+          <div class="cl-empty">
+            <p>Squad healing per hour for each log in this filter, from the arcdps healing extension. Logs recorded without it are skipped.</p>
+            <button class="an-btn an-btn-primary" onclick={loadHealingTrend}>
+              <i class="fa-solid fa-heart-pulse"></i> Load Squad Healing
+            </button>
+          </div>
+        {/if}
+      </div>
+
+      {#if healLoaded}
+        <div class="an-detail" aria-live="polite">
+          {#if healHover}
+            {@const hh = healHover}
+            <span class="an-detail-title">{hh.boss}</span>
+            <span class="an-muted-sm">{fmtDateShort(hh.date)}{hh.success ? ' · kill' : ' · wipe'}</span>
+            <span class="an-detail-val">{fmtCompact(hh.healingPerHour)}/h · {fmtCompact(hh.healing)} total · {fmtCompact(hh.downedHealing)} on downed allies</span>
+            <span class="an-detail-val">{hh.healers.slice(0, 3).map(h => `${h.name} ${fmtCompact(h.healing)}`).join(' · ') || 'No healing recorded'}</span>
+          {:else if healSummary}
+            <span class="an-detail-title">{fmtCompact(healSummary.totalHealing)} healed</span>
+            <span class="an-muted-sm">{fmtCompact(healSummary.totalDownedHealing)} on downed allies</span>
+            <span class="an-detail-val">{healSummary.healers.slice(0, 3).map(h => `${h.name} ${fmtCompact(h.healing)}`).join(' · ')}</span>
+          {:else}
+            <span class="an-detail-hint">Hover a point for details</span>
+          {/if}
+        </div>
+      {/if}
+
+      {#if healLoaded && healSummary && healSummary.healers.length > 0}
+        <div class="hl-rows">
+          {#each healSummary.healers as h}
+            <div class="hl-row">
+              <span class="hl-name" title={h.account}>{h.name}</span>
+              <span class="hl-val">{fmtCompact(h.healing)}</span>
+              <span class="hl-sub">{fmtCompact(h.downedHealing)} downed · {h.logs} log{h.logs !== 1 ? 's' : ''}</span>
+            </div>
+          {/each}
+        </div>
+      {/if}
+    </div>
+
     <!-- Boss breakdown table -->
     <div class="an-section">
       <div class="an-section-head">
@@ -1990,6 +2167,12 @@
   .hm-leg-gap{margin-left:10px;}
   .hm-leg-dot{width:8px;height:8px;border-radius:2px;display:inline-block;}
   .hm-leg-swatch{width:10px;height:10px;border-radius:2px;display:inline-block;}
+  /* Squad Healing healer table */
+  .hl-rows{display:flex;flex-direction:column;gap:2px;margin-top:8px;min-width:0;}
+  .hl-row{display:grid;grid-template-columns:minmax(0,1fr) 74px;gap:2px 10px;align-items:baseline;font-size:11px;min-width:0;}
+  .hl-name{font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .hl-val{text-align:right;font-variant-numeric:tabular-nums;color:var(--text);}
+  .hl-sub{grid-column:1 / -1;color:var(--text-muted);font-size:9px;}
   .an-grid{stroke:var(--border);stroke-width:1;}
   .an-axis{stroke:var(--border);stroke-width:1;}
   .an-axis-text{fill:var(--text-muted);font-size:10px;font-family:var(--font);}
