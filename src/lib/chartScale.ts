@@ -52,48 +52,6 @@ export function clamp(v: number, lo: number, hi: number): number {
 // component measured and returns coordinates in that same space, so the SVG's
 // user units equal CSS pixels and hover hit-testing needs no scaling factor.
 
-export interface ActivityBar {
-  x: number; w: number;
-  wipeH: number; wipeY: number;
-  killH: number; killY: number;
-  label: string; showLabel: boolean;
-}
-
-export interface ActivityLayout {
-  W: number; H: number; PL: number; PR: number; baseY: number;
-  grid: { v: number; y: number }[];
-  bars: ActivityBar[];
-}
-
-/** Stacked kills-over-wipes bars, one per activity bucket. */
-export function activityLayout(
-  series: { label: string; kills: number; wipes: number; total: number }[],
-  W: number,
-  H = 200,
-): ActivityLayout | null {
-  if (!W || series.length === 0) return null;
-  const PL = 36, PR = 12, PT = 12, PB = 40;
-  const cW = W - PL - PR, cH = H - PT - PB;
-  const maxV = Math.max(...series.map(p => p.total), 1);
-  const toY = lin(0, maxV, PT + cH, PT);
-  const band = bandScale(cW, series.length, 4);
-  const step = series.length <= 14 ? 1 : series.length <= 30 ? 3 : 7;
-  return {
-    W, H, PL, PR, baseY: PT + cH,
-    grid: ticks(maxV).map(v => ({ v, y: toY(v) })),
-    bars: series.map((p, i) => {
-      const hW = (p.wipes / maxV) * cH;
-      const hK = (p.kills / maxV) * cH;
-      return {
-        x: PL + band.start(i), w: band.width,
-        wipeH: hW, wipeY: PT + cH - hW,
-        killH: hK, killY: PT + cH - hW - hK,
-        label: p.label, showLabel: i % step === 0,
-      };
-    }),
-  };
-}
-
 export interface WipeRow {
   label: string; count: number; y: number; h: number; w: number;
 }

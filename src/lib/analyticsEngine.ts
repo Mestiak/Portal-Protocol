@@ -61,14 +61,6 @@ export interface BossStats {
   avgWipeHp: number | null;
 }
 
-export interface ActivityPoint {
-  label: string;
-  date: Date;
-  kills: number;
-  wipes: number;
-  total: number;
-}
-
 export interface ProfessionCount {
   profId: number;
   name: string;
@@ -94,7 +86,6 @@ export interface AggregatedStats {
   shortestKill: number | null;
   mostPlayedBoss: string | null;
   bossBreakdown: BossStats[];
-  activitySeries: ActivityPoint[];
   professionFrequency: ProfessionCount[];
   wipeDepthBuckets: WipeBucket[];
   empty: boolean;
@@ -275,45 +266,7 @@ function buildBossBreakdown(logs: AnalyticsLog[]): BossStats[] {
   return result.sort((a, b) => b.total - a.total);
 }
 
-// ─── Activity series ──────────────────────────────────────────────────────────
-
-function getISOWeek(date: Date): number {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
-}
-
 const SHORT_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-
-function buildActivitySeries(logs: AnalyticsLog[], range: string): ActivityPoint[] {
-  const byWeek = range === "90d" || range === "all";
-  const years = new Set(logs.map(l => parseLogDate(l.timestamp).getFullYear()));
-  const multiYear = years.size > 1;
-  const map = new Map<string, { kills: number; wipes: number; date: Date }>();
-  for (const log of logs) {
-    const d = parseLogDate(log.timestamp);
-    const key = byWeek
-      ? `${d.getFullYear()}-W${String(getISOWeek(d)).padStart(2, "0")}`
-      : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    if (!map.has(key)) map.set(key, { kills: 0, wipes: 0, date: d });
-    const entry = map.get(key)!;
-    if (log.success === true) entry.kills++;
-    else if (log.success === false) entry.wipes++;
-  }
-  return Array.from(map.entries())
-    .sort((a, b) => a[1].date.getTime() - b[1].date.getTime())
-    .map(([, data]) => ({
-      label: byWeek
-        ? `W${getISOWeek(data.date)} ${SHORT_MONTHS[data.date.getMonth()]}${multiYear ? ` ${data.date.getFullYear()}` : ''}`
-        : `${SHORT_MONTHS[data.date.getMonth()]} ${data.date.getDate()}${multiYear ? `, ${data.date.getFullYear()}` : ''}`,
-      date: data.date,
-      kills: data.kills,
-      wipes: data.wipes,
-      total: data.kills + data.wipes,
-    }));
-}
 
 // ─── Profession frequency ─────────────────────────────────────────────────────
 
@@ -487,7 +440,7 @@ export function aggregateStats(logs: AnalyticsLog[], filters: AnalyticsFilters):
     const empty: AggregatedStats = {
       totalLogs: 0, totalKills: 0, totalWipes: 0, uniquePlayers: 0, overallSuccessRate: 0,
       avgDuration: null, shortestKill: null, mostPlayedBoss: null,
-      bossBreakdown: [], activitySeries: [], professionFrequency: [],
+      bossBreakdown: [], professionFrequency: [],
       wipeDepthBuckets: [], empty: true,
     };
     memoSet(key, empty);
@@ -512,7 +465,6 @@ export function aggregateStats(logs: AnalyticsLog[], filters: AnalyticsFilters):
     shortestKill,
     mostPlayedBoss: bossBreakdown[0]?.boss ?? null,
     bossBreakdown,
-    activitySeries: buildActivitySeries(filtered, filters.range),
     professionFrequency: buildProfessionFrequency(filtered),
     wipeDepthBuckets: buildWipeDepthBuckets(wipes),
     empty: false,

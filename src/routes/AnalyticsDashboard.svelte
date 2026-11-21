@@ -10,7 +10,7 @@
   import type { AnalyticsLog, MultiPlayerDpsPoint } from '../lib/analyticsEngine';
   import { extractMechanics, mergeCerusReports, MAX_AGGREGATE_LOGS, type MechanicReport } from '../lib/mechanicParser';
   import { fmtTime } from '../lib/format';
-  import { activityLayout, wipeLayout, professionRows, dpsLayout } from '../lib/chartScale';
+  import { wipeLayout, professionRows, dpsLayout } from '../lib/chartScale';
   import { buildProfessionGroups, ELITE_SPEC_ICONS, PROFESSIONS, type ProfessionGroup } from '../lib/professionData';
   import CerusLeaderboard from './CerusLeaderboard.svelte';
 
@@ -468,20 +468,10 @@
   // container; the layout itself lives in lib/chartScale.ts.
 
   let activityBox = $state<HTMLDivElement | null>(null);
-  let activityW = $state(0);
   let wipeBox = $state<HTMLDivElement | null>(null);
   let wipeW = $state(0);
   let dpsBox = $state<HTMLDivElement | null>(null);
   let dpsW = $state(0);
-
-  $effect(() => {
-    const el = activityBox;
-    if (!el) return;
-    const ro = new ResizeObserver(() => { activityW = el.clientWidth; });
-    ro.observe(el);
-    activityW = el.clientWidth;
-    return () => ro.disconnect();
-  });
 
   $effect(() => {
     const el = wipeBox;
@@ -501,7 +491,6 @@
     return () => ro.disconnect();
   });
 
-  let activityGeom = $derived(activityLayout(stats.activitySeries, activityW));
   let wipeGeom = $derived(wipeLayout(stats.wipeDepthBuckets, wipeW));
   let profRows = $derived(professionRows(stats.professionFrequency));
 
@@ -586,6 +575,118 @@
 
   function fmtDateShort(d: Date): string {
     return `${d.getMonth() + 1}/${d.getDate()}`;
+  }
+
+  // ─── Activity heatmap ──────────────────────────────────────────────────────
+  // One cell per day across the filter window. Unlike the bar chart it shows
+  // the days with no logs at all — that is the point of an activity view.
+  const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const HM_GAP = 4;
+  const HM_DAY_W = 20;
+
+  type ActivityCell = {
+    key: string; date: Date;
+    count: number; kills: number; wipes: number;
+    inRange: boolean;
+  };
+
+  function startOfDay(d: Date): Date { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
+  function addDays(d: Date, n: number): Date { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+  function dayKey(d: Date): string { return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; }
+
+  let heatBox = $state<HTMLDivElement | null>(null);
+  let heatW = $state(0);
+  let hmHover = $state<ActivityCell | null>(null);
+
+  $effect(() => {
+    const el = heatBox;
+    if (!el) return;
+    const ro = new ResizeObserver(() => { heatW = el.clientWidth; });
+    ro.observe(el);
+    heatW = el.clientWidth;
+    return () => ro.disconnect();
+  });
+
+  let activityCells = $derived.by(() => {
+    const inScope = filterLogs(logs, activeFilters);
+    if (inScope.length === 0 || heatW === 0) return null;
+
+    const now = new Date();
+    let start: Date;
+    let end: Date;
+    if (activeFilters.range === 'custom') {
+      if (!activeFilters.customStart) return null;
+      start = startOfDay(new Date(`${activeFilters.customStart}T00:00:00`));
+      end = startOfDay(new Date(`${activeFilters.customEnd || activeFilters.customStart}T23:59:59`));
+    } else if (activeFilters.range === 'all') {
+      const ts = inScope.map(l => parseLogDate(l.timestamp).getTime());
+      start = startOfDay(new Date(Math.min(...ts)));
+      end = startOfDay(new Date(Math.max(...ts)));
+    } else {
+      const days = activeFilters.range === '7d' ? 7 : activeFilters.range === '30d' ? 30 : 90;
+      end = startOfDay(now);
+      start = addDays(end, -(days - 1));
+    }
+
+    const byDay = new Map<string, { count: number; kills: number; wipes: number }>();
+    for (const l of inScope) {
+      const key = dayKey(parseLogDate(l.timestamp));
+      const rec = byDay.get(key) ?? { count: 0, kills: 0, wipes: 0 };
+      rec.count++;
+      if (l.success === true) rec.kills++;
+      else if (l.success === false) rec.wipes++;
+      byDay.set(key, rec);
+    }
+
+    const first = startOfDay(start);
+    const last = startOfDay(end);
+    const weeks: { days: ActivityCell[] }[] = [];
+    for (let w = addDays(first, -((first.getDay() + 6) % 7)); w <= last; w = addDays(w, 7)) {
+      const days: ActivityCell[] = [];
+      for (let i = 0; i < 7; i++) {
+        const d = addDays(w, i);
+        const rec = byDay.get(dayKey(d));
+        days.push({
+          key: dayKey(d), date: d,
+          count: rec?.count ?? 0, kills: rec?.kills ?? 0, wipes: rec?.wipes ?? 0,
+          inRange: d >= first && d <= last,
+        });
+      }
+      weeks.push({ days });
+    }
+
+    const max = Math.max(1, ...weeks.flatMap(w => w.days.map(d => d.count)));
+    const cell = Math.max(
+      8,
+      Math.min(24, Math.floor((heatW - HM_DAY_W - 6 - HM_GAP * (weeks.length + 1)) / weeks.length)),
+    );
+
+    const monthLabels: { x: number; label: string }[] = [];
+    let prevMonth = -1, prevYear = -1;
+    weeks.forEach((w, i) => {
+      const mond = w.days[0].date;
+      const m = mond.getMonth(), y = mond.getFullYear();
+      if (m !== prevMonth) {
+        monthLabels.push({
+          x: Math.min((i / weeks.length) * 100, 75),
+          label: y !== prevYear ? `${SHORT_MONTHS[m]} ${y}` : SHORT_MONTHS[m],
+        });
+        prevMonth = m; prevYear = y;
+      }
+    });
+
+    return { weeks, cell, max, monthLabels };
+  });
+
+  function heatColor(d: ActivityCell): string {
+    if (d.count === 0) return 'color-mix(in srgb, #fff 5%, transparent)';
+    const rate = d.kills / d.count;
+    return `color-mix(in srgb, var(--fail) ${((1 - rate) * 100).toFixed(1)}%, var(--success))`;
+  }
+
+  function heatAlpha(count: number, max: number): number {
+    if (count === 0) return 1;
+    return 0.25 + 0.75 * Math.min(1, count / max);
   }
 
   function modeLabel(l: AnalyticsLog): string {
@@ -1327,38 +1428,71 @@
       </div>
     {/if}
 
-    <!-- Grid container for secondary charts -->
-    <div class="an-charts-grid">
-      <!-- Activity chart -->
-      <div class="an-section">
-        <div class="an-section-head">
-          <span class="an-section-title"><i class="fa-solid fa-chart-column"></i> Encounter Activity</span>
-          <div class="an-legend">
-            <span class="an-leg-dot" style="background:var(--success);"></span><span class="an-leg-label">Kills</span>
-            <span class="an-leg-dot" style="background:var(--fail);"></span><span class="an-leg-label">Wipes</span>
-          </div>
-        </div>
-        <div class="an-chart-box" bind:this={activityBox}>
-          {#if activityGeom}
-            <svg class="an-svg" width={activityGeom.W} height={activityGeom.H} viewBox="0 0 {activityGeom.W} {activityGeom.H}"
-                 role="img" aria-label="Encounter activity">
-              {#each activityGeom.grid as g}
-                <line x1={activityGeom.PL} y1={g.y} x2={activityGeom.W - activityGeom.PR} y2={g.y} class="an-grid" />
-                {#if g.v > 0}<text x={activityGeom.PL - 4} y={g.y + 4} class="an-axis-text" text-anchor="end">{Math.round(g.v)}</text>{/if}
-              {/each}
-              {#each activityGeom.bars as b}
-                {#if b.wipeH > 0}<rect x={b.x} y={b.wipeY} width={b.w} height={b.wipeH} class="an-bar-wipe" rx="2" />{/if}
-                {#if b.killH > 0}<rect x={b.x} y={b.killY} width={b.w} height={b.killH} class="an-bar-kill" rx="2" />{/if}
-                {#if b.showLabel}<text x={b.x + b.w / 2} y={activityGeom.H - 26} class="an-axis-text" text-anchor="middle">{b.label}</text>{/if}
-              {/each}
-              <line x1={activityGeom.PL} y1={activityGeom.baseY} x2={activityGeom.W - activityGeom.PR} y2={activityGeom.baseY} class="an-axis" />
-            </svg>
-          {:else}
-            <p class="an-chart-empty">No activity in this range</p>
-          {/if}
-        </div>
+    <!-- Activity heatmap: one cell per day in the filter window, gaps included -->
+    <div class="an-section">
+      <div class="an-section-head">
+        <span class="an-section-title"><i class="fa-solid fa-calendar-days"></i> Encounter Activity</span>
+        <span class="an-muted-sm">{scopedAttempts.length} attempt{scopedAttempts.length !== 1 ? 's' : ''}</span>
       </div>
+      <div class="hm" bind:this={heatBox}>
+        {#if activityCells}
+          <div class="hm-months">
+            <span class="hm-days-spacer"></span>
+            <span class="hm-month-track">
+              {#each activityCells.monthLabels as m}
+                <span class="hm-month" style="left:{m.x}%">{m.label}</span>
+              {/each}
+            </span>
+          </div>
+          <div class="hm-body">
+            <span class="hm-days">
+              <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+            </span>
+            <div class="hm-grid" style="--cell:{activityCells.cell}px;grid-template-columns:repeat({activityCells.weeks.length}, var(--cell))">
+              {#each activityCells.weeks as w}
+                {#each w.days as d}
+                  <button
+                    class="hm-cell"
+                    class:pad={!d.inRange}
+                    class:empty={d.inRange && d.count === 0}
+                    style="background:{heatColor(d)};opacity:{heatAlpha(d.count, activityCells.max)}"
+                    onmouseover={() => { hmHover = d; }}
+                    onfocus={() => { hmHover = d; }}
+                    onmouseleave={() => { hmHover = null; }}
+                    onblur={() => { hmHover = null; }}
+                    aria-label="{d.date.getMonth() + 1}/{d.date.getDate()}: {d.count} attempt{d.count !== 1 ? 's' : ''}"
+                  ></button>
+                {/each}
+              {/each}
+            </div>
+          </div>
+          <div class="hm-legend">
+            <span class="hm-leg"><span class="hm-leg-dot" style="background:var(--success)"></span>Kills</span>
+            <span class="hm-leg"><span class="hm-leg-dot" style="background:var(--fail)"></span>Wipes</span>
+            <span class="hm-leg hm-leg-gap">Fewer</span>
+            {#each [0.25, 0.45, 0.65, 0.85, 1] as a}
+              <span class="hm-leg-swatch" style="background:var(--text-muted);opacity:{a}"></span>
+            {/each}
+            <span class="hm-leg">More</span>
+          </div>
+        {:else}
+          <p class="an-chart-empty">No activity in this range</p>
+        {/if}
+      </div>
+      <div class="an-detail" aria-live="polite">
+        {#if hmHover}
+          {@const h = hmHover}
+          <span class="an-detail-title">{h.date.getMonth() + 1}/{h.date.getDate()}/{h.date.getFullYear()}</span>
+          <span class="an-muted-sm">{h.count} attempt{h.count !== 1 ? 's' : ''}</span>
+          <span class="an-detail-val">{h.kills} kill{h.kills !== 1 ? 's' : ''} · {h.wipes} wipe{h.wipes !== 1 ? 's' : ''}</span>
+        {:else}
+          <span class="an-detail-hint">Hover a day for details</span>
+        {/if}
+      </div>
+    </div>
 
+    <!-- Grid container for the remaining charts -->
+    <div class="an-charts-grid">
       <!-- Wipe depth -->
       <div class="an-section">
         <div class="an-section-head">
@@ -1649,14 +1783,37 @@
   .cl-empty{display:flex;flex-direction:column;align-items:flex-start;gap:12px;padding:22px 4px 8px;}
   .cl-empty p{margin:0;color:var(--text-muted);font-size:13px;max-width:560px;}
 
-  .an-leg-dot{width:10px;height:10px;border-radius:50%;display:inline-block;}
-  .an-leg-label{font-size:10px;color:var(--text-muted);}
   .an-svg{display:block;max-width:100%;}
+  /* Activity heatmap */
+  .hm{min-width:0;}
+  .hm-months{display:grid;grid-template-columns:20px minmax(0,1fr);gap:6px;margin-bottom:2px;}
+  .hm-month-track{position:relative;display:block;height:13px;min-width:0;}
+  .hm-month{position:absolute;top:0;font-size:9px;color:var(--text-muted);white-space:nowrap;}
+  .hm-body{display:flex;gap:6px;min-width:0;}
+  .hm-days{display:grid;grid-template-rows:repeat(7, var(--cell, 14px));gap:4px;flex:none;}
+  .hm-days span{font-size:8px;color:var(--text-muted);display:flex;align-items:center;}
+  .hm-grid{
+    display:grid;grid-auto-flow:column;grid-template-rows:repeat(7, var(--cell, 14px));
+    gap:4px;min-width:0;
+  }
+  .hm-cell{
+    width:var(--cell, 14px);height:var(--cell, 14px);
+    border:none;border-radius:3px;padding:0;cursor:pointer;
+    background:color-mix(in srgb, #fff 5%, transparent);
+    transition:transform .18s var(--ease-spring);
+  }
+  .hm-cell.pad{visibility:hidden;}
+  .hm-cell.empty{cursor:default;}
+  .hm-cell:not(.pad):not(.empty):hover,
+  .hm-cell:not(.pad):not(.empty):focus-visible{transform:scale(1.25);z-index:2;outline:none;}
+  .hm-legend{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:9px;color:var(--text-muted);margin-top:8px;}
+  .hm-leg{display:inline-flex;align-items:center;gap:4px;}
+  .hm-leg-gap{margin-left:10px;}
+  .hm-leg-dot{width:8px;height:8px;border-radius:2px;display:inline-block;}
+  .hm-leg-swatch{width:10px;height:10px;border-radius:2px;display:inline-block;}
   .an-grid{stroke:var(--border);stroke-width:1;}
   .an-axis{stroke:var(--border);stroke-width:1;}
   .an-axis-text{fill:var(--text-muted);font-size:10px;font-family:var(--font);}
-  .an-bar-kill{fill:var(--success);}
-  .an-bar-wipe{fill:var(--fail);}
   .an-track{fill:color-mix(in srgb,#fff 4%,transparent);}
   .an-bar-accent{fill:var(--accent);}
   .an-bar-val{fill:var(--text);font-size:10px;font-weight:700;font-family:var(--font);}
@@ -2200,7 +2357,8 @@
     .an-acc-menu,
     .an-toast,
     .an-progress-bar,
-    .ln-dot {
+    .ln-dot,
+    .hm-cell {
       animation: none !important;
       transition: none !important;
     }
