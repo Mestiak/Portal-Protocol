@@ -501,7 +501,7 @@ export interface PersonalDpsPoint {
   bossHpLeft?: number | null;
 }
 
-import { cleanAccountName } from './format';
+import { cleanAccountName } from './format.ts';
 export { cleanAccountName };
 
 export interface PlayerAggStat {
