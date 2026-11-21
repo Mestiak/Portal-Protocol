@@ -8,6 +8,11 @@
  * the log rather than showing a zero.
  */
 
+export interface HealingSource {
+  name: string;
+  healing: number;
+}
+
 export interface HealingHealer {
   name: string;
   account: string;
@@ -15,6 +20,8 @@ export interface HealingHealer {
   healing: number;
   downedHealing: number;
   hps: number;
+  /** Biggest healing sources over the full fight, largest first. */
+  sources: HealingSource[];
 }
 
 export interface HealingTrendPoint {
@@ -40,8 +47,23 @@ export interface HealingTrendMeta {
 const num = (value: unknown): number =>
   typeof value === 'number' && Number.isFinite(value) ? value : 0;
 
+/** A source below this share of the player's own healing is noise, not a cause. */
+const MIN_SOURCE_SHARE = 0.02;
+
 const str = (value: unknown, fallback = ''): string =>
   typeof value === 'string' ? value : fallback;
+
+/**
+ * Name a healing source. EI keys direct healing by skill id and indirect
+ * (buff-based) healing by buff id, so both maps have to be consulted.
+ */
+function sourceName(raw: any, id: number): string {
+  const skill = str(raw?.skillMap?.[`s${id}`]?.name);
+  if (skill) return skill;
+  const buff = str(raw?.buffMap?.[`b${id}`]?.name);
+  if (buff) return buff;
+  return `Unknown (${id})`;
+}
 
 /** Full-fight squad healing. Returns null when the log has no healing extension data. */
 export function summarizeHealing(
@@ -65,6 +87,14 @@ export function summarizeHealing(
     healing += h;
     downedHealing += downed;
     if (h > 0 || downed > 0) {
+      // totalHealingDist is indexed by phase; phase 0 is the full fight.
+      const dist = Array.isArray(ext.totalHealingDist) ? ext.totalHealingDist[0] : null;
+      const sources: HealingSource[] = (Array.isArray(dist) ? dist : [])
+        .slice()
+        .sort((a, b) => num(b.totalHealing) - num(a.totalHealing))
+        .map(s => ({ name: sourceName(raw, num(s.id)), healing: num(s.totalHealing) }))
+        .filter(s => s.healing > 0 && s.healing >= h * MIN_SOURCE_SHARE)
+        .slice(0, 3);
       healers.push({
         name: str(p?.name),
         account: str(p?.account),
@@ -72,6 +102,7 @@ export function summarizeHealing(
         healing: h,
         downedHealing: downed,
         hps: num(out.hps),
+        sources,
       });
     }
   }
@@ -116,10 +147,17 @@ export function summarizeHealingTrend(points: HealingTrendPoint[]): HealingSumma
         prev.healing += h.healing;
         prev.downedHealing += h.downedHealing;
         prev.logs += 1;
+        for (const s of h.sources) {
+          const existing = prev.sources.find(x => x.name === s.name);
+          if (existing) existing.healing += s.healing;
+          else prev.sources.push({ ...s });
+        }
+        prev.sources.sort((a, b) => b.healing - a.healing);
       } else {
         byAccount.set(key, {
           name: h.name, account: h.account, profession: h.profession,
           healing: h.healing, downedHealing: h.downedHealing, hps: 0, logs: 1,
+          sources: h.sources.map(s => ({ ...s })),
         });
       }
     }

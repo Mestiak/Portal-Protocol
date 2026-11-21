@@ -115,3 +115,15 @@ export function buildProfessionGroups(): ProfessionGroup[] {
 
 // Convenience singleton: the two-step picker groups, built once at module load.
 export const PROFESSION_GROUPS: ProfessionGroup[] = buildProfessionGroups();
+
+// Display-name → icon. Some data sources carry a profession name instead of an
+// id: Elite Insights' players[].profession is the elite-spec name when one is
+// run, otherwise the core profession name.
+export const PROFESSION_NAME_ICONS: Record<string, string> = (() => {
+  const map: Record<string, string> = {};
+  for (const g of PROFESSION_GROUPS) {
+    map[g.name.toLowerCase()] = g.icon;
+    for (const s of g.specs) map[s.name.toLowerCase()] = s.icon;
+  }
+  return map;
+})();

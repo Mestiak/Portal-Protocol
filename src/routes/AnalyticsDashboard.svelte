@@ -14,7 +14,7 @@
   import { summarizeHealing, summarizeHealingTrend, type HealingTrendPoint } from '../lib/healingTrend';
   import { fmtTime } from '../lib/format';
   import { wipeLayout, professionRows, dpsLayout } from '../lib/chartScale';
-  import { buildProfessionGroups, ELITE_SPEC_ICONS, PROFESSIONS, type ProfessionGroup } from '../lib/professionData';
+  import { buildProfessionGroups, ELITE_SPEC_ICONS, PROFESSIONS, PROFESSION_NAME_ICONS, type ProfessionGroup } from '../lib/professionData';
   import CerusLeaderboard from './CerusLeaderboard.svelte';
 
   // ─── Props ─────────────────────────────────────────────────────────────────
@@ -34,6 +34,10 @@
     if (eliteSpec && ELITE_SPEC_ICONS[eliteSpec]) return ELITE_SPEC_ICONS[eliteSpec];
     if (profession && PROFESSIONS[profession]) return PROFESSIONS[profession].icon;
     return '';
+  }
+  // For data that carries a profession name instead of an id (EI reports).
+  function profIconByName(name: string): string {
+    return PROFESSION_NAME_ICONS[(name ?? '').trim().toLowerCase()] ?? '';
   }
   // Two-step modal navigation: null = closed, "core" = core list, number = that core's specs.
   let profStep = $state<null | "core" | number>(null);
@@ -1879,11 +1883,16 @@
 
       {#if healLoaded && healSummary && healSummary.healers.length > 0}
         <div class="hl-rows">
-          {#each healSummary.healers as h}
+          {#each healSummary.healers.slice(0, 5) as h}
+            {@const hIcon = profIconByName(h.profession)}
             <div class="hl-row">
-              <span class="hl-name" title={h.account}>{h.name}</span>
+              <span class="hl-name">
+                {#if hIcon}<img src={hIcon} alt="" class="hl-icon" />{/if}
+                <span title={h.account}>{h.name}</span>
+              </span>
               <span class="hl-val">{fmtCompact(h.healing)}</span>
               <span class="hl-sub">{fmtCompact(h.downedHealing)} downed · {h.logs} log{h.logs !== 1 ? 's' : ''}</span>
+              {#if h.sources.length > 0}<span class="hl-src">{h.sources.map(s => s.name).join(' - ')}</span>{/if}
             </div>
           {/each}
         </div>
@@ -2170,9 +2179,11 @@
   /* Squad Healing healer table */
   .hl-rows{display:flex;flex-direction:column;gap:2px;margin-top:8px;min-width:0;}
   .hl-row{display:grid;grid-template-columns:minmax(0,1fr) 74px;gap:2px 10px;align-items:baseline;font-size:11px;min-width:0;}
-  .hl-name{font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .hl-name{display:inline-flex;align-items:center;gap:6px;min-width:0;font-weight:600;color:var(--text);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
+  .hl-icon{width:14px;height:14px;flex:none;}
   .hl-val{text-align:right;font-variant-numeric:tabular-nums;color:var(--text);}
   .hl-sub{grid-column:1 / -1;color:var(--text-muted);font-size:9px;}
+  .hl-src{grid-column:1 / -1;color:var(--text-muted);font-size:9px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
   .an-grid{stroke:var(--border);stroke-width:1;}
   .an-axis{stroke:var(--border);stroke-width:1;}
   .an-axis-text{fill:var(--text-muted);font-size:10px;font-family:var(--font);}
