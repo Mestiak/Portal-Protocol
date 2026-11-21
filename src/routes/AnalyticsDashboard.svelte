@@ -79,14 +79,9 @@
   // re-seeds the top players for that window.
   let lastReseedScope = $state<string | null>(null);
   // Tooltip state for performance chart
-  let tooltipData = $state<{
-    visible: boolean;
-    x: number;
-    y: number;
-    flip: boolean; // true → render below the dot (avoids clipping the top edge)
-    point: MultiPlayerDpsPoint | null;
-  }>({ visible: false, x: 0, y: 0, flip: false, point: null });
-  let tooltipEl = $state<HTMLDivElement | null>(null);
+  let tooltipData = $state<{ visible: boolean; point: MultiPlayerDpsPoint | null }>({
+    visible: false, point: null
+  });
 
   // Backfill Control State
   let isBackfilling = $state(false);
@@ -245,13 +240,13 @@
     const cards: { icon: string; text: string; tone: 'good' | 'bad' | 'neutral' }[] = [];
     const top = aggregatePlayers(logs, activeFilters)[0];
     if (top && top.avgDps > 0) {
-      cards.push({ icon: '🔥', text: `${top.account} leads at ${top.avgDps.toLocaleString()} avg DPS`, tone: 'neutral' });
+      cards.push({ icon: 'fa-solid fa-fire', text: `${top.account} leads at ${top.avgDps.toLocaleString()} avg DPS`, tone: 'neutral' });
     }
     if (cardTrends) {
       const r = cardTrends.rate;
       if (!r.same) {
         cards.push({
-          icon: r.good ? '📈' : '📉',
+          icon: r.good ? 'fa-solid fa-arrow-trend-up' : 'fa-solid fa-arrow-trend-down',
           text: `Kill rate ${r.up ? 'up' : 'down'} ${fmtKpiDelta(r, 'pct')} vs prev`,
           tone: r.good ? 'good' : 'bad'
         });
@@ -259,7 +254,7 @@
     }
     const mostWiped = [...stats.bossBreakdown].sort((a, b) => b.wipes - a.wipes)[0];
     if (mostWiped && mostWiped.wipes > 0) {
-      cards.push({ icon: '⚠️', text: `Most wipes on ${mostWiped.boss} (${mostWiped.wipes})`, tone: 'bad' });
+      cards.push({ icon: 'fa-solid fa-triangle-exclamation', text: `Most wipes on ${mostWiped.boss} (${mostWiped.wipes})`, tone: 'bad' });
     }
     return cards;
   });
@@ -480,11 +475,17 @@
   let dpsRO: ResizeObserver | null = null;
 
   // ─── Chart drawing helpers ─────────────────────────────────────────────────
-  const KILL_COLOR = '#10b981';
-  const WIPE_COLOR = '#ef4444';
-  const GRID_COLOR = 'rgba(255,255,255,0.06)';
-  const TEXT_COLOR = '#94a3b8';
-  const AXIS_COLOR = 'rgba(255,255,255,0.12)';
+  // Canvas cannot read CSS custom properties, so pull the tokens off the root.
+  const cssVar = (name: string, fallback: string): string => {
+    if (typeof document === 'undefined') return fallback;
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || fallback;
+  };
+  const KILL_COLOR = cssVar('--success', '#10b981');
+  const WIPE_COLOR = cssVar('--fail', '#ef4444');
+  const GRID_COLOR = cssVar('--border', '#27272e');
+  const TEXT_COLOR = cssVar('--text-muted', '#94a3b8');
+  const AXIS_COLOR = cssVar('--border', '#27272e');
 
   function setupCanvas(canvas: HTMLCanvasElement): { ctx: CanvasRenderingContext2D; W: number; H: number } | null {
     const ctx = canvas.getContext('2d');
@@ -579,7 +580,7 @@
       ctx.fillStyle = 'rgba(255,255,255,0.04)'; rr(ctx, PL, y, cW, bH, 4); ctx.fill();
       if (bL > 0) {
         const g = ctx.createLinearGradient(PL, 0, PL + bL, 0);
-        g.addColorStop(0, '#6366f1'); g.addColorStop(1, '#a78bfa');
+        g.addColorStop(0, cssVar('--accent-h', '#4f46e5')); g.addColorStop(1, cssVar('--accent', '#6366f1'));
         ctx.fillStyle = g; rr(ctx, PL, y, bL, bH, 4); ctx.fill();
       }
       ctx.fillStyle = TEXT_COLOR; ctx.textAlign = 'right';
@@ -771,7 +772,7 @@
         if (hLog.yHp !== null) {
           ctx.beginPath();
           ctx.arc(hLog.x, hLog.yHp, 5, 0, Math.PI * 2);
-          ctx.fillStyle = '#ef4444';
+          ctx.fillStyle = WIPE_COLOR;
           ctx.fill();
           ctx.strokeStyle = '#ffffff';
           ctx.lineWidth = 1.5;
@@ -832,26 +833,10 @@
       }
 
       if (closest) {
-        const chartW = rect.width || dpsCanvas.clientWidth || 600;
-        const tipW = tooltipEl ? tooltipEl.offsetWidth : 0;
-        const tipH = tooltipEl ? tooltipEl.offsetHeight : 0;
-        const halfW = tipW > 0 ? tipW / 2 : 120;
-        const estH = tipH > 0 ? tipH : 140;
-        let tx = closest.x;
-        if (tx < halfW) tx = halfW;
-        if (tx > chartW - halfW) tx = chartW - halfW;
-        const flip = closest.y - estH - 12 < 0;
-        const ty = flip ? closest.y + 12 : closest.y - 12;
-        tooltipData = {
-          visible: true,
-          x: tx,
-          y: ty,
-          flip,
-          point: closest.point
-        };
+        tooltipData = { visible: true, point: closest.point };
         if (dpsCanvas) drawPersonalDpsChart(dpsCanvas, multiPlayerSeries);
       } else if (tooltipData.visible) {
-        tooltipData = { visible: false, x: 0, y: 0, flip: false, point: null };
+        tooltipData = { visible: false, point: null };
         if (dpsCanvas) drawPersonalDpsChart(dpsCanvas, multiPlayerSeries);
       }
     });
@@ -863,7 +848,7 @@
       mouseMoveRaf = null;
     }
     if (tooltipData.visible) {
-      tooltipData = { visible: false, x: 0, y: 0, flip: false, point: null };
+      tooltipData = { visible: false, point: null };
       if (dpsCanvas) drawPersonalDpsChart(dpsCanvas, multiPlayerSeries);
     }
   }
@@ -1278,8 +1263,8 @@
     {#if insightCards.length > 0}
       <div style="display:flex; flex-wrap:wrap; gap:8px;">
         {#each insightCards as c}
-          <div style="display:inline-flex; align-items:center; gap:6px; background:rgba(255,255,255,0.03); border:1px solid var(--border); border-left:3px solid {c.tone === 'good' ? '#10b981' : c.tone === 'bad' ? '#ef4444' : 'var(--accent)'}; border-radius:8px; padding:6px 12px; font-size:12px; font-weight:600; color:var(--text);">
-            <span>{c.icon}</span><span>{c.text}</span>
+          <div class="an-insight {c.tone}">
+            <i class={c.icon}></i><span>{c.text}</span>
           </div>
         {/each}
       </div>
@@ -1288,7 +1273,7 @@
     <!-- Summary cards -->
     <div class="an-cards">
       <div class="an-card">
-        <div class="an-card-val an-cyan">{stats.totalLogs}</div>
+        <div class="an-card-val an-accent">{stats.totalLogs}</div>
         <div class="an-card-label">Total Encounters</div>
         {#if cardTrends}
           {@const t = cardTrends.total}
@@ -1300,7 +1285,7 @@
         {/if}
       </div>
       <div class="an-card">
-        <div class="an-card-val an-green">{stats.totalKills}</div>
+        <div class="an-card-val an-success">{stats.totalKills}</div>
         <div class="an-card-label">Kills</div>
         {#if cardTrends}
           {@const t = cardTrends.kills}
@@ -1312,7 +1297,7 @@
         {/if}
       </div>
       <div class="an-card">
-        <div class="an-card-val an-red">{stats.totalWipes}</div>
+        <div class="an-card-val an-fail">{stats.totalWipes}</div>
         <div class="an-card-label">Wipes</div>
         {#if cardTrends}
           {@const t = cardTrends.wipes}
@@ -1324,7 +1309,7 @@
         {/if}
       </div>
       <div class="an-card">
-        <div class="an-card-val {stats.overallSuccessRate >= 50 ? 'an-green' : 'an-red'}">{fmtPct(stats.overallSuccessRate)}<span class="an-unit">%</span></div>
+        <div class="an-card-val {stats.overallSuccessRate >= 50 ? 'an-success' : 'an-fail'}">{fmtPct(stats.overallSuccessRate)}<span class="an-unit">%</span></div>
         <div class="an-card-label">Kill Rate</div>
         {#if cardTrends}
           {@const t = cardTrends.rate}
@@ -1336,7 +1321,7 @@
         {/if}
       </div>
       <div class="an-card">
-        <div class="an-card-val an-purple">{fmtDur(stats.avgDuration)}</div>
+        <div class="an-card-val an-warn">{fmtDur(stats.avgDuration)}</div>
         <div class="an-card-label">Avg Kill Duration</div>
         {#if cardTrends}
           {@const t = cardTrends.avgDur}
@@ -1479,46 +1464,36 @@
           onmouseleave={handleDpsCanvasMouseLeave}
         ></canvas>
 
+      </div>
+      <div class="an-detail" aria-live="polite">
         {#if tooltipData.visible && tooltipData.point}
-          <div
-            class="dps-tooltip"
-            bind:this={tooltipEl}
-            style="left:{tooltipData.x}px; top:{tooltipData.y}px; transform: translate(-50%, {tooltipData.flip ? '0' : '-100%'});"
-          >
-            <div class="dps-tooltip-title" style="margin-bottom:6px;">
-              <span class="dps-tooltip-status {tooltipData.point.success ? 'kill' : 'wipe'}">
-                {tooltipData.point.success ? 'KILL' : 'WIPE'}
-              </span>
-              <span>{tooltipData.point.bossName} ({tooltipData.point.label})</span>
-            </div>
-            
-            <div style="display:flex; flex-direction:column; gap:4px;">
-              {#each selectedAccounts as acc}
-                {#if tooltipData.point.players[acc]}
-                  {@const pMatch = tooltipData.point.players[acc]}
-                  <div style="display:flex; align-items:center; justify-space-between; gap:12px; font-size:11px;">
-                    <span style="display:flex; align-items:center; gap:5px; color:{getPlayerColor(acc)}; font-weight:600;">
-                      <span style="width:6px; height:6px; border-radius:50%; background:{getPlayerColor(acc)};"></span>
-                      {#if profIconFor(pMatch.profession, pMatch.elite_spec)}
-                        <img src={profIconFor(pMatch.profession, pMatch.elite_spec)} alt="" style="width:17px; height:17px; object-fit:contain;" />
-                      {/if}
-                      <span style="font-weight:400; color:var(--text-muted);">{pMatch.charName}</span>
-                      <span>{acc}</span>
-                    </span>
-                    <span style="color:var(--text); font-weight:700;">
-                      {pMatch.value.toLocaleString()}
-                    </span>
-                  </div>
-                {/if}
-              {/each}
-            </div>
-
-            {#if !tooltipData.point.success && tooltipData.point.bossHpLeft != null}
-              <div class="dps-tooltip-val" style="color: #fca5a5; margin-top: 6px; border-top: 1px solid rgba(255,255,255,0.1); padding-top:4px;">
-                Wipe HP: <strong>{tooltipData.point.bossHpLeft.toFixed(1)}%</strong>
-              </div>
-            {/if}
+          <span class="an-detail-status {tooltipData.point.success ? 'kill' : 'wipe'}">
+            {tooltipData.point.success ? 'KILL' : 'WIPE'}
+          </span>
+          <span class="an-detail-title">{tooltipData.point.bossName} ({tooltipData.point.label})</span>
+          <div class="an-detail-rows">
+            {#each selectedAccounts as acc}
+              {#if tooltipData.point.players[acc]}
+                {@const pMatch = tooltipData.point.players[acc]}
+                <div class="an-detail-row">
+                  <span class="an-detail-player">
+                    <span class="an-dot" style="background:{getPlayerColor(acc)};"></span>
+                    {#if profIconFor(pMatch.profession, pMatch.elite_spec)}
+                      <img src={profIconFor(pMatch.profession, pMatch.elite_spec)} alt="" class="an-detail-prof" />
+                    {/if}
+                    <span class="an-detail-char">{pMatch.charName}</span>
+                    <span class="an-detail-acct">{acc}</span>
+                  </span>
+                  <span class="an-detail-val">{pMatch.value.toLocaleString()}</span>
+                </div>
+              {/if}
+            {/each}
           </div>
+          {#if !tooltipData.point.success && tooltipData.point.bossHpLeft != null}
+            <div class="an-detail-hp">Wipe HP: <strong>{tooltipData.point.bossHpLeft.toFixed(1)}%</strong></div>
+          {/if}
+        {:else}
+          <span class="an-detail-hint">Hover a point for details</span>
         {/if}
       </div>
 
@@ -1588,8 +1563,8 @@
         <div class="an-section-head">
           <span class="an-section-title"><i class="fa-solid fa-chart-column"></i> Encounter Activity</span>
           <div class="an-legend">
-            <span class="an-leg-dot" style="background:#10b981;"></span><span class="an-leg-label">Kills</span>
-            <span class="an-leg-dot" style="background:#ef4444;"></span><span class="an-leg-label">Wipes</span>
+            <span class="an-leg-dot" style="background:var(--success);"></span><span class="an-leg-label">Kills</span>
+            <span class="an-leg-dot" style="background:var(--fail);"></span><span class="an-leg-label">Wipes</span>
           </div>
         </div>
         <canvas class="an-canvas" bind:this={activityCanvas} style="height:200px;"></canvas>
@@ -1643,7 +1618,7 @@
                 <td class="an-td-num an-kill">{b.kills}</td>
                 <td class="an-td-num an-wipe">{b.wipes}</td>
                 <td class="an-td-num">
-                  <span class="an-rate-pill {b.successRate >= 50 ? 'an-rate-green' : b.successRate >= 25 ? 'an-rate-yellow' : 'an-rate-red'}">
+                  <span class="an-rate-pill {b.successRate >= 50 ? 'an-rate-success' : b.successRate >= 25 ? 'an-rate-warn' : 'an-rate-fail'}">
                     {fmtPct(b.successRate)}%
                   </span>
                 </td>
@@ -1693,12 +1668,12 @@
   }
   .an-empty{
     display:flex;flex-direction:column;align-items:center;justify-content:center;
-    padding:80px 24px;background:var(--bg-card);border:1px dashed var(--border);
-    border-radius:14px;color:var(--text);text-align:center;
+    padding:80px 24px;background:var(--bg-panel);border:1px dashed var(--border);
+    border-radius:var(--radius);color:var(--text);text-align:center;
   }
   .an-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;}
   .an-card{
-    background:var(--bg-card);border:1px solid var(--border);border-radius:12px;
+    background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius);
     padding:14px 16px;display:flex;flex-direction:column;gap:4px;
     transition:border-color .2s,box-shadow .2s;
   }
@@ -1706,7 +1681,7 @@
     border-color:color-mix(in srgb,var(--accent) 50%,transparent);
     box-shadow:0 4px 20px color-mix(in srgb,var(--accent) 12%,transparent);
   }
-  .an-card-val{font-size:28px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:.01em;}
+  .an-card-val{font-size:22px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:.01em;}
   .an-unit{font-size:14px;font-weight:700;color:var(--text-muted);margin-left:1px;}
   .an-card-label{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);}
   .an-card-delta{font-size:10px;font-weight:700;margin-top:5px;display:flex;align-items:center;gap:4px;font-variant-numeric:tabular-nums;}
@@ -1714,19 +1689,30 @@
   .an-card-delta.bad{color:var(--fail);}
   .an-card-delta.same{color:var(--text-muted);font-weight:600;}
   .an-card-delta-cap{font-size:9px;font-weight:500;opacity:.65;text-transform:uppercase;letter-spacing:.04em;}
-  .an-cyan{color:#22d3ee;}
-  .an-green{color:#10b981;}
-  .an-red{color:#ef4444;}
-  .an-purple{color:#a78bfa;}
-  .an-gold{color:#fbbf24;}
+  .an-accent{color:var(--accent);}
+  .an-success{color:var(--success);}
+  .an-fail{color:var(--fail);}
+  .an-warn{color:var(--warn);}
+  .an-gold{color:var(--gold);}
+  .an-insight{
+    display:inline-flex; align-items:center; gap:6px;
+    background:color-mix(in srgb,#fff 3%,transparent);
+    border:1px solid var(--border); border-left:3px solid var(--accent);
+    border-radius:8px; padding:6px 12px; font-size:12px; font-weight:600; color:var(--text);
+  }
+  .an-insight i{color:var(--accent);}
+  .an-insight.good{border-left-color:var(--success);}
+  .an-insight.good i{color:var(--success);}
+  .an-insight.bad{border-left-color:var(--fail);}
+  .an-insight.bad i{color:var(--fail);}
   .an-section{
-    background:var(--bg-card);border:1px solid var(--border);border-radius:14px;
+    background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius);
     padding:14px 16px;display:flex;flex-direction:column;gap:12px;
   }
   .an-section-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
   .an-section-title{
     font-size:11px;font-weight:700;text-transform:uppercase;
-    letter-spacing:.08em;color:var(--text);display:flex;align-items:center;gap:7px;
+    letter-spacing:.03em;color:var(--text);display:flex;align-items:center;gap:7px;
   }
   .an-section-title i{color:var(--accent);font-size:12px;}
   .an-warn{font-size:11px;font-weight:600;color:var(--fail);background:color-mix(in srgb,var(--fail) 12%,transparent);border:1px solid color-mix(in srgb,var(--fail) 35%,transparent);padding:3px 8px;border-radius:6px;}
@@ -1768,17 +1754,14 @@
     background: color-mix(in srgb, var(--accent) 12%, rgba(255, 255, 255, 0.02));
     border-left: 3px solid var(--accent);
   }
-  .an-row.interactive.focused td {
-    color: #fff;
-  }
   .an-td-boss{padding:8px 12px;font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;}
   .an-td-num{padding:8px 12px;text-align:right;font-variant-numeric:tabular-nums;color:var(--text-muted);white-space:nowrap;}
-  .an-kill{color:#10b981;font-weight:600;}
-  .an-wipe{color:#ef4444;font-weight:600;}
+  .an-kill{color:var(--success);font-weight:600;}
+  .an-wipe{color:var(--fail);font-weight:600;}
   .an-rate-pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;}
-  .an-rate-green{background:color-mix(in srgb,#10b981 18%,transparent);color:#6ee7b7;}
-  .an-rate-yellow{background:color-mix(in srgb,#fbbf24 18%,transparent);color:#fcd34d;}
-  .an-rate-red{background:color-mix(in srgb,#ef4444 18%,transparent);color:#fca5a5;}
+  .an-rate-success{background:color-mix(in srgb,var(--success) 18%,transparent);color:var(--success);}
+  .an-rate-warn{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn);}
+  .an-rate-fail{background:color-mix(in srgb,var(--fail) 18%,transparent);color:var(--fail);}
 
   /* Backfill Banner styling */
   .an-backfill-banner {
@@ -1874,50 +1857,38 @@
     filter: invert(1) brightness(100);
   }
 
-  /* Personal DPS Tooltip */
-  .dps-tooltip {
-    position: absolute;
-    transform: translate(-50%, -100%);
-    pointer-events: none;
-    background: rgba(20, 20, 26, 0.94);
-    backdrop-filter: blur(8px);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 6px 10px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
-    z-index: 10;
-    white-space: nowrap;
+  /* DPS chart detail strip — reserved space, so the card does not jump */
+  .an-detail{
+    display:flex; align-items:center; flex-wrap:wrap; gap:6px 10px;
+    min-height:34px; padding:6px 10px;
+    background:var(--bg-panel); border:1px solid var(--border); border-radius:var(--radius);
+    font-size:11px;
   }
-  .dps-tooltip-title {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text);
-    margin-bottom: 2px;
-  }
-  .dps-tooltip-status {
+  .an-detail-title{font-weight:700;color:var(--text);}
+  .an-detail-rows{display:flex; flex-wrap:wrap; gap:2px 16px; flex:1; min-width:0;}
+  .an-detail-row{display:flex; align-items:center; justify-content:space-between; gap:10px; min-width:190px;}
+  .an-detail-player{display:flex; align-items:center; gap:5px; min-width:0;}
+  .an-detail-player .an-dot{width:6px; height:6px; border-radius:50%; flex:none;}
+  .an-detail-prof{width:17px; height:17px; object-fit:contain;}
+  .an-detail-char{color:var(--text-muted);}
+  .an-detail-acct{color:var(--text);font-weight:600;}
+  .an-detail-val{color:var(--text);font-weight:700;font-variant-numeric:tabular-nums;}
+  .an-detail-hp{color:var(--fail);width:100%;margin-top:2px;border-top:1px solid var(--border);padding-top:4px;}
+  .an-detail-hint{color:var(--text-muted);opacity:.8;}
+  .an-detail-status {
     font-size: 9px;
     font-weight: 700;
     padding: 1px 4px;
     border-radius: 3px;
     text-transform: uppercase;
   }
-  .dps-tooltip-status.kill {
-    background: rgba(16, 185, 129, 0.2);
-    color: #10b981;
+  .an-detail-status.kill {
+    background: color-mix(in srgb, var(--success) 20%, transparent);
+    color: var(--success);
   }
-  .dps-tooltip-status.wipe {
-    background: rgba(239, 68, 68, 0.2);
-    color: #ef4444;
-  }
-  .dps-tooltip-val {
-    font-size: 11px;
-    color: var(--text-muted);
-  }
-  .dps-tooltip-val strong {
-    color: #a78bfa;
+  .an-detail-status.wipe {
+    background: color-mix(in srgb, var(--fail) 20%, transparent);
+    color: var(--fail);
   }
 
   /* Searchable Account Dropdown */
@@ -1962,7 +1933,7 @@
     top: calc(100% + 4px);
     right: 0;
     width: 240px;
-    background: #18181f;
+    background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: 8px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
@@ -2029,8 +2000,8 @@
     color: var(--text);
   }
   .an-acc-item.selected {
-    background: rgba(167, 139, 250, 0.15);
-    color: #a78bfa;
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    color: var(--accent);
     font-weight: 600;
   }
   .an-acc-item-name {
@@ -2057,9 +2028,9 @@
     padding: 20px;
   }
   .prof-modal {
-    background: #16171f;
+    background: var(--bg-card);
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: var(--radius);
     width: min(440px, 100%);
     max-height: 80vh;
     overflow-y: auto;
@@ -2123,8 +2094,8 @@
     transition: background 0.15s ease, border-color 0.15s ease;
   }
   .prof-cell:hover {
-    background: rgba(168, 85, 247, 0.12);
-    border-color: rgba(168, 85, 247, 0.4);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
   }
   .prof-cell-icon {
     width: 40px;
@@ -2148,7 +2119,7 @@
     font-size: 11px;
   }
   .prof-cell-check {
-    color: #c084fc;
+    color: var(--accent);
     font-size: 12px;
   }
 
@@ -2164,7 +2135,7 @@
     position: fixed;
     bottom: 24px;
     right: 24px;
-    background: #1e1e24;
+    background: var(--bg-card);
     border: 1px solid var(--border);
     color: var(--text);
     padding: 12px 18px;
@@ -2185,9 +2156,9 @@
     100% { background-position: 200% 0; }
   }
   .skeleton-card {
-    background: var(--bg-card);
+    background: var(--bg-panel);
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: var(--radius);
     padding: 14px 16px;
     display: flex;
     flex-direction: column;
@@ -2211,9 +2182,9 @@
     animation: shimmer 1.5s infinite linear;
   }
   .skeleton-section {
-    background: var(--bg-card);
+    background: var(--bg-panel);
     border: 1px solid var(--border);
-    border-radius: 14px;
+    border-radius: var(--radius);
     padding: 16px;
     display: flex;
     flex-direction: column;
