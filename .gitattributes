@@ -1,0 +1,5 @@
+# Line endings: LF in the repository. Git normalises on comparison, so a
+# Windows working tree using CRLF does not register as a whole-file rewrite.
+# Without this a file whose blob has different endings than the working copy
+# diffs as if every line changed.
+* text=auto
