@@ -6,7 +6,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
   import { listen } from '@tauri-apps/api/event';
-  import { aggregateStats, getAvailableBosses, clearAnalyticsCache, buildMultiPlayerDpsSeries, cleanAccountName, aggregatePlayers, getFilteredCerusUrls, buildCerusLeaderboardRows, filterLogs, parseLogDate, type CerusLeaderboardRow, type CerusPerLog } from '../lib/analyticsEngine';
+  import { aggregateStats, getAvailableBosses, clearAnalyticsCache, buildMultiPlayerDpsSeries, cleanAccountName, aggregatePlayers, getFilteredCerusUrls, buildCerusLeaderboardRows, filterLogs, parseLogDate, SQUAD_SIZE_BANDS, type CerusLeaderboardRow, type CerusPerLog } from '../lib/analyticsEngine';
   import type { AnalyticsLog, MultiPlayerDpsPoint } from '../lib/analyticsEngine';
   import { extractMechanics, mergeCerusReports, MAX_AGGREGATE_LOGS, type MechanicReport } from '../lib/mechanicParser';
   import { extractDefenseSupport } from '../lib/defenseSupport';
@@ -27,6 +27,8 @@
   // Profession filter (core or specific elite spec), two-step modal like Feed/History.
   let professionFilter = $state<string | number>('all');
   let professionKind = $state<'all' | 'core' | 'spec'>('all');
+  let squadSizeFilter = $state('any');
+  let playerFilter = $state('');
   const professionGroups: ProfessionGroup[] = buildProfessionGroups();
   // Resolve a player's profession icon: elite-spec icon when they run one,
   // otherwise the core profession icon. Used in the comparison tooltip.
@@ -108,6 +110,8 @@
     range: rangeFilter,
     profession: professionFilter,
     professionKind,
+    squadSize: squadSizeFilter,
+    player: playerFilter,
     customStart: customStartDate,
     customEnd: customEndDate,
     customStartTime: customStartTime,
@@ -1169,6 +1173,17 @@
         <option value="nm">Normal Mode</option>
         <option value="cm">Challenge Mode</option>
         <option value="lcm">Legendary CM</option>
+      </select>
+      <select class="an-select" bind:value={squadSizeFilter} title="Filter by squad size">
+        {#each SQUAD_SIZE_BANDS as b}
+          <option value={b.id}>{b.label}</option>
+        {/each}
+      </select>
+      <select class="an-select" bind:value={playerFilter} title="Only logs this player took part in">
+        <option value="">All Players</option>
+        {#each availableAccounts as a}
+          <option value={a}>{a}</option>
+        {/each}
       </select>
       <div class="an-pills">
         {#each [['7d','7 Days'],['30d','30 Days'],['90d','90 Days'],['all','All Time'],['custom','Custom']] as [v,l]}

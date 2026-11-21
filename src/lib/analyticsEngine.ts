@@ -44,10 +44,30 @@ export interface AnalyticsFilters {
   range: string;
   profession?: string | number; // "all" or a PROFESSIONS key / elite_spec id
   professionKind?: "all" | "core" | "spec"; // base-id vs elite-spec-id
+  /** Squad-size band id from SQUAD_SIZE_BANDS; undefined/“any” means no filter. */
+  squadSize?: string;
+  /** Cleaned account name; only logs that player took part in. */
+  player?: string;
   customStart?: string;
   customEnd?: string;
   customStartTime?: string; // HH:MM, for sub-day filtering within a custom date
   customEndTime?: string;   // HH:MM
+}
+
+/** Squad-size bands for the Analytics filter. */
+export const SQUAD_SIZE_BANDS: { id: string; label: string; min: number; max: number }[] = [
+  { id: "any", label: "Any Size", min: 0, max: Number.POSITIVE_INFINITY },
+  { id: "1-4", label: "1–4 players", min: 1, max: 4 },
+  { id: "5", label: "5 players", min: 5, max: 5 },
+  { id: "6-9", label: "6–9 players", min: 6, max: 9 },
+  { id: "10", label: "10 players", min: 10, max: 99 },
+];
+
+export function squadSizeMatches(size: number | null | undefined, bandId: string | undefined): boolean {
+  if (!bandId || bandId === "any") return true;
+  const band = SQUAD_SIZE_BANDS.find((b) => b.id === bandId);
+  if (!band || size == null) return false;
+  return size >= band.min && size <= band.max;
 }
 
 export interface BossStats {
@@ -144,7 +164,9 @@ function hashLogs(logs: AnalyticsLog[]): string {
 }
 
 function memoKey(logs: AnalyticsLog[], filters: AnalyticsFilters): string {
-  return `${hashLogs(logs)}|${filters.boss}|${filters.mode}|${filters.range}|${filters.profession ?? 'all'}|${filters.professionKind ?? 'all'}|${filters.customStart ?? ''}|${filters.customEnd ?? ''}|${filters.customStartTime ?? ''}|${filters.customEndTime ?? ''}`;
+  // Every field the render path derives must appear here. A filter that is
+  // missing from this key silently serves the previous selection's stats.
+  return `${hashLogs(logs)}|${filters.boss}|${filters.mode}|${filters.range}|${filters.profession ?? 'all'}|${filters.professionKind ?? 'all'}|${filters.squadSize ?? 'any'}|${filters.player ?? ''}|${filters.customStart ?? ''}|${filters.customEnd ?? ''}|${filters.customStartTime ?? ''}|${filters.customEndTime ?? ''}`;
 }
 
 function memoSet(key: string, value: AggregatedStats): void {
@@ -229,6 +251,11 @@ function applyFilters(logs: AnalyticsLog[], filters: AnalyticsFilters): Analytic
     if (endDate && d > endDate) return false;
     if (filters.boss !== "all" && log.boss_name !== filters.boss) return false;
     if (!passesMode(log, filters.mode)) return false;
+    if (!squadSizeMatches(log.num_players, filters.squadSize)) return false;
+    if (filters.player) {
+      const hit = (log.players ?? []).some((p) => cleanAccountName(p.account ?? "") === filters.player);
+      if (!hit) return false;
+    }
     if ((filters.profession ?? "all") !== "all") {
       const want = Number(filters.profession);
       const hit = (log.players ?? []).some((p) =>
