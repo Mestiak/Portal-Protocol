@@ -662,6 +662,21 @@
       ]
     },
     {
+      version: "0.8.4",
+      date: "November 2026",
+      notes: [
+        {
+          category: "🐉 Cerus Stats — Rebuilt",
+          items: [
+            { title: "Stat Cards", desc: "Orb Block Efficiency, Shadows Reached Cerus, Empowered Stacks, Squad Rage Hits and Total of Boon Stripped, restyled as clean panels with the value up top." },
+            { title: "Empowered, Phase by Phase", desc: "Each phase is its own card: who held the stacks, ranked, with the orbs that fed them and a bar showing the split. Stacks go to the player who actually took them, and a collapsible history feed walks the fight in order." },
+            { title: "Fight Timeline", desc: "The fight on five lanes: orbs blocked and leaked, Cry of Rage hits, shadows reaching Cerus, and close spawns. Every phase is banded behind the lanes and an efficiency line runs along the bottom. Hover a dot for the details." },
+            { title: "Squad Mechanics", desc: "Restyled to match, with rank, profession icons and click-to-sort columns." }
+          ]
+        }
+      ]
+    },
+    {
       version: "0.8.2",
       date: "November 2026",
       notes: [

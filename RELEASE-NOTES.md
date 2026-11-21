@@ -1,57 +1,15 @@
-# Portal Protocol 0.8.3 — Patch Notes
+# Portal Protocol 0.8.4 — Patch Notes
 
-The Stats window is now a proper post-fight review. Pick any phase of the fight, then read two new tabs — **Defense** and **Support** — that show who kept the squad alive and who kept it standing.
-
----
-
-## 📊 Stats — Phases on Every Boss
-
-**Pick a Phase** — the Stats window has a phase selector: Full Fight, plus every phase Elite Insights found (100%–70%, burn windows, add phases). Every number in the window follows the phase you pick.
-
-**Per 10 min** — rescales damage to a per-10-minute rate, so a short pull and a long one can be compared fairly.
+The Cerus stats page is rebuilt — the fight reads at a glance, and the Empowered numbers now match Elite Insights.
 
 ---
 
-## 🛡️ Defense Tab
+## 🐉 Cerus Stats — Rebuilt
 
-**Defensive MVP** — the top three players on a defensive score: how much damage they avoided, and how rarely they went down or died. Gold, silver and bronze cards.
+**Stat Cards** — Orb Block Efficiency, Shadows Reached Cerus, Empowered Stacks, Squad Rage Hits and Total of Boon Stripped, restyled as clean panels with the value up top.
 
-**Damage Taken** — how much damage each player took. Least taken ranks first.
+**Empowered, Phase by Phase** — each phase is its own card: who held the stacks, ranked, with the orbs that fed them and a bar showing the split. Stacks go to the player who actually took them, and a collapsible history feed walks the fight in order.
 
-**Hits Mitigated** — hits that never landed: blocked, evaded, dodged, or made invulnerable.
+**Fight Timeline** — the fight on five lanes: orbs blocked and leaked, Cry of Rage hits, shadows reaching Cerus, and close spawns. Every phase is banded behind the lanes and an efficiency line runs along the bottom. Hover a dot for the details.
 
-**Downed** — how many times each player went down, and how long they spent down.
-
-**CC Received** — how many times each player was crowd controlled, and for how long.
-
-**Barrier** — damage absorbed by barrier.
-
-**Down Recap** — the boss's icon beside the three skills that took the most players down, with how many went down to each and how many of those died.
-
-**Downs** — every down in the fight, in order: the time, the profession, and the player.
-
-**Deaths** — every death in the fight, in order, with the skill that caused it.
-
-**Mitigation Matrix** — one row per player: blocked, evaded, dodged, invuln, interrupted, downed and dead, shaded so the outliers stand out. Click a row for that player's full damage split.
-
----
-
-## 💚 Support Tab
-
-**Support MVP** — the top three players on cleanses, breakbar damage, revives and boon strips.
-
-**Cleanses** — conditions removed from allies.
-
-**Breakbar Damage** — damage dealt to enemy CC bars. This is the real crowd-control contribution — the same "Breakbar" number Elite Insights shows under Damage Stats.
-
-**Boon Strips** — enemy boons removed.
-
-**Revives** — players resurrected, and the time spent resurrecting them.
-
-**Stun Breaks** — stuns removed from allies.
-
-**Boons Generated** — who gave the squad its boons, with a chip per boon and the uptime they provided.
-
-**Support Detail** — the same numbers laid out as one table.
-
-Healing is not shown. Elite Insights only reports it when its healing module is enabled, and it is off for these logs.
+**Squad Mechanics** — restyled to match, with rank, profession icons and click-to-sort columns.
