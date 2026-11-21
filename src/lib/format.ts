@@ -1,6 +1,5 @@
 // Portal Protocol - Log Uploader & Log Manager Suite
-// Copyright (C) 2026 Mestiak
-// Licensed under MIT License
+// Copyright (C) 2026 Mestiak -- Licensed under MIT License
 
 // Shared number/time formatting helpers, used across stats tables, tooltips,
 // and timeline labels. Pure functions — no state, safe to import anywhere.
@@ -28,4 +27,27 @@ export function fmtTime(sec: number): string {
 export function cleanAccountName(account?: string | null): string {
   if (!account) return "";
   return account.replace(/^[:#]/, "").trim();
+}
+
+// Built from char codes rather than a CRLF escape, so the line ending survives
+// any editor or patch tool that would turn the escape into a real break.
+const CRLF = String.fromCharCode(13, 10);
+const CSV_NEEDS_QUOTES = new RegExp(`[",${CRLF}]`);
+
+/**
+ * Rows -> CSV. Cells containing a comma, quote or newline are quoted with the
+ * quotes doubled; null/undefined become empty cells. Rows join with CRLF, the
+ * RFC 4180 line ending that spreadsheet apps expect.
+ */
+export function toCsv(rows: unknown[][]): string {
+  return rows
+    .map((row) =>
+      row
+        .map((cell) => {
+          const s = cell == null ? "" : String(cell);
+          return CSV_NEEDS_QUOTES.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+        })
+        .join(","),
+    )
+    .join(CRLF);
 }

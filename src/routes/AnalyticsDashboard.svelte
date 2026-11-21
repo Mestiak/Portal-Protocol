@@ -12,7 +12,7 @@
   import { extractDefenseSupport } from '../lib/defenseSupport';
   import { summarizeDefense, summarizeTrend, type DefenseTrendPoint } from '../lib/defenseTrend';
   import { summarizeHealing, summarizeHealingTrend, type HealingTrendPoint } from '../lib/healingTrend';
-  import { fmtTime } from '../lib/format';
+  import { fmtTime, toCsv } from '../lib/format';
   import { wipeLayout, professionRows, dpsLayout } from '../lib/chartScale';
   import { buildProfessionGroups, ELITE_SPEC_ICONS, PROFESSIONS, PROFESSION_NAME_ICONS, type ProfessionGroup } from '../lib/professionData';
   import CerusLeaderboard from './CerusLeaderboard.svelte';
@@ -1139,7 +1139,7 @@
         report += `\nProfessions: ${profLine}\n`;
       }
 
-      await navigator.clipboard.writeText(report);
+      await copyText(report);
       backfillMessage = 'Analytics report copied to clipboard!';
       setTimeout(() => {
         backfillMessage = '';
@@ -1147,6 +1147,57 @@
     } catch (e: any) {
       console.error(e);
       backfillMessage = 'Failed to copy report: ' + e.toString();
+    }
+  }
+
+  /**
+   * Copy text. `navigator.clipboard` only exists in a secure context, so fall
+   * back to a hidden textarea + execCommand where it does not (non-https
+   * builds, some webviews).
+   */
+  async function copyText(text: string): Promise<void> {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '-1000px';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } finally { ta.remove(); }
+  }
+
+  const numOrBlank = (v: number | null) => (v == null ? '' : v.toFixed(1));
+  async function exportCsv() {
+    try {
+      const rows: string[][] = [
+        ['Portal Protocol - Analytics'],
+        ['Generated', new Date().toLocaleString()],
+        ['Filters', `Boss: ${bossFilter} | Mode: ${modeFilter} | Range: ${rangeFilter}`],
+        [],
+        ['Boss', 'Total', 'Kills', 'Wipes', 'Kill Rate %', 'Avg Duration (s)', 'Fastest Kill (s)', 'Avg Wipe HP %'],
+        ...sortedBossBreakdown.map((b) => [
+          b.boss, String(b.total), String(b.kills), String(b.wipes),
+          b.successRate.toFixed(1), numOrBlank(b.avgDuration), numOrBlank(b.shortestKill), numOrBlank(b.avgWipeHp),
+        ]),
+        [],
+        ['Player', 'Account', 'Profession', 'Encounters', 'Avg DPS', 'Max DPS'],
+        ...aggregatePlayers(logs, activeFilters).map((p) => [
+          p.displayName || p.account, p.account, p.profession,
+          String(p.encounters), String(Math.round(p.avgDps)), String(Math.round(p.maxDps)),
+        ]),
+      ];
+      await copyText(toCsv(rows));
+      backfillMessage = 'CSV copied to clipboard!';
+      setTimeout(() => {
+        backfillMessage = '';
+      }, 3000);
+    } catch (e: any) {
+      console.error(e);
+      backfillMessage = 'Failed to copy CSV: ' + e.toString();
     }
   }
 </script>
@@ -1223,14 +1274,24 @@
         {/if}
         <i class="fa-solid fa-chevron-down" style="font-size:10px; opacity:0.6;"></i>
       </button>
-      <button 
-        class="an-pill" 
-        style="display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; margin-left: auto;" 
-        onclick={exportStats}
-        title="Copy Markdown Report to clipboard"
-      >
-        <i class="fa-solid fa-copy"></i> Export Report
-      </button>
+      <div style="display:flex; gap:6px; margin-left:auto;">
+        <button
+          class="an-pill"
+          style="display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px;"
+          onclick={exportStats}
+          title="Copy a Markdown report to the clipboard"
+        >
+          <i class="fa-solid fa-copy"></i> Export MD
+        </button>
+        <button
+          class="an-pill"
+          style="display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px;"
+          onclick={exportCsv}
+          title="Copy CSV data to the clipboard"
+        >
+          <i class="fa-solid fa-file-csv"></i> Export CSV
+        </button>
+      </div>
     </div>
   </div>
 
