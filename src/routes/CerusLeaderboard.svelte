@@ -29,9 +29,16 @@
     return copy;
   });
 
-  // Cohort cards: aggregate value + label + placeholder dash (encounter-stat style).
-  // Color per your spec: Orb Eff (blue), Total Orbs (blue), Rage Hits (yellow),
-  // Shadows Reached (purple), Boons Corrupted (red).
+  // Cohort cards: aggregate value, label, and a per-log sparkline of the same
+  // metric across the logs in the cohort.
+  function sparkPoints(series: number[]): string {
+    if (series.length < 2) return '';
+    const max = Math.max(...series, 1);
+    return series
+      .map((v, i) => `${((i / (series.length - 1)) * 64).toFixed(1)},${(17 - (v / max) * 15).toFixed(1)}`)
+      .join(' ');
+  }
+
   const cards = $derived([
     { label: 'Orb Efficiency', value: `${report.orbEfficiency}%`, cls: 'cl-accent', series: perLog.orbEff },
     { label: 'Total Orbs', value: report.totalOrbs, cls: 'cl-accent', series: perLog.orbs },
@@ -48,6 +55,11 @@
     <div class="an-card cl-card">
       <div class="cl-card-val {c.cls}">{c.value}</div>
       <div class="cl-card-label">{c.label}</div>
+      {#if c.series.length > 1}
+        <svg class="cl-spark" viewBox="0 0 64 18" preserveAspectRatio="none" aria-hidden="true">
+          <polyline class={c.cls} points={sparkPoints(c.series)} vector-effect="non-scaling-stroke" />
+        </svg>
+      {/if}
     </div>
   {/each}
 </div>
@@ -99,6 +111,12 @@
   .cl-card-val.cl-fail { color: var(--fail); }
   .cl-card-val.cl-success { color: var(--success); }
   .cl-card-label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+  .cl-spark { width: 100%; height: 18px; margin-top: 4px; }
+  .cl-spark polyline { fill: none; stroke-width: 1.5; }
+  .cl-spark .cl-accent { stroke: var(--accent); }
+  .cl-spark .cl-warn { stroke: var(--warn); }
+  .cl-spark .cl-fail { stroke: var(--fail); }
+  .cl-spark .cl-success { stroke: var(--success); }
 
   .sm-table { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
   .sm-row { display: grid; grid-template-columns: 2fr 0.9fr 0.9fr 0.9fr 1fr 1fr; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border); }

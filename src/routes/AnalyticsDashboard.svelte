@@ -7,9 +7,10 @@
   import { invoke } from '@tauri-apps/api/core';
   import { listen } from '@tauri-apps/api/event';
   import { aggregateStats, getAvailableBosses, clearAnalyticsCache, buildMultiPlayerDpsSeries, cleanAccountName, aggregatePlayers, getFilteredCerusUrls, buildCerusLeaderboardRows, type CerusLeaderboardRow, type CerusPerLog } from '../lib/analyticsEngine';
-  import type { AnalyticsLog, ActivityPoint, WipeBucket, ProfessionCount, MultiPlayerDpsPoint } from '../lib/analyticsEngine';
+  import type { AnalyticsLog, MultiPlayerDpsPoint } from '../lib/analyticsEngine';
   import { extractMechanics, mergeCerusReports, MAX_AGGREGATE_LOGS, type MechanicReport } from '../lib/mechanicParser';
   import { fmtTime } from '../lib/format';
+  import { activityLayout, wipeLayout, professionRows, dpsLayout } from '../lib/chartScale';
   import { buildProfessionGroups, ELITE_SPEC_ICONS, PROFESSIONS, type ProfessionGroup } from '../lib/professionData';
   import CerusLeaderboard from './CerusLeaderboard.svelte';
 
@@ -462,395 +463,92 @@
     });
   });
 
-  // Store point hitboxes for multi-player performance chart tooltips
-  let dpsPointHitboxes: { x: number; y: number; point: MultiPlayerDpsPoint }[] = [];
+  // ─── Chart geometry ────────────────────────────────────────────────────────
+  // SVG charts draw in their own coordinate space, so each chart measures its
+  // container; the layout itself lives in lib/chartScale.ts.
 
-  // ─── Canvas refs ───────────────────────────────────────────────────────────
-  let activityCanvas = $state<HTMLCanvasElement | null>(null);
-  let wipeCanvas = $state<HTMLCanvasElement | null>(null);
-  let dpsCanvas = $state<HTMLCanvasElement | null>(null);
+  let activityBox = $state<HTMLDivElement | null>(null);
+  let activityW = $state(0);
+  let wipeBox = $state<HTMLDivElement | null>(null);
+  let wipeW = $state(0);
+  let dpsBox = $state<HTMLDivElement | null>(null);
+  let dpsW = $state(0);
 
-  let activityRO: ResizeObserver | null = null;
-  let wipeRO: ResizeObserver | null = null;
-  let dpsRO: ResizeObserver | null = null;
+  $effect(() => {
+    const el = activityBox;
+    if (!el) return;
+    const ro = new ResizeObserver(() => { activityW = el.clientWidth; });
+    ro.observe(el);
+    activityW = el.clientWidth;
+    return () => ro.disconnect();
+  });
 
-  // ─── Chart drawing helpers ─────────────────────────────────────────────────
-  // Canvas cannot read CSS custom properties, so pull the tokens off the root.
-  const cssVar = (name: string, fallback: string): string => {
-    if (typeof document === 'undefined') return fallback;
-    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-    return v || fallback;
-  };
-  const KILL_COLOR = cssVar('--success', '#10b981');
-  const WIPE_COLOR = cssVar('--fail', '#ef4444');
-  const GRID_COLOR = cssVar('--border', '#27272e');
-  const TEXT_COLOR = cssVar('--text-muted', '#94a3b8');
-  const AXIS_COLOR = cssVar('--border', '#27272e');
+  $effect(() => {
+    const el = wipeBox;
+    if (!el) return;
+    const ro = new ResizeObserver(() => { wipeW = el.clientWidth; });
+    ro.observe(el);
+    wipeW = el.clientWidth;
+    return () => ro.disconnect();
+  });
 
-  function setupCanvas(canvas: HTMLCanvasElement): { ctx: CanvasRenderingContext2D; W: number; H: number } | null {
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-    const dpr = window.devicePixelRatio || 1;
-    const W = canvas.clientWidth;
-    const H = canvas.clientHeight;
-    if (W === 0 || H === 0) return null;
-    canvas.width  = W * dpr;
-    canvas.height = H * dpr;
-    ctx.scale(dpr, dpr);
-    return { ctx, W, H };
-  }
+  $effect(() => {
+    const el = dpsBox;
+    if (!el) return;
+    const ro = new ResizeObserver(() => { dpsW = el.clientWidth; });
+    ro.observe(el);
+    dpsW = el.clientWidth;
+    return () => ro.disconnect();
+  });
 
-  function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number | number[]) {
-    const [tl, tr, br, bl] = Array.isArray(r) ? r : [r, r, r, r];
-    ctx.beginPath();
-    ctx.moveTo(x + tl, y);
-    ctx.lineTo(x + w - tr, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + tr);
-    ctx.lineTo(x + w, y + h - br);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - br, y + h);
-    ctx.lineTo(x + bl, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - bl);
-    ctx.lineTo(x, y + tl);
-    ctx.quadraticCurveTo(x, y, x + tl, y);
-    ctx.closePath();
-  }
+  let activityGeom = $derived(activityLayout(stats.activitySeries, activityW));
+  let wipeGeom = $derived(wipeLayout(stats.wipeDepthBuckets, wipeW));
+  let profRows = $derived(professionRows(stats.professionFrequency));
 
-  function drawActivity(canvas: HTMLCanvasElement, series: ActivityPoint[]) {
-    const s = setupCanvas(canvas);
-    if (!s) return;
-    const { ctx, W, H } = s;
-    ctx.clearRect(0, 0, W, H);
-    if (series.length === 0) return;
-    const PL = 36, PR = 12, PT = 12, PB = 40;
-    const cW = W - PL - PR, cH = H - PT - PB;
-    const maxV = Math.max(...series.map(p => p.total), 1);
-    const gap = 4;
-    const bW = Math.max(4, (cW - gap * (series.length - 1)) / series.length);
-    ctx.font = '10px system-ui';
-    for (let i = 0; i <= 4; i++) {
-      const y = PT + cH * (1 - i / 4);
-      ctx.strokeStyle = GRID_COLOR; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(PL, y); ctx.lineTo(W - PR, y); ctx.stroke();
-      if (i > 0) {
-        ctx.fillStyle = TEXT_COLOR; ctx.textAlign = 'right';
-        ctx.fillText(String(Math.round(maxV * i / 4)), PL - 4, y + 4);
-      }
+  // The comparison needs a scope: a boss, a mode, or a custom window. Without
+  // one the chart would plot every log in history against every other.
+  let dpsHasScope = $derived(
+    (activeFilters.boss !== 'all') ||
+    (activeFilters.mode !== 'all') ||
+    (activeFilters.range === 'custom' &&
+      (activeFilters.customStart || activeFilters.customEnd ||
+       activeFilters.customStartTime || activeFilters.customEndTime)),
+  );
+
+  let dpsGeom = $derived.by(() => {
+    const W = dpsW;
+    if (!W) return null;
+    if (!dpsHasScope) return { empty: 'no-scope' as const, W };
+    if (multiPlayerSeries.length === 0 || selectedAccounts.length === 0) {
+      return { empty: 'no-data' as const, W };
     }
-    for (let i = 0; i < series.length; i++) {
-      const p = series[i];
-      const x = PL + i * (bW + gap);
-      if (p.wipes > 0) {
-        const h = (p.wipes / maxV) * cH;
-        ctx.fillStyle = WIPE_COLOR;
-        rr(ctx, x, PT + cH - h, bW, h, [3, 3, 0, 0]); ctx.fill();
-      }
-      if (p.kills > 0) {
-        const hW = (p.wipes / maxV) * cH;
-        const hK = (p.kills / maxV) * cH;
-        ctx.fillStyle = KILL_COLOR;
-        rr(ctx, x, PT + cH - hW - hK, bW, hK, [3, 3, 0, 0]); ctx.fill();
-      }
-      const step = series.length <= 14 ? 1 : series.length <= 30 ? 3 : 7;
-      if (i % step === 0) {
-        ctx.fillStyle = TEXT_COLOR; ctx.textAlign = 'center';
-        ctx.fillText(p.label, x + bW / 2, H - PB + 14);
-      }
-    }
-    ctx.strokeStyle = AXIS_COLOR; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(PL, PT + cH); ctx.lineTo(W - PR, PT + cH); ctx.stroke();
-  }
-
-  function drawWipeProf(canvas: HTMLCanvasElement, buckets: WipeBucket[], professions: ProfessionCount[]) {
-    const s = setupCanvas(canvas);
-    if (!s) return;
-    const { ctx, W, H } = s;
-    ctx.clearRect(0, 0, W, H);
-    const half = W / 2;
-    const PL = 52, PR = 12, PT = 12, PB = 16;
-    const cH = H - PT - PB;
-    const maxC = Math.max(...buckets.map(b => b.count), 1);
-    const gap = 6;
-    const bH = (cH - gap * (buckets.length - 1)) / buckets.length;
-    const cW = half - PL - PR;
-    ctx.font = '10px system-ui';
-    for (let i = 0; i < buckets.length; i++) {
-      const b = buckets[i];
-      const y = PT + i * (bH + gap);
-      const bL = b.count > 0 ? (b.count / maxC) * cW : 0;
-      ctx.fillStyle = 'rgba(255,255,255,0.04)'; rr(ctx, PL, y, cW, bH, 4); ctx.fill();
-      if (bL > 0) {
-        const g = ctx.createLinearGradient(PL, 0, PL + bL, 0);
-        g.addColorStop(0, cssVar('--accent-h', '#4f46e5')); g.addColorStop(1, cssVar('--accent', '#6366f1'));
-        ctx.fillStyle = g; rr(ctx, PL, y, bL, bH, 4); ctx.fill();
-      }
-      ctx.fillStyle = TEXT_COLOR; ctx.textAlign = 'right';
-      ctx.fillText(b.label, PL - 6, y + bH / 2 + 4);
-      if (b.count > 0) {
-        ctx.fillStyle = '#fff'; ctx.textAlign = 'left';
-        ctx.fillText(String(b.count), PL + bL + 4, y + bH / 2 + 4);
-      }
-    }
-    ctx.strokeStyle = AXIS_COLOR; ctx.lineWidth = 1;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath(); ctx.moveTo(half, PT); ctx.lineTo(half, H - PB); ctx.stroke();
-    ctx.setLineDash([]);
-    
-    // Squad Composition Chart Layout (Fixed overflow)
-    const PL2 = half + 80;
-    const PR2 = 45;
-    const maxBarW = Math.max(20, W - PL2 - PR2);
-    const top = professions.slice(0, 6);
-    if (top.length === 0) {
-      ctx.fillStyle = TEXT_COLOR; ctx.textAlign = 'center';
-      ctx.fillText('No profession data', half + (W - half) / 2, H / 2);
-      return;
-    }
-    const maxP = Math.max(...top.map(p => p.count), 1);
-    const pbH = Math.min(24, (cH - gap * (top.length - 1)) / top.length);
-    const pGap = Math.max(gap, (cH - pbH * top.length) / (top.length + 1));
-    for (let i = 0; i < top.length; i++) {
-      const p = top[i];
-      const y = PT + pGap + i * (pbH + pGap);
-      const bL = (p.count / maxP) * maxBarW;
-      ctx.fillStyle = 'rgba(255,255,255,0.04)'; rr(ctx, PL2, y, maxBarW, pbH, 4); ctx.fill();
-      ctx.fillStyle = p.color; ctx.globalAlpha = 0.85;
-      rr(ctx, PL2, y, bL, pbH, 4); ctx.fill();
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = TEXT_COLOR; ctx.textAlign = 'right';
-      let displayName = p.name;
-      if (ctx.measureText(displayName).width > 70) { displayName = displayName.slice(0, 8) + '…'; }
-      ctx.fillText(displayName, PL2 - 8, y + pbH / 2 + 4);
-      ctx.fillStyle = '#fff'; ctx.textAlign = 'left';
-      const labelX = Math.min(PL2 + bL + 6, W - 38);
-      ctx.fillText(p.pct.toFixed(1) + '%', labelX, y + pbH / 2 + 4);
-    }
-  }
-
-  function drawPersonalDpsChart(canvas: HTMLCanvasElement, series: MultiPlayerDpsPoint[]) {
-    const s = setupCanvas(canvas);
-    if (!s) return;
-    const { ctx, W, H } = s;
-    ctx.clearRect(0, 0, W, H);
-    // Empty state: require a comparison scope (specific boss, specific mode, or a
-    // custom date window) before comparing DPS. The default All+All+30d shows a
-    // prompt to pick something.
-    const hasScope = (activeFilters.boss && activeFilters.boss !== 'all') ||
-                     (activeFilters.mode && activeFilters.mode !== 'all') ||
-                     (activeFilters.range === 'custom' &&
-                       (activeFilters.customStart || activeFilters.customEnd ||
-                        activeFilters.customStartTime || activeFilters.customEndTime));
-    if (!hasScope) {
-      dpsPointHitboxes = [];
-      ctx.fillStyle = TEXT_COLOR;
-      ctx.font = '13px system-ui';
-      ctx.textAlign = 'center';
-      ctx.fillText('Select encounters to compare DPS', W / 2, H / 2);
-      return;
-    }
-
-    if (series.length === 0 || selectedAccounts.length === 0) {
-      dpsPointHitboxes = [];
-      ctx.fillStyle = TEXT_COLOR;
-      ctx.font = '12px system-ui';
-      ctx.textAlign = 'center';
-      ctx.fillText('No player performance logs found for selected filters', W / 2, H / 2);
-      return;
-    }
-
-    // Allocate right padding (PR = 45) for the secondary Wipe HP% Y-axis
-    const PL = 50, PR = 45, PT = 15, PB = 35;
-    const cW = W - PL - PR, cH = H - PT - PB;
-
-    // Collect all player values to derive global Y-axis scale
-    const allValues: number[] = [];
-    for (const pt of series) {
-      for (const m of Object.values(pt.players)) {
-        allValues.push(m.value);
-      }
-    }
-    const minVal = allValues.length ? Math.min(...allValues) * 0.9 : 0;
-    const maxVal = allValues.length ? Math.max(...allValues) * 1.1 : 10000;
-    const valRange = maxVal - minVal || 1;
-
-    // Draw horizontal grid lines & Y-axes
-    ctx.font = '10px system-ui';
-    for (let i = 0; i <= 4; i++) {
-      const val = minVal + (valRange * i) / 4;
-      const y = PT + cH * (1 - i / 4);
-
-      // Grid line
-      ctx.strokeStyle = GRID_COLOR; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(PL, y); ctx.lineTo(W - PR, y); ctx.stroke();
-
-      // Left Y-axis (DPS)
-      ctx.fillStyle = TEXT_COLOR;
-      ctx.textAlign = 'right';
-      ctx.fillText((val / 1000).toFixed(1) + 'k', PL - 8, y + 3);
-
-      // Right Y-axis (Wipe HP% scale: 0% at top, 100% at baseline)
-      const hpVal = Math.round(100 * (1 - i / 4));
-      ctx.fillStyle = 'rgba(239, 68, 68, 0.7)';
-      ctx.textAlign = 'left';
-      ctx.fillText(hpVal + '%', W - PR + 8, y + 3);
-    }
-
-    // Map log X coordinates
-    const logCoords = series.map((pt, idx) => {
-      const x = PL + (series.length > 1 ? (idx / (series.length - 1)) * cW : cW / 2);
-      let yHp: number | null = null;
-      if (!pt.success && pt.bossHpLeft != null) {
-        yHp = PT + cH * (pt.bossHpLeft / 100);
-      }
-      return { x, yHp, point: pt };
+    return dpsLayout(multiPlayerSeries, W, {
+      keys: selectedAccounts,
+      color: getPlayerColor,
+      hovered: tooltipData.visible ? tooltipData.point : null,
     });
+  });
 
-    // Wipe depth dotted line
-    const wipeCoords = logCoords.filter(c => c.yHp !== null) as { x: number; yHp: number; point: MultiPlayerDpsPoint }[];
-    if (wipeCoords.length > 1) {
-      ctx.beginPath();
-      ctx.moveTo(wipeCoords[0].x, wipeCoords[0].yHp);
-      for (let i = 1; i < wipeCoords.length; i++) {
-        ctx.lineTo(wipeCoords[i].x, wipeCoords[i].yHp);
-      }
-      ctx.strokeStyle = 'rgba(239, 68, 68, 0.25)';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([4, 4]);
-      ctx.stroke();
-      ctx.setLineDash([]);
+  function handleDpsMouseMove(e: MouseEvent) {
+    const g = dpsGeom;
+    if (!g || g.empty || g.hitboxes.length === 0) return;
+    const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    let closest: { x: number; point: MultiPlayerDpsPoint } | null = null;
+    let minDist = 24;
+    for (const h of g.hitboxes) {
+      const d = Math.abs(mx - h.x);
+      if (d < minDist) { minDist = d; closest = h; }
     }
-
-    const hitboxes: { x: number; y: number; point: MultiPlayerDpsPoint }[] = [];
-
-    // Draw per-player trend lines and dots
-    selectedAccounts.forEach((acc) => {
-      const color = getPlayerColor(acc);
-      const playerPoints: { x: number; y: number; val: number }[] = [];
-
-      logCoords.forEach((lc) => {
-        const match = lc.point.players[acc];
-        if (match) {
-          const y = PT + cH * (1 - (match.value - minVal) / valRange);
-          playerPoints.push({ x: lc.x, y, val: match.value });
-          hitboxes.push({ x: lc.x, y, point: lc.point });
-        }
-      });
-
-      if (playerPoints.length > 1) {
-        ctx.beginPath();
-        ctx.moveTo(playerPoints[0].x, playerPoints[0].y);
-        for (let i = 1; i < playerPoints.length; i++) {
-          ctx.lineTo(playerPoints[i].x, playerPoints[i].y);
-        }
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2.2;
-        ctx.stroke();
-      }
-
-      // Draw per-point dots only when the series is small (focused filter).
-      // With no/loose filter there can be dozens of points per player — drawing
-      // a dot on each just clutters the line, so we skip them and rely on hover.
-      if (series.length <= 30) {
-        for (const p of playerPoints) {
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
-          ctx.fillStyle = color;
-          ctx.fill();
-          ctx.strokeStyle = '#1e1e24';
-          ctx.lineWidth = 1.5;
-          ctx.stroke();
-        }
-      }
-    });
-
-    dpsPointHitboxes = hitboxes;
-
-    // Highlight hovered point if active
-    if (tooltipData.visible && tooltipData.point) {
-      const hLog = logCoords.find(c => c.point === tooltipData.point);
-      if (hLog) {
-        // Highlight wipe HP dot if present
-        if (hLog.yHp !== null) {
-          ctx.beginPath();
-          ctx.arc(hLog.x, hLog.yHp, 5, 0, Math.PI * 2);
-          ctx.fillStyle = WIPE_COLOR;
-          ctx.fill();
-          ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 1.5;
-          ctx.stroke();
-        }
-
-        selectedAccounts.forEach((acc) => {
-          const match = hLog.point.players[acc];
-          if (match) {
-            const y = PT + cH * (1 - (match.value - minVal) / valRange);
-            ctx.beginPath();
-            ctx.arc(hLog.x, y, 6.5, 0, Math.PI * 2);
-            ctx.fillStyle = getPlayerColor(acc);
-            ctx.fill();
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-          }
-        });
-      }
-    }
-
-    // X-axis date labels
-    ctx.fillStyle = TEXT_COLOR;
-    ctx.textAlign = 'center';
-    const labelStep = Math.max(1, Math.floor(series.length / 8));
-    for (let i = 0; i < logCoords.length; i += labelStep) {
-      ctx.fillText(logCoords[i].point.label, logCoords[i].x, H - PB + 16);
-    }
-
-    // X-axis baseline
-    ctx.strokeStyle = AXIS_COLOR; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(PL, PT + cH); ctx.lineTo(W - PR, PT + cH); ctx.stroke();
-  }
-
-  let mouseMoveRaf: number | null = null;
-  function handleDpsCanvasMouseMove(e: MouseEvent) {
-    if (!dpsCanvas || dpsPointHitboxes.length === 0) return;
-    const clientX = e.clientX;
-    const clientY = e.clientY;
-    if (mouseMoveRaf) return;
-    mouseMoveRaf = requestAnimationFrame(() => {
-      mouseMoveRaf = null;
-      if (!dpsCanvas) return;
-      const rect = dpsCanvas.getBoundingClientRect();
-      const mouseX = clientX - rect.left;
-      const mouseY = clientY - rect.top;
-
-      let closest: { x: number; y: number; point: MultiPlayerDpsPoint } | null = null;
-      let minDist = 24;
-
-      for (const item of dpsPointHitboxes) {
-        const dist = Math.hypot(mouseX - item.x, mouseY - item.y);
-        if (dist < minDist) {
-          minDist = dist;
-          closest = item;
-        }
-      }
-
-      if (closest) {
-        tooltipData = { visible: true, point: closest.point };
-        if (dpsCanvas) drawPersonalDpsChart(dpsCanvas, multiPlayerSeries);
-      } else if (tooltipData.visible) {
-        tooltipData = { visible: false, point: null };
-        if (dpsCanvas) drawPersonalDpsChart(dpsCanvas, multiPlayerSeries);
-      }
-    });
-  }
-
-  function handleDpsCanvasMouseLeave() {
-    if (mouseMoveRaf) {
-      cancelAnimationFrame(mouseMoveRaf);
-      mouseMoveRaf = null;
-    }
-    if (tooltipData.visible) {
+    if (closest) {
+      tooltipData = { visible: true, point: closest.point };
+    } else if (tooltipData.visible) {
       tooltipData = { visible: false, point: null };
-      if (dpsCanvas) drawPersonalDpsChart(dpsCanvas, multiPlayerSeries);
     }
+  }
+
+  function handleDpsMouseLeave() {
+    if (tooltipData.visible) tooltipData = { visible: false, point: null };
   }
 
   let isDestroyed = false;
@@ -942,53 +640,8 @@
     isPaused = false;
   }
 
-  // ─── Canvas reactive effects ───────────────────────────────────────────────
-  $effect(() => {
-    const canvas = activityCanvas;
-    const series = stats.activitySeries;
-    if (!canvas) return;
-    const draw = () => drawActivity(canvas, series);
-    draw();
-    activityRO?.disconnect();
-    activityRO = new ResizeObserver(draw);
-    activityRO.observe(canvas);
-    return () => { activityRO?.disconnect(); activityRO = null; };
-  });
-
-  $effect(() => {
-    const canvas = wipeCanvas;
-    const buckets = stats.wipeDepthBuckets;
-    const profs = stats.professionFrequency;
-    if (!canvas) return;
-    const draw = () => drawWipeProf(canvas, buckets, profs);
-    draw();
-    wipeRO?.disconnect();
-    wipeRO = new ResizeObserver(draw);
-    wipeRO.observe(canvas);
-    return () => { wipeRO?.disconnect(); wipeRO = null; };
-  });
-
-  $effect(() => {
-    const canvas = dpsCanvas;
-    const series = multiPlayerSeries;
-    if (!canvas) return;
-    const draw = () => drawPersonalDpsChart(canvas, series);
-    draw();
-    dpsRO?.disconnect();
-    dpsRO = new ResizeObserver(draw);
-    dpsRO.observe(canvas);
-    return () => { dpsRO?.disconnect(); dpsRO = null; };
-  });
-
   onDestroy(() => {
     isDestroyed = true;
-    if (mouseMoveRaf) {
-      cancelAnimationFrame(mouseMoveRaf);
-      mouseMoveRaf = null;
-    }
-    activityRO?.disconnect();
-    wipeRO?.disconnect();
-    dpsRO?.disconnect();
     if (unlistenProgress) unlistenProgress();
     if (unlistenComplete) unlistenComplete();
     clearAnalyticsCache();
@@ -1455,15 +1108,33 @@
         </div>
       </div>
       
-      <div style="position:relative; width:100%;">
-        <canvas
-          class="an-canvas"
-          bind:this={dpsCanvas}
-          style="height:210px;"
-          onmousemove={handleDpsCanvasMouseMove}
-          onmouseleave={handleDpsCanvasMouseLeave}
-        ></canvas>
-
+      <div bind:this={dpsBox}>
+        {#if dpsGeom && !dpsGeom.empty}
+          <svg class="an-svg" width={dpsGeom.W} height={dpsGeom.H} viewBox="0 0 {dpsGeom.W} {dpsGeom.H}"
+               role="img" aria-label="Player DPS comparison"
+               onmousemove={handleDpsMouseMove} onmouseleave={handleDpsMouseLeave}>
+            {#each dpsGeom.grid as g}
+              <line x1={dpsGeom.PL} y1={g.y} x2={dpsGeom.W - dpsGeom.PR} y2={g.y} class="an-grid" />
+              <text x={dpsGeom.PL - 8} y={g.y + 3} class="an-axis-text" text-anchor="end">{(g.val / 1000).toFixed(1)}k</text>
+            {/each}
+            {#each dpsGeom.lines as l}
+              <polyline points={l.points} fill="none" stroke={l.color} stroke-width="2.2"
+                        stroke-linejoin="round" stroke-linecap="round" />
+              {#if dpsGeom.showDots}
+                {#each l.dots as d}
+                  <circle cx={d.x} cy={d.y} r={d.hot ? 6.5 : 4}
+                          fill={l.color} stroke="var(--bg-panel)" stroke-width={d.hot ? 2 : 1.5} />
+                {/each}
+              {/if}
+            {/each}
+            {#each dpsGeom.xLabels as xl}
+              <text x={xl.x} y={dpsGeom.H - dpsGeom.PB + 16} class="an-axis-text" text-anchor="middle">{xl.label}</text>
+            {/each}
+            <line x1={dpsGeom.PL} y1={dpsGeom.baseY} x2={dpsGeom.W - dpsGeom.PR} y2={dpsGeom.baseY} class="an-axis" />
+          </svg>
+        {:else}
+          <p class="an-chart-empty">{dpsGeom?.empty === 'no-data' ? 'No player performance logs found for selected filters' : 'Select encounters to compare DPS'}</p>
+        {/if}
       </div>
       <div class="an-detail" aria-live="polite">
         {#if tooltipData.visible && tooltipData.point}
@@ -1567,16 +1238,65 @@
             <span class="an-leg-dot" style="background:var(--fail);"></span><span class="an-leg-label">Wipes</span>
           </div>
         </div>
-        <canvas class="an-canvas" bind:this={activityCanvas} style="height:200px;"></canvas>
+        <div bind:this={activityBox}>
+          {#if activityGeom}
+            <svg class="an-svg" width={activityGeom.W} height={activityGeom.H} viewBox="0 0 {activityGeom.W} {activityGeom.H}"
+                 role="img" aria-label="Encounter activity">
+              {#each activityGeom.grid as g}
+                <line x1={activityGeom.PL} y1={g.y} x2={activityGeom.W - activityGeom.PR} y2={g.y} class="an-grid" />
+                {#if g.v > 0}<text x={activityGeom.PL - 4} y={g.y + 4} class="an-axis-text" text-anchor="end">{Math.round(g.v)}</text>{/if}
+              {/each}
+              {#each activityGeom.bars as b}
+                {#if b.wipeH > 0}<rect x={b.x} y={b.wipeY} width={b.w} height={b.wipeH} class="an-bar-wipe" rx="2" />{/if}
+                {#if b.killH > 0}<rect x={b.x} y={b.killY} width={b.w} height={b.killH} class="an-bar-kill" rx="2" />{/if}
+                {#if b.showLabel}<text x={b.x + b.w / 2} y={activityGeom.H - 26} class="an-axis-text" text-anchor="middle">{b.label}</text>{/if}
+              {/each}
+              <line x1={activityGeom.PL} y1={activityGeom.baseY} x2={activityGeom.W - activityGeom.PR} y2={activityGeom.baseY} class="an-axis" />
+            </svg>
+          {:else}
+            <p class="an-chart-empty">No activity in this range</p>
+          {/if}
+        </div>
       </div>
 
-      <!-- Wipe depth + profession distribution -->
+      <!-- Wipe depth -->
       <div class="an-section">
-        <div class="an-section-head" style="display: grid; grid-template-columns: 1fr 1fr; gap: 32px; padding-bottom: 8px;">
+        <div class="an-section-head">
           <span class="an-section-title"><i class="fa-solid fa-heart-crack"></i> Wipe Depth</span>
-          <span class="an-section-title" style="border-left: 1px solid var(--border); padding-left: 16px;"><i class="fa-solid fa-user-group"></i> Squad Composition</span>
         </div>
-        <canvas class="an-canvas" bind:this={wipeCanvas} style="height:200px;"></canvas>
+        <div bind:this={wipeBox}>
+          {#if wipeGeom}
+            <svg class="an-svg" width={wipeGeom.W} height={wipeGeom.H} viewBox="0 0 {wipeGeom.W} {wipeGeom.H}"
+                 role="img" aria-label="Wipe depth">
+              {#each wipeGeom.rows as r}
+                <text x={wipeGeom.PL - 6} y={r.y + r.h / 2 + 4} class="an-axis-text" text-anchor="end">{r.label}</text>
+                <rect x={wipeGeom.PL} y={r.y} width={wipeGeom.trackW} height={r.h} class="an-track" rx="4" />
+                {#if r.w > 0}<rect x={wipeGeom.PL} y={r.y} width={r.w} height={r.h} class="an-bar-accent" rx="4" />{/if}
+                {#if r.count > 0}<text x={wipeGeom.PL + r.w + 4} y={r.y + r.h / 2 + 4} class="an-bar-val">{r.count}</text>{/if}
+              {/each}
+            </svg>
+          {:else}
+            <p class="an-chart-empty">No wipes in this range</p>
+          {/if}
+        </div>
+      </div>
+
+      <!-- Squad composition -->
+      <div class="an-section">
+        <div class="an-section-head">
+          <span class="an-section-title"><i class="fa-solid fa-user-group"></i> Squad Composition</span>
+        </div>
+        <div class="an-prof-rows">
+          {#each profRows as p}
+            <div class="an-prof-row">
+              <span class="an-prof-name" title={p.name}>{p.name}</span>
+              <span class="an-prof-track"><span class="an-prof-bar" style="width:{p.barPct}%;background:{p.color}"></span></span>
+              <span class="an-prof-pct">{p.pct.toFixed(1)}%</span>
+            </div>
+          {:else}
+            <p class="an-chart-empty">No profession data</p>
+          {/each}
+        </div>
       </div>
     </div>
 
@@ -1728,7 +1448,22 @@
 
   .an-leg-dot{width:10px;height:10px;border-radius:50%;display:inline-block;}
   .an-leg-label{font-size:10px;color:var(--text-muted);}
-  .an-canvas{width:100%;display:block;border-radius:8px;}
+  .an-svg{display:block;}
+  .an-grid{stroke:var(--border);stroke-width:1;}
+  .an-axis{stroke:var(--border);stroke-width:1;}
+  .an-axis-text{fill:var(--text-muted);font-size:10px;font-family:var(--font);}
+  .an-bar-kill{fill:var(--success);}
+  .an-bar-wipe{fill:var(--fail);}
+  .an-track{fill:color-mix(in srgb,#fff 4%,transparent);}
+  .an-bar-accent{fill:var(--accent);}
+  .an-bar-val{fill:var(--text);font-size:10px;font-weight:700;font-family:var(--font);}
+  .an-chart-empty{margin:0;padding:28px 4px;color:var(--text-muted);font-size:12px;text-align:center;}
+  .an-prof-rows{display:flex;flex-direction:column;gap:8px;}
+  .an-prof-row{display:grid;grid-template-columns:88px 1fr 46px;align-items:center;gap:8px;}
+  .an-prof-name{font-size:10px;font-weight:600;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .an-prof-track{height:8px;border-radius:4px;background:color-mix(in srgb,#fff 4%,transparent);overflow:hidden;}
+  .an-prof-bar{display:block;height:100%;border-radius:4px;}
+  .an-prof-pct{font-size:10px;font-weight:700;color:var(--text);text-align:right;font-variant-numeric:tabular-nums;}
   .an-table-wrap{overflow-x:auto;border-radius:10px;border:1px solid var(--border);}
   .an-table{width:100%;border-collapse:collapse;font-size:12px;}
   .an-table thead tr{
