@@ -583,6 +583,7 @@
   const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const HM_GAP = 4;
   const HM_DAY_W = 20;
+  const HM_LABEL_GAP = 8;
 
   type ActivityCell = {
     key: string; date: Date;
@@ -658,25 +659,36 @@
     const max = Math.max(1, ...weeks.flatMap(w => w.days.map(d => d.count)));
     const cell = Math.max(
       8,
-      Math.min(24, Math.floor((heatW - HM_DAY_W - 6 - HM_GAP * (weeks.length + 1)) / weeks.length)),
+      Math.min(22, Math.floor((heatW - HM_DAY_W - 6 - HM_GAP * (weeks.length + 1)) / weeks.length)),
     );
+    const gridW = weeks.length * cell + (weeks.length - 1) * HM_GAP;
 
-    const monthLabels: { x: number; label: string }[] = [];
-    let prevMonth = -1, prevYear = -1;
+    // Month labels are positioned in the grid's own pixel space and dropped
+    // when they would collide with the previous one. A percentage track that
+    // is wider than the grid puts every label in the wrong place, and clamping
+    // the last ones to a fixed offset stacks them exactly on top of each other.
+    const monthLabels: { left: number; label: string }[] = [];
+    let prevMonth = -1, prevYear = -1, lastRight = -Infinity;
     weeks.forEach((w, i) => {
       const mond = w.days[0].date;
       const m = mond.getMonth(), y = mond.getFullYear();
-      if (m !== prevMonth) {
-        monthLabels.push({
-          x: Math.min((i / weeks.length) * 100, 75),
-          label: y !== prevYear ? `${SHORT_MONTHS[m]} ${y}` : SHORT_MONTHS[m],
-        });
-        prevMonth = m; prevYear = y;
-      }
+      if (m === prevMonth) return;
+      const text = y !== prevYear ? `${SHORT_MONTHS[m]} ${y}` : SHORT_MONTHS[m];
+      prevMonth = m; prevYear = y;
+      const textW = labelWidth(text);
+      let left = i * (cell + HM_GAP);
+      if (left + textW > gridW) left = Math.max(0, gridW - textW);
+      if (left < lastRight + HM_LABEL_GAP) return;
+      monthLabels.push({ left, label: text });
+      lastRight = left + textW;
     });
 
-    return { weeks, cell, max, monthLabels };
+    return { weeks, cell, max, gridW, monthLabels };
   });
+
+  function labelWidth(text: string): number {
+    return text.length * 5 + 6;
+  }
 
   function heatColor(d: ActivityCell): string {
     if (d.count === 0) return 'color-mix(in srgb, #fff 5%, transparent)';
@@ -1436,34 +1448,33 @@
       </div>
       <div class="hm" bind:this={heatBox}>
         {#if activityCells}
-          <div class="hm-months">
-            <span class="hm-days-spacer"></span>
-            <span class="hm-month-track">
-              {#each activityCells.monthLabels as m}
-                <span class="hm-month" style="left:{m.x}%">{m.label}</span>
-              {/each}
-            </span>
-          </div>
           <div class="hm-body">
             <span class="hm-days">
               <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
             </span>
-            <div class="hm-grid" style="--cell:{activityCells.cell}px;grid-template-columns:repeat({activityCells.weeks.length}, var(--cell))">
-              {#each activityCells.weeks as w}
-                {#each w.days as d}
-                  <button
-                    class="hm-cell"
-                    class:pad={!d.inRange}
-                    class:empty={d.inRange && d.count === 0}
-                    style="background:{heatColor(d)};opacity:{heatAlpha(d.count, activityCells.max)}"
-                    onmouseover={() => { hmHover = d; }}
-                    onfocus={() => { hmHover = d; }}
-                    onmouseleave={() => { hmHover = null; }}
-                    onblur={() => { hmHover = null; }}
-                    aria-label="{d.date.getMonth() + 1}/{d.date.getDate()}: {d.count} attempt{d.count !== 1 ? 's' : ''}"
-                  ></button>
+            <div class="hm-main" style="width:{activityCells.gridW}px">
+              <div class="hm-month-track">
+                {#each activityCells.monthLabels as m}
+                  <span class="hm-month" style="left:{m.left}px">{m.label}</span>
                 {/each}
-              {/each}
+              </div>
+              <div class="hm-grid" style="--cell:{activityCells.cell}px;grid-template-columns:repeat({activityCells.weeks.length}, var(--cell))">
+                {#each activityCells.weeks as w}
+                  {#each w.days as d}
+                    <button
+                      class="hm-cell"
+                      class:pad={!d.inRange}
+                      class:empty={d.inRange && d.count === 0}
+                      style="background:{heatColor(d)};opacity:{heatAlpha(d.count, activityCells.max)}"
+                      onmouseover={() => { hmHover = d; }}
+                      onfocus={() => { hmHover = d; }}
+                      onmouseleave={() => { hmHover = null; }}
+                      onblur={() => { hmHover = null; }}
+                      aria-label="{d.date.getMonth() + 1}/{d.date.getDate()}: {d.count} attempt{d.count !== 1 ? 's' : ''}"
+                    ></button>
+                  {/each}
+                {/each}
+              </div>
             </div>
           </div>
           <div class="hm-legend">
@@ -1785,12 +1796,12 @@
 
   .an-svg{display:block;max-width:100%;}
   /* Activity heatmap */
-  .hm{min-width:0;}
-  .hm-months{display:grid;grid-template-columns:20px minmax(0,1fr);gap:6px;margin-bottom:2px;}
-  .hm-month-track{position:relative;display:block;height:13px;min-width:0;}
+  .hm{min-width:0;overflow-x:auto;}
+  .hm-month-track{position:relative;display:block;height:13px;margin-bottom:2px;min-width:0;}
   .hm-month{position:absolute;top:0;font-size:9px;color:var(--text-muted);white-space:nowrap;}
-  .hm-body{display:flex;gap:6px;min-width:0;}
-  .hm-days{display:grid;grid-template-rows:repeat(7, var(--cell, 14px));gap:4px;flex:none;}
+  .hm-body{display:flex;gap:6px;min-width:0;align-items:flex-start;}
+  .hm-main{min-width:0;}
+  .hm-days{display:grid;grid-template-rows:repeat(7, var(--cell, 14px));gap:4px;flex:none;margin-top:15px;}
   .hm-days span{font-size:8px;color:var(--text-muted);display:flex;align-items:center;}
   .hm-grid{
     display:grid;grid-auto-flow:column;grid-template-rows:repeat(7, var(--cell, 14px));
