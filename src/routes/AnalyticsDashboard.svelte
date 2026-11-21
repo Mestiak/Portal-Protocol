@@ -1892,7 +1892,7 @@
               </span>
               <span class="hl-val">{fmtCompact(h.healing)}</span>
               <span class="hl-sub">{fmtCompact(h.downedHealing)} downed · {h.logs} log{h.logs !== 1 ? 's' : ''}</span>
-              {#if h.sources.length > 0}<span class="hl-src">{h.sources.map(s => s.name).join(' - ')}</span>{/if}
+              {#if h.sources.length > 0}<span class="hl-src">{h.sources.map(s => `${s.name} (${fmtCompact(s.healing)})`).join(' - ')}</span>{/if}
             </div>
           {/each}
         </div>
