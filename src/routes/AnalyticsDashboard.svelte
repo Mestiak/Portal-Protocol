@@ -6,7 +6,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
   import { listen } from '@tauri-apps/api/event';
-  import { aggregateStats, getAvailableBosses, clearAnalyticsCache, buildMultiPlayerDpsSeries, cleanAccountName, aggregatePlayers, getFilteredCerusUrls, buildCerusLeaderboardRows, type CerusLeaderboardRow, type CerusPerLog } from '../lib/analyticsEngine';
+  import { aggregateStats, getAvailableBosses, clearAnalyticsCache, buildMultiPlayerDpsSeries, cleanAccountName, aggregatePlayers, getFilteredCerusUrls, buildCerusLeaderboardRows, filterLogs, parseLogDate, type CerusLeaderboardRow, type CerusPerLog } from '../lib/analyticsEngine';
   import type { AnalyticsLog, MultiPlayerDpsPoint } from '../lib/analyticsEngine';
   import { extractMechanics, mergeCerusReports, MAX_AGGREGATE_LOGS, type MechanicReport } from '../lib/mechanicParser';
   import { fmtTime } from '../lib/format';
@@ -504,6 +504,34 @@
   let activityGeom = $derived(activityLayout(stats.activitySeries, activityW));
   let wipeGeom = $derived(wipeLayout(stats.wipeDepthBuckets, wipeW));
   let profRows = $derived(professionRows(stats.professionFrequency));
+
+  // ─── Attempt feed ────────────────────────────────────────────────────────────
+  // Every attempt in the current filter, newest first. This is the view that
+  // works for any boss — it needs only the upload record, not a per-boss
+  // mechanic extractor.
+  const ATTEMPT_LIMIT = 100;
+
+  let attempts = $derived.by(() => {
+    const inScope = filterLogs(logs, activeFilters)
+      .filter(l => l.success === true || l.success === false);
+    return [...inScope]
+      .sort((a, b) => parseLogDate(b.timestamp).getTime() - parseLogDate(a.timestamp).getTime())
+      .slice(0, ATTEMPT_LIMIT);
+  });
+
+  function modeLabel(l: AnalyticsLog): string {
+    if (l.is_lcm) return 'LCM';
+    if (l.is_cm) return 'CM';
+    if (l.is_convergence) return 'Conv';
+    if (l.is_wvw) return 'WvW';
+    return 'NM';
+  }
+
+  function fmtWhen(ts: string): string {
+    const d = parseLogDate(ts);
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
 
   // The comparison needs a scope: a boss, a mode, or a custom window. Without
   // one the chart would plot every log in history against every other.
@@ -1355,6 +1383,37 @@
       </div>
     </div>
 
+    <!-- Attempt feed: every attempt in the current filter, newest first -->
+    <div class="an-section">
+      <div class="an-section-head">
+        <span class="an-section-title"><i class="fa-solid fa-list"></i> Attempts</span>
+        <span class="an-muted-sm">
+          {attempts.length}{stats.totalLogs > attempts.length ? ` of ${stats.totalLogs}` : ''} attempt{stats.totalLogs !== 1 ? 's' : ''} in this filter
+        </span>
+      </div>
+      <div class="at-feed">
+        <div class="at-row at-head">
+          <span></span><span>Boss</span><span>Mode</span><span>When</span><span>Duration</span><span>Party</span>
+        </div>
+        {#each attempts as a}
+          <div class="at-row">
+            <span class="at-dot {a.success === true ? 'kill' : 'wipe'}" title={a.success === true ? 'Kill' : 'Wipe'}></span>
+            <span class="at-boss" title={a.boss_name ?? ''}>{a.boss_name ?? 'Unknown'}</span>
+            <span class="at-mode">{modeLabel(a)}</span>
+            <span class="at-time">{fmtWhen(a.timestamp)}</span>
+            <span class="at-dur">
+              {a.success === true
+                ? (a.duration != null ? fmtDur(a.duration) : '—')
+                : (a.boss_hp_left != null ? fmtPct(a.boss_hp_left) + '% left' : '—')}
+            </span>
+            <span class="at-party">{a.num_players ?? '—'}</span>
+          </div>
+        {:else}
+          <p class="an-chart-empty">No attempts in this filter</p>
+        {/each}
+      </div>
+    </div>
+
   {/if}
 </div>
 
@@ -1471,6 +1530,26 @@
   .an-prof-track{height:8px;border-radius:4px;background:color-mix(in srgb,#fff 4%,transparent);overflow:hidden;}
   .an-prof-bar{display:block;height:100%;border-radius:4px;}
   .an-prof-pct{font-size:10px;font-weight:700;color:var(--text);text-align:right;font-variant-numeric:tabular-nums;}
+  .at-feed{display:flex;flex-direction:column;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;}
+  .at-row{
+    display:grid;grid-template-columns:14px minmax(0,1fr) 46px 74px 74px 44px;
+    align-items:center;gap:8px;padding:6px 10px;min-width:0;
+    border-bottom:1px solid color-mix(in srgb,var(--border) 50%,transparent);
+    transition:background-color .14s;
+  }
+  .at-row:last-child{border-bottom:none;}
+  .at-row:not(.at-head):hover{background:color-mix(in srgb,#fff 4%,transparent);}
+  .at-head{
+    background:color-mix(in srgb,#fff 3%,transparent);
+    font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;
+    color:var(--text-muted);padding:5px 10px;
+  }
+  .at-dot{width:8px;height:8px;border-radius:50%;justify-self:center;}
+  .at-dot.kill{background:var(--success);}
+  .at-dot.wipe{background:var(--fail);}
+  .at-boss{font-size:11px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .at-mode{font-size:9px;font-weight:700;color:var(--text-muted);text-align:right;}
+  .at-time,.at-dur,.at-party{font-size:10px;color:var(--text-muted);text-align:right;font-variant-numeric:tabular-nums;}
   .an-table-wrap{overflow-x:auto;border-radius:10px;border:1px solid var(--border);}
   .an-table{width:100%;border-collapse:collapse;font-size:12px;}
   .an-table thead tr{

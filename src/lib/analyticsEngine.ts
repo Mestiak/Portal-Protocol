@@ -243,6 +243,11 @@ function applyFilters(logs: AnalyticsLog[], filters: AnalyticsFilters): Analytic
   });
 }
 
+/** The logs currently in scope for a filter set. */
+export function filterLogs(logs: AnalyticsLog[], filters: AnalyticsFilters): AnalyticsLog[] {
+  return applyFilters(logs, filters);
+}
+
 // ─── Boss breakdown ───────────────────────────────────────────────────────────
 
 function buildBossBreakdown(logs: AnalyticsLog[]): BossStats[] {
