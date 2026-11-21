@@ -505,6 +505,7 @@
   // ─── Squad defense trend ───────────────────────────────────────────────────
   // Loaded on demand: it costs one get_log_full per log in the filter, so it
   // must not run on every filter change. Same contract as the Cerus board.
+  const derivedMemo = new Map<string, unknown>();
   let defPoints = $state<DefenseTrendPoint[] | null>(null);
   let defLoading = $state(false);
   let defLoaded = $state(false);
@@ -560,17 +561,35 @@
    * Fan out one get_log_full per log in the filter and parse each report.
    * Shared by the Squad Defense and Squad Healing sections — both are loaded on
    * demand because each call reads a full EI report.
+   *
+   * Derived points are memoized per (kind, permalink). The raw report behind one
+   * is tens of MB, so caching that would trade a fast re-read for real memory
+   * pressure; the point is a few hundred bytes.
    */
   async function loadLogReports<T>(
+    kind: string,
     parse: (raw: any, rec: AnalyticsLog, res: any) => T | null,
   ): Promise<{ points: T[]; failed: number; total: number }> {
     const recs = filterLogs(logs, activeFilters).filter(l => l.url);
     const points: T[] = [];
     let failed = 0;
-    await Promise.all(recs.map(async (rec) => {
+
+    const missing: AnalyticsLog[] = [];
+    for (const rec of recs) {
+      const key = `${kind}:${rec.url}`;
+      if (derivedMemo.has(key)) {
+        const cached = derivedMemo.get(key);
+        if (cached) points.push(cached as T);
+      } else {
+        missing.push(rec);
+      }
+    }
+
+    await Promise.all(missing.map(async (rec) => {
       try {
         const res = await invoke('get_log_full', { permalink: rec.url }) as any;
         const pt = parse(res.raw, rec, res);
+        derivedMemo.set(`${kind}:${rec.url}`, pt);
         if (pt) points.push(pt);
       } catch { failed++; }
     }));
@@ -583,7 +602,7 @@
     defError = null;
     defLoading = true;
     try {
-      const { points, failed, total } = await loadLogReports((raw, rec) => {
+      const { points, failed, total } = await loadLogReports('defense', (raw, rec) => {
         const ds = extractDefenseSupport(raw);
         if (!ds) return null;
         return summarizeDefense(ds, {
@@ -669,7 +688,7 @@
     healError = null;
     healLoading = true;
     try {
-      const { points, failed, total } = await loadLogReports((raw, rec) => {
+      const { points, failed, total } = await loadLogReports('healing', (raw, rec) => {
         const durationSec = typeof raw?.durationMS === 'number' ? raw.durationMS / 1000 : (rec.duration ?? 0);
         return summarizeHealing(raw, {
           date: parseLogDate(rec.timestamp),
