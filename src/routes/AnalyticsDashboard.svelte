@@ -1653,13 +1653,17 @@
         {/if}
       </div>
 
-      {#if defLoading}
-        <div class="an-loading"><i class="fa-solid fa-spinner fa-spin"></i> Reading defense stats from {scopedAttempts.length} log{scopedAttempts.length !== 1 ? 's' : ''}…</div>
-      {:else if defError}
-        <div class="an-error">{defError}</div>
-        <button class="an-btn" onclick={loadDefenseTrend}><i class="fa-solid fa-rotate"></i> Retry</button>
-      {:else if defLoaded && defGeom}
-        <div class="an-chart-box" bind:this={defBox}>
+      <!-- The chart box is always rendered so its width can be measured: the
+           geometry depends on that width, and binding it inside the branch that
+           needs the geometry would deadlock (no box → no width → no geometry →
+           no box). -->
+      <div class="an-chart-box" bind:this={defBox}>
+        {#if defLoading}
+          <div class="an-loading"><i class="fa-solid fa-spinner fa-spin"></i> Reading defense stats from {scopedAttempts.length} log{scopedAttempts.length !== 1 ? 's' : ''}…</div>
+        {:else if defError}
+          <div class="an-error">{defError}</div>
+          <button class="an-btn" onclick={loadDefenseTrend}><i class="fa-solid fa-rotate"></i> Retry</button>
+        {:else if defLoaded && defGeom}
           <svg class="an-svg" width={defGeom.W} height={defGeom.H} viewBox="0 0 {defGeom.W} {defGeom.H}"
                role="img" aria-label="Squad mitigation rate over time"
                onmousemove={handleDefMouseMove}
@@ -1678,7 +1682,19 @@
               <text x={xl.x} y={defGeom.H - 12} class="an-axis-text" text-anchor="middle">{xl.label}</text>
             {/each}
           </svg>
-        </div>
+        {:else if defLoaded}
+          <p class="an-chart-empty">No defense data in this range</p>
+        {:else}
+          <div class="cl-empty">
+            <p>Squad-wide mitigation rate per log, across the {scopedAttempts.length} log{scopedAttempts.length !== 1 ? 's' : ''} in this filter. Reads each log's Elite Insights report, so it takes a moment on a large history.</p>
+            <button class="an-btn an-btn-primary" onclick={loadDefenseTrend}>
+              <i class="fa-solid fa-shield-halved"></i> Load Squad Defense
+            </button>
+          </div>
+        {/if}
+      </div>
+
+      {#if defLoaded}
         <div class="an-detail" aria-live="polite">
           {#if defHover}
             {@const dh = defHover}
@@ -1693,13 +1709,6 @@
           {:else}
             <span class="an-detail-hint">Hover a point for details</span>
           {/if}
-        </div>
-      {:else}
-        <div class="cl-empty">
-          <p>Squad-wide mitigation rate per log, across the {scopedAttempts.length} log{scopedAttempts.length !== 1 ? 's' : ''} in this filter. Reads each log's Elite Insights report, so it takes a moment on a large history.</p>
-          <button class="an-btn an-btn-primary" onclick={loadDefenseTrend}>
-            <i class="fa-solid fa-shield-halved"></i> Load Squad Defense
-          </button>
         </div>
       {/if}
     </div>
