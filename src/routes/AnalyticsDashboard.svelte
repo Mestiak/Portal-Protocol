@@ -492,6 +492,7 @@
   });
 
   let wipeGeom = $derived(wipeLayout(stats.wipeDepthBuckets, wipeW));
+  let wipeTotal = $derived(stats.wipeDepthBuckets.reduce((s, b) => s + b.count, 0));
   let profRows = $derived(professionRows(stats.professionFrequency));
 
   // ─── Attempt feed ────────────────────────────────────────────────────────────
@@ -1508,6 +1509,7 @@
       <div class="an-section">
         <div class="an-section-head">
           <span class="an-section-title"><i class="fa-solid fa-heart-crack"></i> Wipe Depth</span>
+          <span class="an-muted-sm">{wipeTotal} wipe{wipeTotal !== 1 ? 's' : ''} in this range</span>
         </div>
         <div class="an-chart-box" bind:this={wipeBox}>
           {#if wipeGeom}

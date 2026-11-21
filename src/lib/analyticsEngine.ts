@@ -95,13 +95,19 @@ export interface AggregatedStats {
 
 const MAX_CACHE_SIZE = 64;
 
+// Boss HP remaining at the wipe. The low end is where the interesting
+// resolution is (a 2% wipe and a 9% wipe are different), so the top bucket
+// stops at half and the rest is split into 15-point bands rather than one
+// catch-all.
 const WIPE_BUCKETS: Omit<WipeBucket, "count">[] = [
-  { label: "0-10%",  min: 0,  max: 10  },
-  { label: "10-20%", min: 10, max: 20  },
-  { label: "20-30%", min: 20, max: 30  },
-  { label: "30-40%", min: 30, max: 40  },
-  { label: "40-50%", min: 40, max: 50  },
-  { label: "50%+",   min: 50, max: 101 },
+  { label: "0-10%",  min: 0,  max: 10 },
+  { label: "10-20%", min: 10, max: 20 },
+  { label: "20-30%", min: 20, max: 30 },
+  { label: "30-40%", min: 30, max: 40 },
+  { label: "40-50%", min: 40, max: 50 },
+  { label: "50-65%", min: 50, max: 65 },
+  { label: "65-80%", min: 65, max: 80 },
+  { label: "80%+",   min: 80, max: 101 },
 ];
 
 // ─── Memoization ──────────────────────────────────────────────────────────────
