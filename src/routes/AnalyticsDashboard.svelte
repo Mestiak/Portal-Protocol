@@ -1886,23 +1886,22 @@
           {#each healSummary.healers.slice(0, 5) as h}
             {@const hIcon = profIconByName(h.profession)}
             <div class="hl-row">
-              <div class="hl-head">
-                <span class="hl-name">
-                  {#if hIcon}<img src={hIcon} alt="" class="hl-icon" />{/if}
-                  <span title={h.account}>{h.name}</span>
-                </span>
+              {#if hIcon}<img src={hIcon} alt={h.profession} class="hl-icon" />{:else}<span class="hl-icon"></span>{/if}
+              <span class="hl-who">
+                <span class="hl-name" title={h.account}>{h.name}</span>
                 <span class="hl-stats">
-                  {fmtCompact(h.healing)} healed{h.downedHealing > 0 ? ` · ${fmtCompact(h.downedHealing)} downed` : ''} · {h.logs} log{h.logs !== 1 ? 's' : ''}
+                  {h.downedHealing > 0 ? `${fmtCompact(h.downedHealing)} downed · ` : ''}{h.logs} log{h.logs !== 1 ? 's' : ''}
                 </span>
-              </div>
+              </span>
+              <span class="hl-val">{fmtCompact(h.healing)} healed</span>
               {#if h.sources.length > 0}
-                <div class="hl-src">
+                <span class="hl-src">
                   {#each h.sources as s, i}
                     {#if i > 0}<span class="hl-sep">-</span>{/if}
                     {#if s.icon}<img src={s.icon} alt="" class="hl-skill" loading="lazy" />{/if}
                     <span class="hl-src-name">{s.name} ({fmtCompact(s.healing)})</span>
                   {/each}
-                </div>
+                </span>
               {/if}
             </div>
           {/each}
@@ -2187,18 +2186,25 @@
   .hm-leg-gap{margin-left:10px;}
   .hm-leg-dot{width:8px;height:8px;border-radius:2px;display:inline-block;}
   .hm-leg-swatch{width:10px;height:10px;border-radius:2px;display:inline-block;}
-  /* Squad Healing healer table */
-  .hl-rows{display:flex;flex-direction:column;gap:6px;margin-top:10px;min-width:0;}
+  /* Squad Healing healer blocks — the death/down recap pattern */
+  .hl-rows{display:flex;flex-direction:column;gap:4px;margin-top:10px;min-width:0;}
   .hl-row{
-    display:flex;flex-direction:column;gap:2px;min-width:0;
-    padding-bottom:6px;border-bottom:1px solid color-mix(in srgb,var(--border) 60%,transparent);
+    display:grid;grid-template-columns:18px minmax(0,1fr) auto;
+    align-items:center;gap:2px 8px;
+    padding:6px 8px;border-radius:6px;
+    background:color-mix(in srgb,#fff 3%,transparent);
+    transition:background-color .14s;
   }
-  .hl-row:last-child{padding-bottom:0;border-bottom:none;}
-  .hl-head{display:flex;align-items:baseline;gap:6px;min-width:0;flex-wrap:wrap;}
-  .hl-name{display:inline-flex;align-items:center;gap:6px;min-width:0;font-weight:600;font-size:11px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .hl-icon{width:14px;height:14px;flex:none;}
-  .hl-stats{font-size:10px;color:var(--text);white-space:nowrap;}
-  .hl-src{display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-width:0;}
+  .hl-row:hover{background:color-mix(in srgb,#fff 6%,transparent);}
+  .hl-icon{width:16px;height:16px;border-radius:3px;object-fit:cover;flex:none;background:color-mix(in srgb,#fff 10%,transparent);}
+  .hl-who{display:flex;flex-direction:column;min-width:0;gap:1px;}
+  .hl-name{font-size:11px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .hl-stats{font-size:10px;color:var(--text);white-space:nowrap;font-variant-numeric:tabular-nums;}
+  .hl-val{font-size:11px;font-weight:700;color:var(--text);white-space:nowrap;font-variant-numeric:tabular-nums;}
+  .hl-src{
+    grid-column:1 / -1;display:flex;align-items:center;gap:5px;flex-wrap:wrap;
+    min-width:0;padding-top:2px;border-top:1px solid color-mix(in srgb,var(--border) 55%,transparent);
+  }
   .hl-src-name{font-size:10px;color:var(--text);white-space:nowrap;}
   .hl-skill{width:14px;height:14px;border-radius:3px;object-fit:cover;flex:none;background:color-mix(in srgb,#fff 10%,transparent);}
   .hl-sep{font-size:10px;color:var(--text-muted);}
@@ -2749,7 +2755,8 @@
     .an-toast,
     .an-progress-bar,
     .ln-dot,
-    .hm-cell {
+    .hm-cell,
+    .hl-row {
       animation: none !important;
       transition: none !important;
     }
