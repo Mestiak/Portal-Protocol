@@ -1913,7 +1913,17 @@
     <!-- Squad healing trend: healing per hour per log, loaded on demand -->
     <div class="an-section">
       <div class="an-section-head">
-        <span class="an-section-title"><i class="fa-solid fa-heart-pulse"></i> Squad Healing</span>
+        <span class="an-section-title">
+          <i class="fa-solid fa-heart-pulse"></i> Squad Healing
+          <span class="an-help custom-tooltip-container">
+            <i class="fa-solid fa-question"></i>
+            <span class="custom-tooltip custom-tooltip-box">
+              Healing comes from the arcdps Healing Stats addon. Your own numbers
+              appear only if you run it; another player's only if they run it and
+              share. Logs recorded without it have no healing data and are skipped.
+            </span>
+          </span>
+        </span>
         {#if healSummary}
           <span class="an-muted-sm">
             {healSummary.logs} log{healSummary.logs !== 1 ? 's' : ''} · avg {fmtCompact(healSummary.avgHealingPerHour)}/h
@@ -2242,6 +2252,15 @@
     letter-spacing:.03em;color:var(--text);display:flex;align-items:center;gap:7px;
   }
   .an-section-title i{color:var(--accent);font-size:12px;}
+  .an-help{
+    display:inline-flex;align-items:center;justify-content:center;
+    width:14px;height:14px;border-radius:50%;flex:none;
+    background:color-mix(in srgb,#fff 8%,transparent);
+    color:var(--text-muted);font-size:9px;
+    transition:background-color .14s,color .14s;
+  }
+  .an-help:hover{background:color-mix(in srgb,#fff 16%,transparent);color:var(--text);}
+  .an-help .custom-tooltip-box{width:300px;}
   .an-warn-pill{font-size:11px;font-weight:600;color:var(--fail);background:color-mix(in srgb,var(--fail) 12%,transparent);border:1px solid color-mix(in srgb,var(--fail) 35%,transparent);padding:3px 8px;border-radius:6px;}
   .an-loading{display:flex;align-items:center;gap:8px;padding:18px 4px;color:var(--text-muted);font-size:13px;}
   .an-error{padding:18px 4px;color:var(--fail);font-size:13px;}
@@ -2851,7 +2870,8 @@
     .an-progress-bar,
     .ln-dot,
     .hm-cell,
-    .hl-row {
+    .hl-row,
+    .an-help {
       animation: none !important;
       transition: none !important;
     }
