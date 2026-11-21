@@ -1886,13 +1886,24 @@
           {#each healSummary.healers.slice(0, 5) as h}
             {@const hIcon = profIconByName(h.profession)}
             <div class="hl-row">
-              <span class="hl-name">
-                {#if hIcon}<img src={hIcon} alt="" class="hl-icon" />{/if}
-                <span title={h.account}>{h.name}</span>
-              </span>
-              <span class="hl-val">{fmtCompact(h.healing)}</span>
-              <span class="hl-sub">{fmtCompact(h.downedHealing)} downed · {h.logs} log{h.logs !== 1 ? 's' : ''}</span>
-              {#if h.sources.length > 0}<span class="hl-src">{h.sources.map(s => `${s.name} (${fmtCompact(s.healing)})`).join(' - ')}</span>{/if}
+              <div class="hl-head">
+                <span class="hl-name">
+                  {#if hIcon}<img src={hIcon} alt="" class="hl-icon" />{/if}
+                  <span title={h.account}>{h.name}</span>
+                </span>
+                <span class="hl-stats">
+                  {fmtCompact(h.healing)} healed{h.downedHealing > 0 ? ` · ${fmtCompact(h.downedHealing)} downed` : ''} · {h.logs} log{h.logs !== 1 ? 's' : ''}
+                </span>
+              </div>
+              {#if h.sources.length > 0}
+                <div class="hl-src">
+                  {#each h.sources as s, i}
+                    {#if i > 0}<span class="hl-sep">-</span>{/if}
+                    {#if s.icon}<img src={s.icon} alt="" class="hl-skill" loading="lazy" />{/if}
+                    <span class="hl-src-name">{s.name} ({fmtCompact(s.healing)})</span>
+                  {/each}
+                </div>
+              {/if}
             </div>
           {/each}
         </div>
@@ -2177,13 +2188,20 @@
   .hm-leg-dot{width:8px;height:8px;border-radius:2px;display:inline-block;}
   .hm-leg-swatch{width:10px;height:10px;border-radius:2px;display:inline-block;}
   /* Squad Healing healer table */
-  .hl-rows{display:flex;flex-direction:column;gap:2px;margin-top:8px;min-width:0;}
-  .hl-row{display:grid;grid-template-columns:minmax(0,1fr) 74px;gap:2px 10px;align-items:baseline;font-size:11px;min-width:0;}
-  .hl-name{display:inline-flex;align-items:center;gap:6px;min-width:0;font-weight:600;color:var(--text);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
+  .hl-rows{display:flex;flex-direction:column;gap:6px;margin-top:10px;min-width:0;}
+  .hl-row{
+    display:flex;flex-direction:column;gap:2px;min-width:0;
+    padding-bottom:6px;border-bottom:1px solid color-mix(in srgb,var(--border) 60%,transparent);
+  }
+  .hl-row:last-child{padding-bottom:0;border-bottom:none;}
+  .hl-head{display:flex;align-items:baseline;gap:6px;min-width:0;flex-wrap:wrap;}
+  .hl-name{display:inline-flex;align-items:center;gap:6px;min-width:0;font-weight:600;font-size:11px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .hl-icon{width:14px;height:14px;flex:none;}
-  .hl-val{text-align:right;font-variant-numeric:tabular-nums;color:var(--text);}
-  .hl-sub{grid-column:1 / -1;color:var(--text-muted);font-size:9px;}
-  .hl-src{grid-column:1 / -1;color:var(--text-muted);font-size:9px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
+  .hl-stats{font-size:10px;color:var(--text);white-space:nowrap;}
+  .hl-src{display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-width:0;}
+  .hl-src-name{font-size:10px;color:var(--text);white-space:nowrap;}
+  .hl-skill{width:14px;height:14px;border-radius:3px;object-fit:cover;flex:none;background:color-mix(in srgb,#fff 10%,transparent);}
+  .hl-sep{font-size:10px;color:var(--text-muted);}
   .an-grid{stroke:var(--border);stroke-width:1;}
   .an-axis{stroke:var(--border);stroke-width:1;}
   .an-axis-text{fill:var(--text-muted);font-size:10px;font-family:var(--font);}

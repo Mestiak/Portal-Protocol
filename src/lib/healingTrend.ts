@@ -10,6 +10,8 @@
 
 export interface HealingSource {
   name: string;
+  /** Wiki render URL from EI's skillMap/buffMap; empty when the id is unknown. */
+  icon: string;
   healing: number;
 }
 
@@ -54,15 +56,16 @@ const str = (value: unknown, fallback = ''): string =>
   typeof value === 'string' ? value : fallback;
 
 /**
- * Name a healing source. EI keys direct healing by skill id and indirect
- * (buff-based) healing by buff id, so both maps have to be consulted.
+ * Name and icon for a healing source. EI keys direct healing by skill id and
+ * indirect (buff-based) healing by buff id, so both maps have to be consulted.
  */
-function sourceName(raw: any, id: number): string {
-  const skill = str(raw?.skillMap?.[`s${id}`]?.name);
-  if (skill) return skill;
-  const buff = str(raw?.buffMap?.[`b${id}`]?.name);
-  if (buff) return buff;
-  return `Unknown (${id})`;
+function sourceInfo(raw: any, id: number): { name: string; icon: string } {
+  const skill = raw?.skillMap?.[`s${id}`];
+  const buff = raw?.buffMap?.[`b${id}`];
+  return {
+    name: str(skill?.name) || str(buff?.name) || `Unknown (${id})`,
+    icon: str(skill?.icon) || str(buff?.icon),
+  };
 }
 
 /** Full-fight squad healing. Returns null when the log has no healing extension data. */
@@ -92,7 +95,10 @@ export function summarizeHealing(
       const sources: HealingSource[] = (Array.isArray(dist) ? dist : [])
         .slice()
         .sort((a, b) => num(b.totalHealing) - num(a.totalHealing))
-        .map(s => ({ name: sourceName(raw, num(s.id)), healing: num(s.totalHealing) }))
+        .map(s => {
+          const info = sourceInfo(raw, num(s.id));
+          return { name: info.name, icon: info.icon, healing: num(s.totalHealing) };
+        })
         .filter(s => s.healing > 0 && s.healing >= h * MIN_SOURCE_SHARE)
         .slice(0, 3);
       healers.push({
