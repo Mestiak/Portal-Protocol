@@ -9,6 +9,8 @@
   import { aggregateStats, getAvailableBosses, clearAnalyticsCache, buildMultiPlayerDpsSeries, cleanAccountName, aggregatePlayers, getFilteredCerusUrls, buildCerusLeaderboardRows, filterLogs, parseLogDate, type CerusLeaderboardRow, type CerusPerLog } from '../lib/analyticsEngine';
   import type { AnalyticsLog, MultiPlayerDpsPoint } from '../lib/analyticsEngine';
   import { extractMechanics, mergeCerusReports, MAX_AGGREGATE_LOGS, type MechanicReport } from '../lib/mechanicParser';
+  import { extractDefenseSupport } from '../lib/defenseSupport';
+  import { summarizeDefense, summarizeTrend, type DefenseTrendPoint } from '../lib/defenseTrend';
   import { fmtTime } from '../lib/format';
   import { wipeLayout, professionRows, dpsLayout } from '../lib/chartScale';
   import { buildProfessionGroups, ELITE_SPEC_ICONS, PROFESSIONS, type ProfessionGroup } from '../lib/professionData';
@@ -494,6 +496,99 @@
   let wipeGeom = $derived(wipeLayout(stats.wipeDepthBuckets, wipeW));
   let wipeTotal = $derived(stats.wipeDepthBuckets.reduce((s, b) => s + b.count, 0));
   let profRows = $derived(professionRows(stats.professionFrequency));
+
+  // ─── Squad defense trend ───────────────────────────────────────────────────
+  // Loaded on demand: it costs one get_log_full per log in the filter, so it
+  // must not run on every filter change. Same contract as the Cerus board.
+  let defPoints = $state<DefenseTrendPoint[] | null>(null);
+  let defLoading = $state(false);
+  let defLoaded = $state(false);
+  let defError = $state<string | null>(null);
+  let defBox = $state<HTMLDivElement | null>(null);
+  let defW = $state(0);
+
+  $effect(() => {
+    const el = defBox;
+    if (!el) return;
+    const ro = new ResizeObserver(() => { defW = el.clientWidth; });
+    ro.observe(el);
+    defW = el.clientWidth;
+    return () => ro.disconnect();
+  });
+
+  let defSeries = $derived((defPoints ?? []).map(p => ({
+    label: fmtDateShort(p.date),
+    players: { rate: { value: p.mitigationRate } },
+    raw: p,
+  })));
+  let defGeom = $derived(dpsLayout(defSeries, defW, {
+    keys: ['rate'],
+    color: () => 'var(--accent)',
+    hovered: null,
+  }));
+  let defHitW = $derived(
+    defSeries.length > 1 && defGeom
+      ? (defGeom.W - defGeom.PL - defGeom.PR) / (defSeries.length - 1)
+      : 20,
+  );
+  let defSummary = $derived(summarizeTrend(defPoints ?? []));
+  let defHover = $state<DefenseTrendPoint | null>(null);
+
+  function handleDefMouseMove(e: MouseEvent) {
+    const g = defGeom;
+    if (!g || g.hitboxes.length === 0) return;
+    const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+    // The geometry is in viewBox units and max-width:100% can scale the rendered
+    // SVG, so convert the cursor into viewBox space before comparing.
+    const scale = rect.width / g.W || 1;
+    const mx = (e.clientX - rect.left) / scale;
+    let closest: (typeof g.hitboxes)[number] | null = null;
+    let minDist = defHitW / 2;
+    for (const h of g.hitboxes) {
+      const d = Math.abs(mx - h.x);
+      if (d < minDist) { minDist = d; closest = h; }
+    }
+    defHover = closest ? closest.point.raw : null;
+  }
+
+  async function loadDefenseTrend() {
+    const recs = filterLogs(logs, activeFilters).filter(l => l.url);
+    if (recs.length === 0) { defError = 'No logs in the current filter scope.'; defLoaded = false; return; }
+    defError = null;
+    defLoading = true;
+    try {
+      const pts: DefenseTrendPoint[] = [];
+      let failed = 0;
+      await Promise.all(recs.map(async (rec) => {
+        try {
+          const res = await invoke('get_log_full', { permalink: rec.url }) as any;
+          const ds = extractDefenseSupport(res.raw);
+          if (!ds) return;
+          const durationSec = typeof res.raw?.durationMS === 'number'
+            ? res.raw.durationMS / 1000
+            : (rec.duration ?? 0);
+          const pt = summarizeDefense(ds, {
+            date: parseLogDate(rec.timestamp),
+            boss: rec.boss_name ?? 'Unknown',
+            success: rec.success === true,
+            durationSec,
+          });
+          if (pt) pts.push(pt);
+        } catch { failed++; }
+      }));
+      pts.sort((a, b) => a.date.getTime() - b.date.getTime());
+      defPoints = pts;
+      defLoaded = pts.length > 0;
+      if (pts.length === 0) {
+        defError = `No defense data found. ${pts.length}/${recs.length} logs parsed; ${failed} unreachable.`;
+      }
+    } catch (e) {
+      defError = String(e);
+      defLoaded = false;
+    } finally {
+      defLoading = false;
+    }
+  }
 
   // ─── Attempt feed ────────────────────────────────────────────────────────────
   // Every attempt in the current filter, newest first. This is the view that
@@ -1545,6 +1640,68 @@
           {/each}
         </div>
       </div>
+    </div>
+
+    <!-- Squad defense trend: one point per log, loaded on demand -->
+    <div class="an-section">
+      <div class="an-section-head">
+        <span class="an-section-title"><i class="fa-solid fa-shield-halved"></i> Squad Defense</span>
+        {#if defSummary}
+          <span class="an-muted-sm">
+            {defSummary.logs} log{defSummary.logs !== 1 ? 's' : ''} · avg {defSummary.avgMitigationRate.toFixed(1)}% mitigated
+          </span>
+        {/if}
+      </div>
+
+      {#if defLoading}
+        <div class="an-loading"><i class="fa-solid fa-spinner fa-spin"></i> Reading defense stats from {scopedAttempts.length} log{scopedAttempts.length !== 1 ? 's' : ''}…</div>
+      {:else if defError}
+        <div class="an-error">{defError}</div>
+        <button class="an-btn" onclick={loadDefenseTrend}><i class="fa-solid fa-rotate"></i> Retry</button>
+      {:else if defLoaded && defGeom}
+        <div class="an-chart-box" bind:this={defBox}>
+          <svg class="an-svg" width={defGeom.W} height={defGeom.H} viewBox="0 0 {defGeom.W} {defGeom.H}"
+               role="img" aria-label="Squad mitigation rate over time"
+               onmousemove={handleDefMouseMove}
+               onmouseleave={() => { defHover = null; }}>
+            {#each defGeom.grid as g}
+              <line x1={defGeom.PL} y1={g.y} x2={defGeom.W - defGeom.PR} y2={g.y} class="an-grid" />
+              <text x={defGeom.PL - 6} y={g.y + 4} class="an-axis-text" text-anchor="end">{Math.round(g.val)}%</text>
+            {/each}
+            {#each defGeom.lines as l}
+              <polyline points={l.points} fill="none" stroke={l.color} stroke-width="2" stroke-linejoin="round" />
+              {#each l.dots as d}
+                <circle cx={d.x} cy={d.y} r="3.5" fill={l.color} />
+              {/each}
+            {/each}
+            {#each defGeom.xLabels as xl}
+              <text x={xl.x} y={defGeom.H - 12} class="an-axis-text" text-anchor="middle">{xl.label}</text>
+            {/each}
+          </svg>
+        </div>
+        <div class="an-detail" aria-live="polite">
+          {#if defHover}
+            {@const dh = defHover}
+            <span class="an-detail-title">{dh.boss}</span>
+            <span class="an-muted-sm">{fmtDateShort(dh.date)}{dh.success ? ' · kill' : ' · wipe'}</span>
+            <span class="an-detail-val">{dh.mitigationRate.toFixed(1)}% mitigated · {dh.downs} downs ({dh.downsPerHour.toFixed(1)}/h)</span>
+            <span class="an-detail-val">{dh.cleanses} cleanses · {dh.strips} strips · {dh.revives} revives</span>
+          {:else if defSummary}
+            <span class="an-detail-title">{defSummary.avgMitigationRate.toFixed(1)}% mitigated</span>
+            <span class="an-muted-sm">{defSummary.avgDownsPerHour.toFixed(1)} downs/h</span>
+            <span class="an-detail-val">{defSummary.cleanses} cleanses · {defSummary.strips} strips · {defSummary.revives} revives</span>
+          {:else}
+            <span class="an-detail-hint">Hover a point for details</span>
+          {/if}
+        </div>
+      {:else}
+        <div class="cl-empty">
+          <p>Squad-wide mitigation rate per log, across the {scopedAttempts.length} log{scopedAttempts.length !== 1 ? 's' : ''} in this filter. Reads each log's Elite Insights report, so it takes a moment on a large history.</p>
+          <button class="an-btn an-btn-primary" onclick={loadDefenseTrend}>
+            <i class="fa-solid fa-shield-halved"></i> Load Squad Defense
+          </button>
+        </div>
+      {/if}
     </div>
 
     <!-- Boss breakdown table -->
