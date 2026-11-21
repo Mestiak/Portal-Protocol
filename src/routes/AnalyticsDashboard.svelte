@@ -1530,7 +1530,7 @@
           <span class="an-section-title"><i class="fa-solid fa-trophy"></i> Cerus Leaderboard</span>
           <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
             {#if cerusScopeUrls.length > MAX_AGGREGATE_LOGS}
-              <span class="an-warn">⚠ {cerusScopeUrls.length} logs — averages may be skewed</span>
+              <span class="an-warn-pill">⚠ {cerusScopeUrls.length} logs — averages may be skewed</span>
             {/if}
             {#if cerusLoaded && cerusLogCount > 0}
               <span class="an-muted-sm">Aggregated from {cerusLogCount} log{cerusLogCount === 1 ? '' : 's'}</span>
@@ -1715,7 +1715,7 @@
     letter-spacing:.03em;color:var(--text);display:flex;align-items:center;gap:7px;
   }
   .an-section-title i{color:var(--accent);font-size:12px;}
-  .an-warn{font-size:11px;font-weight:600;color:var(--fail);background:color-mix(in srgb,var(--fail) 12%,transparent);border:1px solid color-mix(in srgb,var(--fail) 35%,transparent);padding:3px 8px;border-radius:6px;}
+  .an-warn-pill{font-size:11px;font-weight:600;color:var(--fail);background:color-mix(in srgb,var(--fail) 12%,transparent);border:1px solid color-mix(in srgb,var(--fail) 35%,transparent);padding:3px 8px;border-radius:6px;}
   .an-loading{display:flex;align-items:center;gap:8px;padding:18px 4px;color:var(--text-muted);font-size:13px;}
   .an-error{padding:18px 4px;color:var(--fail);font-size:13px;}
   .an-muted-sm{font-size:11px;color:var(--text-muted);}
