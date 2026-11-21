@@ -117,9 +117,37 @@ const WIPE_BUCKETS: Omit<WipeBucket, "count">[] = [
 
 const memo = new Map<string, AggregatedStats>();
 
+// FNV-1a over the fields Analytics actually reads. The previous key (log count +
+// summed timestamp lengths + first/last timestamp) missed in-place mutations:
+// a backfilled players[].dps or a re-enriched boss_hp_left left the memo serving
+// stale stats. A separator is mixed after each field so "ab"+"c" and "a"+"bc"
+// cannot collide.
+function hashLogs(logs: AnalyticsLog[]): string {
+  let h = 0x811c9dc5;
+  const mix = (v: string | number | boolean | null | undefined) => {
+    const s = String(v);
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 0x01000193);
+    }
+    h ^= 0x1f;
+    h = Math.imul(h, 0x01000193);
+  };
+  for (const l of logs) {
+    mix(l.timestamp); mix(l.status); mix(l.boss_name); mix(l.success);
+    mix(l.duration); mix(l.is_cm); mix(l.is_lcm); mix(l.is_wvw);
+    mix(l.is_convergence); mix(l.is_story); mix(l.num_players);
+    mix(l.boss_hp_left); mix(l.url);
+    for (const p of l.players ?? []) {
+      mix(p.account); mix(p.display_name); mix(p.profession);
+      mix(p.elite_spec); mix(p.dps); mix(p.cleave_dps);
+    }
+  }
+  return (h >>> 0).toString(36);
+}
+
 function memoKey(logs: AnalyticsLog[], filters: AnalyticsFilters): string {
-  const fp = `${logs.length}|${logs.reduce((a, l) => a + (l.timestamp?.length ?? 0), 0)}|${logs[0]?.timestamp ?? ''}|${logs[logs.length - 1]?.timestamp ?? ''}`;
-  return `${fp}|${filters.boss}|${filters.mode}|${filters.range}|${filters.profession ?? 'all'}|${filters.professionKind ?? 'all'}|${filters.customStart ?? ''}|${filters.customEnd ?? ''}|${filters.customStartTime ?? ''}|${filters.customEndTime ?? ''}`;
+  return `${hashLogs(logs)}|${filters.boss}|${filters.mode}|${filters.range}|${filters.profession ?? 'all'}|${filters.professionKind ?? 'all'}|${filters.customStart ?? ''}|${filters.customEnd ?? ''}|${filters.customStartTime ?? ''}|${filters.customEndTime ?? ''}`;
 }
 
 function memoSet(key: string, value: AggregatedStats): void {
@@ -164,8 +192,6 @@ function isRelevant(log: AnalyticsLog): boolean {
 
 function passesMode(log: AnalyticsLog, mode: string): boolean {
   if (mode === "all") return true;
-  if (mode === "wvw") return !!log.is_wvw;
-  if (mode === "convergence") return !!log.is_convergence;
   if (mode === "lcm") return !!log.is_lcm;
   if (mode === "cm") return !!log.is_cm && !log.is_lcm;
   if (mode === "nm") return !log.is_cm && !log.is_lcm && !log.is_convergence && !log.is_wvw;

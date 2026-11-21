@@ -6,8 +6,8 @@
   import { onDestroy, onMount } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
   import { listen } from '@tauri-apps/api/event';
-  import { aggregateStats, getAvailableBosses, clearAnalyticsCache, buildPersonalDpsSeries, buildMultiPlayerDpsSeries, cleanAccountName, aggregatePlayers, isCerusLog, getFilteredCerusUrls, buildCerusLeaderboardRows, defaultCerusSort, type CerusLeaderboardRow } from '../lib/analyticsEngine';
-  import type { AnalyticsLog, ActivityPoint, WipeBucket, ProfessionCount, PersonalDpsPoint, MultiPlayerDpsPoint, PlayerDpsMatch } from '../lib/analyticsEngine';
+  import { aggregateStats, getAvailableBosses, clearAnalyticsCache, buildMultiPlayerDpsSeries, cleanAccountName, aggregatePlayers, getFilteredCerusUrls, buildCerusLeaderboardRows, type CerusLeaderboardRow, type CerusPerLog } from '../lib/analyticsEngine';
+  import type { AnalyticsLog, ActivityPoint, WipeBucket, ProfessionCount, MultiPlayerDpsPoint } from '../lib/analyticsEngine';
   import { extractMechanics, mergeCerusReports, MAX_AGGREGATE_LOGS, type MechanicReport } from '../lib/mechanicParser';
   import { fmtTime } from '../lib/format';
   import { buildProfessionGroups, ELITE_SPEC_ICONS, PROFESSIONS, type ProfessionGroup } from '../lib/professionData';
@@ -117,10 +117,6 @@
   // getFilteredCerusUrls (same filters as the rest of the tab). Builds ONLY on
   // explicit click — the active watcher mutates `logs` every few minutes, so an
   // auto-effect would rebuild/refetch constantly (lag + wobbling numbers).
-  type CerusPerLog = {
-    orbs: number[]; empowered: number[]; rageHits: number[];
-    shadows: number[]; stripped: number[]; orbEff: number[]; bestPull: number[];
-  };
   let cerusCohort = $state<MechanicReport | null>(null);
   let cerusPerLog = $state<CerusPerLog | null>(null);
   // AVG DPS comes from the SAME record-level source as the "Top Players" chart
@@ -1105,8 +1101,6 @@
         <option value="nm">Normal Mode</option>
         <option value="cm">Challenge Mode</option>
         <option value="lcm">Legendary CM</option>
-        <option value="convergence">Convergence</option>
-        <option value="wvw">WvW</option>
       </select>
       <div class="an-pills">
         {#each [['7d','7 Days'],['30d','30 Days'],['90d','90 Days'],['all','All Time'],['custom','Custom']] as [v,l]}
@@ -1852,11 +1846,11 @@
     background: rgba(255,255,255,0.12);
   }
   .an-btn-danger {
-    border-color: color-mix(in srgb, var(--red) 50%, var(--border));
-    color: var(--red);
+    border-color: color-mix(in srgb, var(--fail) 50%, var(--border));
+    color: var(--fail);
   }
   .an-btn-danger:hover {
-    background: color-mix(in srgb, var(--red) 12%, transparent);
+    background: color-mix(in srgb, var(--fail) 12%, transparent);
   }
 
   /* Date Range Input */
@@ -2182,6 +2176,10 @@
     animation: slideUp 0.25s ease-out;
   }
   /* Shimmer Skeleton Loaders */
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
   @keyframes shimmer {
     0% { background-position: -200% 0; }
     100% { background-position: 200% 0; }
@@ -2236,5 +2234,20 @@
     background: linear-gradient(90deg, rgba(255,255,255,0.02) 25%, rgba(255,255,255,0.04) 50%, rgba(255,255,255,0.02) 75%);
     background-size: 200% 100%;
     animation: shimmer 1.5s infinite linear;
+  }
+
+  /* Reduced motion: the skeleton shimmer loops forever, so it needs an
+     explicit opt-out. */
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton-val,
+    .skeleton-label,
+    .skeleton-chart-header,
+    .skeleton-chart-body,
+    .an-acc-menu,
+    .an-toast,
+    .an-progress-bar {
+      animation: none !important;
+      transition: none !important;
+    }
   }
 </style>

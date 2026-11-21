@@ -1332,14 +1332,3 @@ export function mergeCerusReports(reports: MechanicReport[]): MechanicReport | n
     revealedBreakers: [],
   };
 }
-
-// Count Cerus (Cerus CM/LCM) logs in a set of UploadRecords, for the Mechanics
-// tab boss-rail badge. Reads the cached dps.report boss_name when present.
-export function countCerusLogs(records: { boss_name?: string | null; url?: string | null }[]): number {
-  let n = 0;
-  for (const r of records) {
-    const bn = (r.boss_name || "").toLowerCase();
-    if (bn.includes("cerus")) n++;
-  }
-  return n;
-}
