@@ -6,11 +6,15 @@
   import { onDestroy, onMount } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
   import { listen } from '@tauri-apps/api/event';
-  import { aggregateStats, getAvailableBosses, clearAnalyticsCache, buildMultiPlayerDpsSeries, cleanAccountName, aggregatePlayers, getFilteredCerusUrls, buildCerusLeaderboardRows, type CerusLeaderboardRow, type CerusPerLog } from '../lib/analyticsEngine';
-  import type { AnalyticsLog, ActivityPoint, WipeBucket, ProfessionCount, MultiPlayerDpsPoint } from '../lib/analyticsEngine';
+  import { aggregateStats, getAvailableBosses, clearAnalyticsCache, buildMultiPlayerDpsSeries, cleanAccountName, aggregatePlayers, getFilteredCerusUrls, buildCerusLeaderboardRows, filterLogs, parseLogDate, SQUAD_SIZE_BANDS, type CerusLeaderboardRow, type CerusPerLog } from '../lib/analyticsEngine';
+  import type { AnalyticsLog, MultiPlayerDpsPoint } from '../lib/analyticsEngine';
   import { extractMechanics, mergeCerusReports, MAX_AGGREGATE_LOGS, type MechanicReport } from '../lib/mechanicParser';
-  import { fmtTime } from '../lib/format';
-  import { buildProfessionGroups, ELITE_SPEC_ICONS, PROFESSIONS, type ProfessionGroup } from '../lib/professionData';
+  import { extractDefenseSupport } from '../lib/defenseSupport';
+  import { summarizeDefense, summarizeTrend, type DefenseTrendPoint } from '../lib/defenseTrend';
+  import { summarizeHealing, summarizeHealingTrend, type HealingTrendPoint } from '../lib/healingTrend';
+  import { fmtTime, toCsv } from '../lib/format';
+  import { wipeLayout, professionRows, dpsLayout } from '../lib/chartScale';
+  import { buildProfessionGroups, ELITE_SPEC_ICONS, PROFESSIONS, PROFESSION_NAME_ICONS, type ProfessionGroup } from '../lib/professionData';
   import CerusLeaderboard from './CerusLeaderboard.svelte';
 
   // ─── Props ─────────────────────────────────────────────────────────────────
@@ -23,6 +27,8 @@
   // Profession filter (core or specific elite spec), two-step modal like Feed/History.
   let professionFilter = $state<string | number>('all');
   let professionKind = $state<'all' | 'core' | 'spec'>('all');
+  let squadSizeFilter = $state('any');
+  let playerFilter = $state('');
   const professionGroups: ProfessionGroup[] = buildProfessionGroups();
   // Resolve a player's profession icon: elite-spec icon when they run one,
   // otherwise the core profession icon. Used in the comparison tooltip.
@@ -30,6 +36,10 @@
     if (eliteSpec && ELITE_SPEC_ICONS[eliteSpec]) return ELITE_SPEC_ICONS[eliteSpec];
     if (profession && PROFESSIONS[profession]) return PROFESSIONS[profession].icon;
     return '';
+  }
+  // For data that carries a profession name instead of an id (EI reports).
+  function profIconByName(name: string): string {
+    return PROFESSION_NAME_ICONS[(name ?? '').trim().toLowerCase()] ?? '';
   }
   // Two-step modal navigation: null = closed, "core" = core list, number = that core's specs.
   let profStep = $state<null | "core" | number>(null);
@@ -79,14 +89,9 @@
   // re-seeds the top players for that window.
   let lastReseedScope = $state<string | null>(null);
   // Tooltip state for performance chart
-  let tooltipData = $state<{
-    visible: boolean;
-    x: number;
-    y: number;
-    flip: boolean; // true → render below the dot (avoids clipping the top edge)
-    point: MultiPlayerDpsPoint | null;
-  }>({ visible: false, x: 0, y: 0, flip: false, point: null });
-  let tooltipEl = $state<HTMLDivElement | null>(null);
+  let tooltipData = $state<{ visible: boolean; point: MultiPlayerDpsPoint | null }>({
+    visible: false, point: null
+  });
 
   // Backfill Control State
   let isBackfilling = $state(false);
@@ -105,6 +110,8 @@
     range: rangeFilter,
     profession: professionFilter,
     professionKind,
+    squadSize: squadSizeFilter,
+    player: playerFilter,
     customStart: customStartDate,
     customEnd: customEndDate,
     customStartTime: customStartTime,
@@ -245,13 +252,13 @@
     const cards: { icon: string; text: string; tone: 'good' | 'bad' | 'neutral' }[] = [];
     const top = aggregatePlayers(logs, activeFilters)[0];
     if (top && top.avgDps > 0) {
-      cards.push({ icon: '🔥', text: `${top.account} leads at ${top.avgDps.toLocaleString()} avg DPS`, tone: 'neutral' });
+      cards.push({ icon: 'fa-solid fa-fire', text: `${top.account} leads at ${top.avgDps.toLocaleString()} avg DPS`, tone: 'neutral' });
     }
     if (cardTrends) {
       const r = cardTrends.rate;
       if (!r.same) {
         cards.push({
-          icon: r.good ? '📈' : '📉',
+          icon: r.good ? 'fa-solid fa-arrow-trend-up' : 'fa-solid fa-arrow-trend-down',
           text: `Kill rate ${r.up ? 'up' : 'down'} ${fmtKpiDelta(r, 'pct')} vs prev`,
           tone: r.good ? 'good' : 'bad'
         });
@@ -259,7 +266,7 @@
     }
     const mostWiped = [...stats.bossBreakdown].sort((a, b) => b.wipes - a.wipes)[0];
     if (mostWiped && mostWiped.wipes > 0) {
-      cards.push({ icon: '⚠️', text: `Most wipes on ${mostWiped.boss} (${mostWiped.wipes})`, tone: 'bad' });
+      cards.push({ icon: 'fa-solid fa-triangle-exclamation', text: `Most wipes on ${mostWiped.boss} (${mostWiped.wipes})`, tone: 'bad' });
     }
     return cards;
   });
@@ -467,405 +474,515 @@
     });
   });
 
-  // Store point hitboxes for multi-player performance chart tooltips
-  let dpsPointHitboxes: { x: number; y: number; point: MultiPlayerDpsPoint }[] = [];
+  // ─── Chart geometry ────────────────────────────────────────────────────────
+  // SVG charts draw in their own coordinate space, so each chart measures its
+  // container; the layout itself lives in lib/chartScale.ts.
 
-  // ─── Canvas refs ───────────────────────────────────────────────────────────
-  let activityCanvas = $state<HTMLCanvasElement | null>(null);
-  let wipeCanvas = $state<HTMLCanvasElement | null>(null);
-  let dpsCanvas = $state<HTMLCanvasElement | null>(null);
+  let activityBox = $state<HTMLDivElement | null>(null);
+  let wipeBox = $state<HTMLDivElement | null>(null);
+  let wipeW = $state(0);
+  let dpsBox = $state<HTMLDivElement | null>(null);
+  let dpsW = $state(0);
 
-  let activityRO: ResizeObserver | null = null;
-  let wipeRO: ResizeObserver | null = null;
-  let dpsRO: ResizeObserver | null = null;
+  $effect(() => {
+    const el = wipeBox;
+    if (!el) return;
+    const ro = new ResizeObserver(() => { wipeW = el.clientWidth; });
+    ro.observe(el);
+    wipeW = el.clientWidth;
+    return () => ro.disconnect();
+  });
 
-  // ─── Chart drawing helpers ─────────────────────────────────────────────────
-  const KILL_COLOR = '#10b981';
-  const WIPE_COLOR = '#ef4444';
-  const GRID_COLOR = 'rgba(255,255,255,0.06)';
-  const TEXT_COLOR = '#94a3b8';
-  const AXIS_COLOR = 'rgba(255,255,255,0.12)';
+  $effect(() => {
+    const el = dpsBox;
+    if (!el) return;
+    const ro = new ResizeObserver(() => { dpsW = el.clientWidth; });
+    ro.observe(el);
+    dpsW = el.clientWidth;
+    return () => ro.disconnect();
+  });
 
-  function setupCanvas(canvas: HTMLCanvasElement): { ctx: CanvasRenderingContext2D; W: number; H: number } | null {
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-    const dpr = window.devicePixelRatio || 1;
-    const W = canvas.clientWidth;
-    const H = canvas.clientHeight;
-    if (W === 0 || H === 0) return null;
-    canvas.width  = W * dpr;
-    canvas.height = H * dpr;
-    ctx.scale(dpr, dpr);
-    return { ctx, W, H };
+  let wipeGeom = $derived(wipeLayout(stats.wipeDepthBuckets, wipeW));
+  let wipeTotal = $derived(stats.wipeDepthBuckets.reduce((s, b) => s + b.count, 0));
+  let profRows = $derived(professionRows(stats.professionFrequency));
+
+  // ─── Squad defense trend ───────────────────────────────────────────────────
+  // Loaded on demand: it costs one get_log_full per log in the filter, so it
+  // must not run on every filter change. Same contract as the Cerus board.
+  const derivedMemo = new Map<string, unknown>();
+  let defPoints = $state<DefenseTrendPoint[] | null>(null);
+  let defLoading = $state(false);
+  let defLoaded = $state(false);
+  let defError = $state<string | null>(null);
+  let defBox = $state<HTMLDivElement | null>(null);
+  let defW = $state(0);
+
+  $effect(() => {
+    const el = defBox;
+    if (!el) return;
+    const ro = new ResizeObserver(() => { defW = el.clientWidth; });
+    ro.observe(el);
+    defW = el.clientWidth;
+    return () => ro.disconnect();
+  });
+
+  let defSeries = $derived((defPoints ?? []).map(p => ({
+    label: fmtDateShort(p.date),
+    players: { rate: { value: p.mitigationRate } },
+    raw: p,
+  })));
+  let defGeom = $derived(dpsLayout(defSeries, defW, {
+    keys: ['rate'],
+    color: () => 'var(--accent)',
+    hovered: null,
+  }));
+  let defHitW = $derived(
+    defSeries.length > 1 && defGeom
+      ? (defGeom.W - defGeom.PL - defGeom.PR) / (defSeries.length - 1)
+      : 20,
+  );
+  let defSummary = $derived(summarizeTrend(defPoints ?? []));
+  let defHover = $state<DefenseTrendPoint | null>(null);
+
+  function handleDefMouseMove(e: MouseEvent) {
+    const g = defGeom;
+    if (!g || g.hitboxes.length === 0) return;
+    const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+    // The geometry is in viewBox units and max-width:100% can scale the rendered
+    // SVG, so convert the cursor into viewBox space before comparing.
+    const scale = rect.width / g.W || 1;
+    const mx = (e.clientX - rect.left) / scale;
+    let closest: (typeof g.hitboxes)[number] | null = null;
+    let minDist = defHitW / 2;
+    for (const h of g.hitboxes) {
+      const d = Math.abs(mx - h.x);
+      if (d < minDist) { minDist = d; closest = h; }
+    }
+    defHover = closest ? closest.point.raw : null;
   }
 
-  function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number | number[]) {
-    const [tl, tr, br, bl] = Array.isArray(r) ? r : [r, r, r, r];
-    ctx.beginPath();
-    ctx.moveTo(x + tl, y);
-    ctx.lineTo(x + w - tr, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + tr);
-    ctx.lineTo(x + w, y + h - br);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - br, y + h);
-    ctx.lineTo(x + bl, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - bl);
-    ctx.lineTo(x, y + tl);
-    ctx.quadraticCurveTo(x, y, x + tl, y);
-    ctx.closePath();
+  /**
+   * Fan out one get_log_full per log in the filter and parse each report.
+   * Shared by the Squad Defense and Squad Healing sections — both are loaded on
+   * demand because each call reads a full EI report.
+   *
+   * Derived points are memoized per (kind, permalink). The raw report behind one
+   * is tens of MB, so caching that would trade a fast re-read for real memory
+   * pressure; the point is a few hundred bytes.
+   */
+  async function loadLogReports<T>(
+    kind: string,
+    parse: (raw: any, rec: AnalyticsLog, res: any) => T | null,
+  ): Promise<{ points: T[]; failed: number; total: number }> {
+    const recs = filterLogs(logs, activeFilters).filter(l => l.url);
+    const points: T[] = [];
+    let failed = 0;
+
+    const missing: AnalyticsLog[] = [];
+    for (const rec of recs) {
+      const key = `${kind}:${rec.url}`;
+      if (derivedMemo.has(key)) {
+        const cached = derivedMemo.get(key);
+        if (cached) points.push(cached as T);
+      } else {
+        missing.push(rec);
+      }
+    }
+
+    await Promise.all(missing.map(async (rec) => {
+      try {
+        const res = await invoke('get_log_full', { permalink: rec.url }) as any;
+        const pt = parse(res.raw, rec, res);
+        derivedMemo.set(`${kind}:${rec.url}`, pt);
+        if (pt) points.push(pt);
+      } catch { failed++; }
+    }));
+    return { points, failed, total: recs.length };
   }
 
-  function drawActivity(canvas: HTMLCanvasElement, series: ActivityPoint[]) {
-    const s = setupCanvas(canvas);
-    if (!s) return;
-    const { ctx, W, H } = s;
-    ctx.clearRect(0, 0, W, H);
-    if (series.length === 0) return;
-    const PL = 36, PR = 12, PT = 12, PB = 40;
-    const cW = W - PL - PR, cH = H - PT - PB;
-    const maxV = Math.max(...series.map(p => p.total), 1);
-    const gap = 4;
-    const bW = Math.max(4, (cW - gap * (series.length - 1)) / series.length);
-    ctx.font = '10px system-ui';
-    for (let i = 0; i <= 4; i++) {
-      const y = PT + cH * (1 - i / 4);
-      ctx.strokeStyle = GRID_COLOR; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(PL, y); ctx.lineTo(W - PR, y); ctx.stroke();
-      if (i > 0) {
-        ctx.fillStyle = TEXT_COLOR; ctx.textAlign = 'right';
-        ctx.fillText(String(Math.round(maxV * i / 4)), PL - 4, y + 4);
-      }
-    }
-    for (let i = 0; i < series.length; i++) {
-      const p = series[i];
-      const x = PL + i * (bW + gap);
-      if (p.wipes > 0) {
-        const h = (p.wipes / maxV) * cH;
-        ctx.fillStyle = WIPE_COLOR;
-        rr(ctx, x, PT + cH - h, bW, h, [3, 3, 0, 0]); ctx.fill();
-      }
-      if (p.kills > 0) {
-        const hW = (p.wipes / maxV) * cH;
-        const hK = (p.kills / maxV) * cH;
-        ctx.fillStyle = KILL_COLOR;
-        rr(ctx, x, PT + cH - hW - hK, bW, hK, [3, 3, 0, 0]); ctx.fill();
-      }
-      const step = series.length <= 14 ? 1 : series.length <= 30 ? 3 : 7;
-      if (i % step === 0) {
-        ctx.fillStyle = TEXT_COLOR; ctx.textAlign = 'center';
-        ctx.fillText(p.label, x + bW / 2, H - PB + 14);
-      }
-    }
-    ctx.strokeStyle = AXIS_COLOR; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(PL, PT + cH); ctx.lineTo(W - PR, PT + cH); ctx.stroke();
-  }
-
-  function drawWipeProf(canvas: HTMLCanvasElement, buckets: WipeBucket[], professions: ProfessionCount[]) {
-    const s = setupCanvas(canvas);
-    if (!s) return;
-    const { ctx, W, H } = s;
-    ctx.clearRect(0, 0, W, H);
-    const half = W / 2;
-    const PL = 52, PR = 12, PT = 12, PB = 16;
-    const cH = H - PT - PB;
-    const maxC = Math.max(...buckets.map(b => b.count), 1);
-    const gap = 6;
-    const bH = (cH - gap * (buckets.length - 1)) / buckets.length;
-    const cW = half - PL - PR;
-    ctx.font = '10px system-ui';
-    for (let i = 0; i < buckets.length; i++) {
-      const b = buckets[i];
-      const y = PT + i * (bH + gap);
-      const bL = b.count > 0 ? (b.count / maxC) * cW : 0;
-      ctx.fillStyle = 'rgba(255,255,255,0.04)'; rr(ctx, PL, y, cW, bH, 4); ctx.fill();
-      if (bL > 0) {
-        const g = ctx.createLinearGradient(PL, 0, PL + bL, 0);
-        g.addColorStop(0, '#6366f1'); g.addColorStop(1, '#a78bfa');
-        ctx.fillStyle = g; rr(ctx, PL, y, bL, bH, 4); ctx.fill();
-      }
-      ctx.fillStyle = TEXT_COLOR; ctx.textAlign = 'right';
-      ctx.fillText(b.label, PL - 6, y + bH / 2 + 4);
-      if (b.count > 0) {
-        ctx.fillStyle = '#fff'; ctx.textAlign = 'left';
-        ctx.fillText(String(b.count), PL + bL + 4, y + bH / 2 + 4);
-      }
-    }
-    ctx.strokeStyle = AXIS_COLOR; ctx.lineWidth = 1;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath(); ctx.moveTo(half, PT); ctx.lineTo(half, H - PB); ctx.stroke();
-    ctx.setLineDash([]);
-    
-    // Squad Composition Chart Layout (Fixed overflow)
-    const PL2 = half + 80;
-    const PR2 = 45;
-    const maxBarW = Math.max(20, W - PL2 - PR2);
-    const top = professions.slice(0, 6);
-    if (top.length === 0) {
-      ctx.fillStyle = TEXT_COLOR; ctx.textAlign = 'center';
-      ctx.fillText('No profession data', half + (W - half) / 2, H / 2);
-      return;
-    }
-    const maxP = Math.max(...top.map(p => p.count), 1);
-    const pbH = Math.min(24, (cH - gap * (top.length - 1)) / top.length);
-    const pGap = Math.max(gap, (cH - pbH * top.length) / (top.length + 1));
-    for (let i = 0; i < top.length; i++) {
-      const p = top[i];
-      const y = PT + pGap + i * (pbH + pGap);
-      const bL = (p.count / maxP) * maxBarW;
-      ctx.fillStyle = 'rgba(255,255,255,0.04)'; rr(ctx, PL2, y, maxBarW, pbH, 4); ctx.fill();
-      ctx.fillStyle = p.color; ctx.globalAlpha = 0.85;
-      rr(ctx, PL2, y, bL, pbH, 4); ctx.fill();
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = TEXT_COLOR; ctx.textAlign = 'right';
-      let displayName = p.name;
-      if (ctx.measureText(displayName).width > 70) { displayName = displayName.slice(0, 8) + '…'; }
-      ctx.fillText(displayName, PL2 - 8, y + pbH / 2 + 4);
-      ctx.fillStyle = '#fff'; ctx.textAlign = 'left';
-      const labelX = Math.min(PL2 + bL + 6, W - 38);
-      ctx.fillText(p.pct.toFixed(1) + '%', labelX, y + pbH / 2 + 4);
-    }
-  }
-
-  function drawPersonalDpsChart(canvas: HTMLCanvasElement, series: MultiPlayerDpsPoint[]) {
-    const s = setupCanvas(canvas);
-    if (!s) return;
-    const { ctx, W, H } = s;
-    ctx.clearRect(0, 0, W, H);
-    // Empty state: require a comparison scope (specific boss, specific mode, or a
-    // custom date window) before comparing DPS. The default All+All+30d shows a
-    // prompt to pick something.
-    const hasScope = (activeFilters.boss && activeFilters.boss !== 'all') ||
-                     (activeFilters.mode && activeFilters.mode !== 'all') ||
-                     (activeFilters.range === 'custom' &&
-                       (activeFilters.customStart || activeFilters.customEnd ||
-                        activeFilters.customStartTime || activeFilters.customEndTime));
-    if (!hasScope) {
-      dpsPointHitboxes = [];
-      ctx.fillStyle = TEXT_COLOR;
-      ctx.font = '13px system-ui';
-      ctx.textAlign = 'center';
-      ctx.fillText('Select encounters to compare DPS', W / 2, H / 2);
-      return;
-    }
-
-    if (series.length === 0 || selectedAccounts.length === 0) {
-      dpsPointHitboxes = [];
-      ctx.fillStyle = TEXT_COLOR;
-      ctx.font = '12px system-ui';
-      ctx.textAlign = 'center';
-      ctx.fillText('No player performance logs found for selected filters', W / 2, H / 2);
-      return;
-    }
-
-    // Allocate right padding (PR = 45) for the secondary Wipe HP% Y-axis
-    const PL = 50, PR = 45, PT = 15, PB = 35;
-    const cW = W - PL - PR, cH = H - PT - PB;
-
-    // Collect all player values to derive global Y-axis scale
-    const allValues: number[] = [];
-    for (const pt of series) {
-      for (const m of Object.values(pt.players)) {
-        allValues.push(m.value);
-      }
-    }
-    const minVal = allValues.length ? Math.min(...allValues) * 0.9 : 0;
-    const maxVal = allValues.length ? Math.max(...allValues) * 1.1 : 10000;
-    const valRange = maxVal - minVal || 1;
-
-    // Draw horizontal grid lines & Y-axes
-    ctx.font = '10px system-ui';
-    for (let i = 0; i <= 4; i++) {
-      const val = minVal + (valRange * i) / 4;
-      const y = PT + cH * (1 - i / 4);
-
-      // Grid line
-      ctx.strokeStyle = GRID_COLOR; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(PL, y); ctx.lineTo(W - PR, y); ctx.stroke();
-
-      // Left Y-axis (DPS)
-      ctx.fillStyle = TEXT_COLOR;
-      ctx.textAlign = 'right';
-      ctx.fillText((val / 1000).toFixed(1) + 'k', PL - 8, y + 3);
-
-      // Right Y-axis (Wipe HP% scale: 0% at top, 100% at baseline)
-      const hpVal = Math.round(100 * (1 - i / 4));
-      ctx.fillStyle = 'rgba(239, 68, 68, 0.7)';
-      ctx.textAlign = 'left';
-      ctx.fillText(hpVal + '%', W - PR + 8, y + 3);
-    }
-
-    // Map log X coordinates
-    const logCoords = series.map((pt, idx) => {
-      const x = PL + (series.length > 1 ? (idx / (series.length - 1)) * cW : cW / 2);
-      let yHp: number | null = null;
-      if (!pt.success && pt.bossHpLeft != null) {
-        yHp = PT + cH * (pt.bossHpLeft / 100);
-      }
-      return { x, yHp, point: pt };
-    });
-
-    // Wipe depth dotted line
-    const wipeCoords = logCoords.filter(c => c.yHp !== null) as { x: number; yHp: number; point: MultiPlayerDpsPoint }[];
-    if (wipeCoords.length > 1) {
-      ctx.beginPath();
-      ctx.moveTo(wipeCoords[0].x, wipeCoords[0].yHp);
-      for (let i = 1; i < wipeCoords.length; i++) {
-        ctx.lineTo(wipeCoords[i].x, wipeCoords[i].yHp);
-      }
-      ctx.strokeStyle = 'rgba(239, 68, 68, 0.25)';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([4, 4]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
-
-    const hitboxes: { x: number; y: number; point: MultiPlayerDpsPoint }[] = [];
-
-    // Draw per-player trend lines and dots
-    selectedAccounts.forEach((acc) => {
-      const color = getPlayerColor(acc);
-      const playerPoints: { x: number; y: number; val: number }[] = [];
-
-      logCoords.forEach((lc) => {
-        const match = lc.point.players[acc];
-        if (match) {
-          const y = PT + cH * (1 - (match.value - minVal) / valRange);
-          playerPoints.push({ x: lc.x, y, val: match.value });
-          hitboxes.push({ x: lc.x, y, point: lc.point });
-        }
+  async function loadDefenseTrend() {
+    const recs = filterLogs(logs, activeFilters).filter(l => l.url);
+    if (recs.length === 0) { defError = 'No logs in the current filter scope.'; defLoaded = false; return; }
+    defError = null;
+    defLoading = true;
+    try {
+      const { points, failed, total } = await loadLogReports('defense', (raw, rec) => {
+        const ds = extractDefenseSupport(raw);
+        if (!ds) return null;
+        return summarizeDefense(ds, {
+          date: parseLogDate(rec.timestamp),
+          boss: rec.boss_name ?? 'Unknown',
+          success: rec.success === true,
+          durationSec: typeof raw?.durationMS === 'number' ? raw.durationMS / 1000 : (rec.duration ?? 0),
+        });
       });
-
-      if (playerPoints.length > 1) {
-        ctx.beginPath();
-        ctx.moveTo(playerPoints[0].x, playerPoints[0].y);
-        for (let i = 1; i < playerPoints.length; i++) {
-          ctx.lineTo(playerPoints[i].x, playerPoints[i].y);
-        }
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2.2;
-        ctx.stroke();
+      points.sort((a, b) => a.date.getTime() - b.date.getTime());
+      defPoints = points;
+      defLoaded = points.length > 0;
+      if (points.length === 0) {
+        defError = `No defense data found. ${points.length}/${total} logs parsed; ${failed} unreachable.`;
       }
+    } catch (e) {
+      defError = String(e);
+      defLoaded = false;
+    } finally {
+      defLoading = false;
+    }
+  }
 
-      // Draw per-point dots only when the series is small (focused filter).
-      // With no/loose filter there can be dozens of points per player — drawing
-      // a dot on each just clutters the line, so we skip them and rely on hover.
-      if (series.length <= 30) {
-        for (const p of playerPoints) {
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
-          ctx.fillStyle = color;
-          ctx.fill();
-          ctx.strokeStyle = '#1e1e24';
-          ctx.lineWidth = 1.5;
-          ctx.stroke();
-        }
+  // ─── Squad healing trend ───────────────────────────────────────────────────
+  let healPoints = $state<HealingTrendPoint[] | null>(null);
+  let healLoading = $state(false);
+  let healLoaded = $state(false);
+  let healError = $state<string | null>(null);
+  let healBox = $state<HTMLDivElement | null>(null);
+  let healW = $state(0);
+  let healHover = $state<HealingTrendPoint | null>(null);
+
+  $effect(() => {
+    const el = healBox;
+    if (!el) return;
+    const ro = new ResizeObserver(() => { healW = el.clientWidth; });
+    ro.observe(el);
+    healW = el.clientWidth;
+    return () => ro.disconnect();
+  });
+
+  let healSeries = $derived((healPoints ?? []).map(p => ({
+    label: fmtDateShort(p.date),
+    players: { heal: { value: p.healingPerHour } },
+    raw: p,
+  })));
+  let healGeom = $derived(dpsLayout(healSeries, healW, {
+    keys: ['heal'],
+    color: () => 'var(--success)',
+    hovered: null,
+  }));
+  let healHitW = $derived(
+    healSeries.length > 1 && healGeom
+      ? (healGeom.W - healGeom.PL - healGeom.PR) / (healSeries.length - 1)
+      : 20,
+  );
+  let healSummary = $derived(summarizeHealingTrend(healPoints ?? []));
+
+  function fmtCompact(n: number): string {
+    if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+    if (n >= 1e3) return `${(n / 1e3).toFixed(0)}k`;
+    return String(Math.round(n));
+  }
+
+  function handleHealMouseMove(e: MouseEvent) {
+    const g = healGeom;
+    if (!g || g.hitboxes.length === 0) return;
+    const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+    const scale = rect.width / g.W || 1;
+    const mx = (e.clientX - rect.left) / scale;
+    let closest: (typeof g.hitboxes)[number] | null = null;
+    let minDist = healHitW / 2;
+    for (const h of g.hitboxes) {
+      const d = Math.abs(mx - h.x);
+      if (d < minDist) { minDist = d; closest = h; }
+    }
+    healHover = closest ? closest.point.raw : null;
+  }
+
+  async function loadHealingTrend() {
+    const recs = filterLogs(logs, activeFilters).filter(l => l.url);
+    if (recs.length === 0) { healError = 'No logs in the current filter scope.'; healLoaded = false; return; }
+    healError = null;
+    healLoading = true;
+    try {
+      const { points, failed, total } = await loadLogReports('healing', (raw, rec) => {
+        const durationSec = typeof raw?.durationMS === 'number' ? raw.durationMS / 1000 : (rec.duration ?? 0);
+        return summarizeHealing(raw, {
+          date: parseLogDate(rec.timestamp),
+          boss: rec.boss_name ?? 'Unknown',
+          success: rec.success === true,
+          durationSec,
+        });
+      });
+      points.sort((a, b) => a.date.getTime() - b.date.getTime());
+      healPoints = points;
+      healLoaded = points.length > 0;
+      if (points.length === 0) {
+        healError = `No healing data found. ${points.length}/${total} logs had the healing extension; ${failed} unreachable.`;
       }
-    });
+    } catch (e) {
+      healError = String(e);
+      healLoaded = false;
+    } finally {
+      healLoading = false;
+    }
+  }
 
-    dpsPointHitboxes = hitboxes;
+  // ─── Attempt feed ────────────────────────────────────────────────────────────
+  // Every attempt in the current filter, newest first. This is the view that
+  // works for any boss — it needs only the upload record, not a per-boss
+  // mechanic extractor.
+  const ATTEMPT_LIMIT = 100;
 
-    // Highlight hovered point if active
-    if (tooltipData.visible && tooltipData.point) {
-      const hLog = logCoords.find(c => c.point === tooltipData.point);
-      if (hLog) {
-        // Highlight wipe HP dot if present
-        if (hLog.yHp !== null) {
-          ctx.beginPath();
-          ctx.arc(hLog.x, hLog.yHp, 5, 0, Math.PI * 2);
-          ctx.fillStyle = '#ef4444';
-          ctx.fill();
-          ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 1.5;
-          ctx.stroke();
-        }
+  let scopedAttempts = $derived(
+    filterLogs(logs, activeFilters).filter(l => l.success === true || l.success === false),
+  );
 
-        selectedAccounts.forEach((acc) => {
-          const match = hLog.point.players[acc];
-          if (match) {
-            const y = PT + cH * (1 - (match.value - minVal) / valRange);
-            ctx.beginPath();
-            ctx.arc(hLog.x, y, 6.5, 0, Math.PI * 2);
-            ctx.fillStyle = getPlayerColor(acc);
-            ctx.fill();
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-          }
+  let attempts = $derived.by(() => [...scopedAttempts]
+    .sort((a, b) => parseLogDate(b.timestamp).getTime() - parseLogDate(a.timestamp).getTime())
+    .slice(0, ATTEMPT_LIMIT));
+
+  // ─── Attempt timeline ──────────────────────────────────────────────────────
+  // One lane per boss, a dot per attempt along the filter's time span. Anchor-
+  // based clustering (not gap-chained) so a dense session stays readable.
+  const LANE_LABEL_W = 96;
+  const LANE_GAP = 8;
+  const CLUSTER_PX = 8;
+
+  let laneBox = $state<HTMLDivElement | null>(null);
+  let laneW = $state(0);
+  let laneHover = $state<{ x: number; items: AnalyticsLog[] } | null>(null);
+
+  $effect(() => {
+    const el = laneBox;
+    if (!el) return;
+    const ro = new ResizeObserver(() => { laneW = el.clientWidth; });
+    ro.observe(el);
+    laneW = el.clientWidth;
+    return () => ro.disconnect();
+  });
+
+  let attemptLanes = $derived.by(() => {
+    const list = scopedAttempts;
+    if (list.length === 0 || laneW === 0) return null;
+
+    const times = list.map(l => parseLogDate(l.timestamp).getTime());
+    let min = Math.min(...times), max = Math.max(...times);
+    if (min === max) { min -= 3600_000; max += 3600_000; }
+    const pad = (max - min) * 0.02;
+    min -= pad; max += pad;
+
+    const counts = new Map<string, number>();
+    for (const l of list) {
+      const b = l.boss_name ?? 'Unknown';
+      counts.set(b, (counts.get(b) ?? 0) + 1);
+    }
+    const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => n);
+    const laneNames = ranked.slice(0, 6);
+    const hasOther = ranked.length > laneNames.length;
+    const lanes = hasOther ? [...laneNames, 'Other'] : laneNames;
+    const laneOf = (name: string) => {
+      const i = laneNames.indexOf(name);
+      return i >= 0 ? i : lanes.length - 1;
+    };
+
+    const trackW = Math.max(0, laneW - LANE_LABEL_W - LANE_GAP);
+    const radiusPct = trackW > 0 ? (CLUSTER_PX / trackW) * 100 : 0;
+
+    const buckets: { x: number; items: AnalyticsLog[] }[][] = lanes.map(() => []);
+    const sorted = [...list].sort((a, b) => parseLogDate(a.timestamp).getTime() - parseLogDate(b.timestamp).getTime());
+    for (const l of sorted) {
+      const t = parseLogDate(l.timestamp).getTime();
+      const x = ((t - min) / (max - min)) * 100;
+      const lane = buckets[laneOf(l.boss_name ?? 'Unknown')];
+      const anchor = lane[lane.length - 1];
+      if (anchor && radiusPct > 0 && Math.abs(x - anchor.x) <= radiusPct) lane[lane.length - 1].items.push(l);
+      else lane.push({ x, items: [l] });
+    }
+
+    const tickAt = (i: number) => min + ((max - min) * i) / 4;
+    return {
+      lanes, buckets,
+      ticks: [0, 1, 2, 3, 4].map(i => ({ x: (i / 4) * 100, label: fmtDateShort(new Date(tickAt(i))) })),
+    };
+  });
+
+  function fmtDateShort(d: Date): string {
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  }
+
+  // ─── Activity heatmap ──────────────────────────────────────────────────────
+  // One cell per day across the filter window. Unlike the bar chart it shows
+  // the days with no logs at all — that is the point of an activity view.
+  const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const HM_GAP = 4;
+  const HM_DAY_W = 20;
+  const HM_LABEL_GAP = 8;
+
+  type ActivityCell = {
+    key: string; date: Date;
+    count: number; kills: number; wipes: number;
+    inRange: boolean;
+  };
+
+  function startOfDay(d: Date): Date { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
+  function addDays(d: Date, n: number): Date { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+  function dayKey(d: Date): string { return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; }
+
+  let heatBox = $state<HTMLDivElement | null>(null);
+  let heatW = $state(0);
+  let hmHover = $state<ActivityCell | null>(null);
+
+  $effect(() => {
+    const el = heatBox;
+    if (!el) return;
+    const ro = new ResizeObserver(() => { heatW = el.clientWidth; });
+    ro.observe(el);
+    heatW = el.clientWidth;
+    return () => ro.disconnect();
+  });
+
+  let activityCells = $derived.by(() => {
+    const inScope = filterLogs(logs, activeFilters);
+    if (inScope.length === 0 || heatW === 0) return null;
+
+    const now = new Date();
+    let start: Date;
+    let end: Date;
+    if (activeFilters.range === 'custom') {
+      if (!activeFilters.customStart) return null;
+      start = startOfDay(new Date(`${activeFilters.customStart}T00:00:00`));
+      end = startOfDay(new Date(`${activeFilters.customEnd || activeFilters.customStart}T23:59:59`));
+    } else if (activeFilters.range === 'all') {
+      const ts = inScope.map(l => parseLogDate(l.timestamp).getTime());
+      start = startOfDay(new Date(Math.min(...ts)));
+      end = startOfDay(new Date(Math.max(...ts)));
+    } else {
+      const days = activeFilters.range === '7d' ? 7 : activeFilters.range === '30d' ? 30 : 90;
+      end = startOfDay(now);
+      start = addDays(end, -(days - 1));
+    }
+
+    const byDay = new Map<string, { count: number; kills: number; wipes: number }>();
+    for (const l of inScope) {
+      const key = dayKey(parseLogDate(l.timestamp));
+      const rec = byDay.get(key) ?? { count: 0, kills: 0, wipes: 0 };
+      rec.count++;
+      if (l.success === true) rec.kills++;
+      else if (l.success === false) rec.wipes++;
+      byDay.set(key, rec);
+    }
+
+    const first = startOfDay(start);
+    const last = startOfDay(end);
+    const weeks: { days: ActivityCell[] }[] = [];
+    for (let w = addDays(first, -((first.getDay() + 6) % 7)); w <= last; w = addDays(w, 7)) {
+      const days: ActivityCell[] = [];
+      for (let i = 0; i < 7; i++) {
+        const d = addDays(w, i);
+        const rec = byDay.get(dayKey(d));
+        days.push({
+          key: dayKey(d), date: d,
+          count: rec?.count ?? 0, kills: rec?.kills ?? 0, wipes: rec?.wipes ?? 0,
+          inRange: d >= first && d <= last,
         });
       }
+      weeks.push({ days });
     }
 
-    // X-axis date labels
-    ctx.fillStyle = TEXT_COLOR;
-    ctx.textAlign = 'center';
-    const labelStep = Math.max(1, Math.floor(series.length / 8));
-    for (let i = 0; i < logCoords.length; i += labelStep) {
-      ctx.fillText(logCoords[i].point.label, logCoords[i].x, H - PB + 16);
-    }
+    const max = Math.max(1, ...weeks.flatMap(w => w.days.map(d => d.count)));
+    const cell = Math.max(
+      8,
+      Math.min(22, Math.floor((heatW - HM_DAY_W - 6 - HM_GAP * (weeks.length + 1)) / weeks.length)),
+    );
+    const gridW = weeks.length * cell + (weeks.length - 1) * HM_GAP;
 
-    // X-axis baseline
-    ctx.strokeStyle = AXIS_COLOR; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(PL, PT + cH); ctx.lineTo(W - PR, PT + cH); ctx.stroke();
-  }
-
-  let mouseMoveRaf: number | null = null;
-  function handleDpsCanvasMouseMove(e: MouseEvent) {
-    if (!dpsCanvas || dpsPointHitboxes.length === 0) return;
-    const clientX = e.clientX;
-    const clientY = e.clientY;
-    if (mouseMoveRaf) return;
-    mouseMoveRaf = requestAnimationFrame(() => {
-      mouseMoveRaf = null;
-      if (!dpsCanvas) return;
-      const rect = dpsCanvas.getBoundingClientRect();
-      const mouseX = clientX - rect.left;
-      const mouseY = clientY - rect.top;
-
-      let closest: { x: number; y: number; point: MultiPlayerDpsPoint } | null = null;
-      let minDist = 24;
-
-      for (const item of dpsPointHitboxes) {
-        const dist = Math.hypot(mouseX - item.x, mouseY - item.y);
-        if (dist < minDist) {
-          minDist = dist;
-          closest = item;
-        }
-      }
-
-      if (closest) {
-        const chartW = rect.width || dpsCanvas.clientWidth || 600;
-        const tipW = tooltipEl ? tooltipEl.offsetWidth : 0;
-        const tipH = tooltipEl ? tooltipEl.offsetHeight : 0;
-        const halfW = tipW > 0 ? tipW / 2 : 120;
-        const estH = tipH > 0 ? tipH : 140;
-        let tx = closest.x;
-        if (tx < halfW) tx = halfW;
-        if (tx > chartW - halfW) tx = chartW - halfW;
-        const flip = closest.y - estH - 12 < 0;
-        const ty = flip ? closest.y + 12 : closest.y - 12;
-        tooltipData = {
-          visible: true,
-          x: tx,
-          y: ty,
-          flip,
-          point: closest.point
-        };
-        if (dpsCanvas) drawPersonalDpsChart(dpsCanvas, multiPlayerSeries);
-      } else if (tooltipData.visible) {
-        tooltipData = { visible: false, x: 0, y: 0, flip: false, point: null };
-        if (dpsCanvas) drawPersonalDpsChart(dpsCanvas, multiPlayerSeries);
-      }
+    // Month labels are positioned in the grid's own pixel space and dropped
+    // when they would collide with the previous one. A percentage track that
+    // is wider than the grid puts every label in the wrong place, and clamping
+    // the last ones to a fixed offset stacks them exactly on top of each other.
+    const monthLabels: { left: number; label: string }[] = [];
+    let prevMonth = -1, prevYear = -1, lastRight = -Infinity;
+    weeks.forEach((w, i) => {
+      const mond = w.days[0].date;
+      const m = mond.getMonth(), y = mond.getFullYear();
+      if (m === prevMonth) return;
+      const text = y !== prevYear ? `${SHORT_MONTHS[m]} ${y}` : SHORT_MONTHS[m];
+      prevMonth = m; prevYear = y;
+      const textW = labelWidth(text);
+      let left = i * (cell + HM_GAP);
+      if (left + textW > gridW) left = Math.max(0, gridW - textW);
+      if (left < lastRight + HM_LABEL_GAP) return;
+      monthLabels.push({ left, label: text });
+      lastRight = left + textW;
     });
+
+    return { weeks, cell, max, gridW, monthLabels };
+  });
+
+  function labelWidth(text: string): number {
+    return text.length * 5 + 6;
   }
 
-  function handleDpsCanvasMouseLeave() {
-    if (mouseMoveRaf) {
-      cancelAnimationFrame(mouseMoveRaf);
-      mouseMoveRaf = null;
+  function heatColor(d: ActivityCell): string {
+    if (d.count === 0) return 'color-mix(in srgb, #fff 5%, transparent)';
+    const rate = d.kills / d.count;
+    return `color-mix(in srgb, var(--fail) ${((1 - rate) * 100).toFixed(1)}%, var(--success))`;
+  }
+
+  function heatAlpha(count: number, max: number): number {
+    if (count === 0) return 1;
+    return 0.25 + 0.75 * Math.min(1, count / max);
+  }
+
+  function modeLabel(l: AnalyticsLog): string {
+    if (l.is_lcm) return 'LCM';
+    if (l.is_cm) return 'CM';
+    if (l.is_convergence) return 'Conv';
+    if (l.is_wvw) return 'WvW';
+    return 'NM';
+  }
+
+  function fmtWhen(ts: string): string {
+    const d = parseLogDate(ts);
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+
+  // The comparison needs a scope: a boss, a mode, or a custom window. Without
+  // one the chart would plot every log in history against every other.
+  let dpsHasScope = $derived(
+    (activeFilters.boss !== 'all') ||
+    (activeFilters.mode !== 'all') ||
+    (activeFilters.range === 'custom' &&
+      (activeFilters.customStart || activeFilters.customEnd ||
+       activeFilters.customStartTime || activeFilters.customEndTime)),
+  );
+
+  let dpsGeom = $derived.by(() => {
+    const W = dpsW;
+    if (!W) return null;
+    if (!dpsHasScope) return { empty: 'no-scope' as const, W };
+    if (multiPlayerSeries.length === 0 || selectedAccounts.length === 0) {
+      return { empty: 'no-data' as const, W };
     }
-    if (tooltipData.visible) {
-      tooltipData = { visible: false, x: 0, y: 0, flip: false, point: null };
-      if (dpsCanvas) drawPersonalDpsChart(dpsCanvas, multiPlayerSeries);
+    return dpsLayout(multiPlayerSeries, W, {
+      keys: selectedAccounts,
+      color: getPlayerColor,
+      hovered: tooltipData.visible ? tooltipData.point : null,
+    });
+  });
+
+  function handleDpsMouseMove(e: MouseEvent) {
+    const g = dpsGeom;
+    if (!g || g.empty || g.hitboxes.length === 0) return;
+    const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+    // The geometry is in viewBox units; max-width:100% can scale the rendered
+    // SVG, so convert the cursor into viewBox space before comparing.
+    const scale = rect.width / g.W || 1;
+    const mx = (e.clientX - rect.left) / scale;
+    let closest: { x: number; point: MultiPlayerDpsPoint } | null = null;
+    let minDist = 24;
+    for (const h of g.hitboxes) {
+      const d = Math.abs(mx - h.x);
+      if (d < minDist) { minDist = d; closest = h; }
     }
+    if (closest) {
+      tooltipData = { visible: true, point: closest.point };
+    } else if (tooltipData.visible) {
+      tooltipData = { visible: false, point: null };
+    }
+  }
+
+  function handleDpsMouseLeave() {
+    if (tooltipData.visible) tooltipData = { visible: false, point: null };
   }
 
   let isDestroyed = false;
@@ -957,53 +1074,8 @@
     isPaused = false;
   }
 
-  // ─── Canvas reactive effects ───────────────────────────────────────────────
-  $effect(() => {
-    const canvas = activityCanvas;
-    const series = stats.activitySeries;
-    if (!canvas) return;
-    const draw = () => drawActivity(canvas, series);
-    draw();
-    activityRO?.disconnect();
-    activityRO = new ResizeObserver(draw);
-    activityRO.observe(canvas);
-    return () => { activityRO?.disconnect(); activityRO = null; };
-  });
-
-  $effect(() => {
-    const canvas = wipeCanvas;
-    const buckets = stats.wipeDepthBuckets;
-    const profs = stats.professionFrequency;
-    if (!canvas) return;
-    const draw = () => drawWipeProf(canvas, buckets, profs);
-    draw();
-    wipeRO?.disconnect();
-    wipeRO = new ResizeObserver(draw);
-    wipeRO.observe(canvas);
-    return () => { wipeRO?.disconnect(); wipeRO = null; };
-  });
-
-  $effect(() => {
-    const canvas = dpsCanvas;
-    const series = multiPlayerSeries;
-    if (!canvas) return;
-    const draw = () => drawPersonalDpsChart(canvas, series);
-    draw();
-    dpsRO?.disconnect();
-    dpsRO = new ResizeObserver(draw);
-    dpsRO.observe(canvas);
-    return () => { dpsRO?.disconnect(); dpsRO = null; };
-  });
-
   onDestroy(() => {
     isDestroyed = true;
-    if (mouseMoveRaf) {
-      cancelAnimationFrame(mouseMoveRaf);
-      mouseMoveRaf = null;
-    }
-    activityRO?.disconnect();
-    wipeRO?.disconnect();
-    dpsRO?.disconnect();
     if (unlistenProgress) unlistenProgress();
     if (unlistenComplete) unlistenComplete();
     clearAnalyticsCache();
@@ -1067,7 +1139,7 @@
         report += `\nProfessions: ${profLine}\n`;
       }
 
-      await navigator.clipboard.writeText(report);
+      await copyText(report);
       backfillMessage = 'Analytics report copied to clipboard!';
       setTimeout(() => {
         backfillMessage = '';
@@ -1075,6 +1147,57 @@
     } catch (e: any) {
       console.error(e);
       backfillMessage = 'Failed to copy report: ' + e.toString();
+    }
+  }
+
+  /**
+   * Copy text. `navigator.clipboard` only exists in a secure context, so fall
+   * back to a hidden textarea + execCommand where it does not (non-https
+   * builds, some webviews).
+   */
+  async function copyText(text: string): Promise<void> {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '-1000px';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } finally { ta.remove(); }
+  }
+
+  const numOrBlank = (v: number | null) => (v == null ? '' : v.toFixed(1));
+  async function exportCsv() {
+    try {
+      const rows: string[][] = [
+        ['Portal Protocol - Analytics'],
+        ['Generated', new Date().toLocaleString()],
+        ['Filters', `Boss: ${bossFilter} | Mode: ${modeFilter} | Range: ${rangeFilter}`],
+        [],
+        ['Boss', 'Total', 'Kills', 'Wipes', 'Kill Rate %', 'Avg Duration (s)', 'Fastest Kill (s)', 'Avg Wipe HP %'],
+        ...sortedBossBreakdown.map((b) => [
+          b.boss, String(b.total), String(b.kills), String(b.wipes),
+          b.successRate.toFixed(1), numOrBlank(b.avgDuration), numOrBlank(b.shortestKill), numOrBlank(b.avgWipeHp),
+        ]),
+        [],
+        ['Player', 'Account', 'Profession', 'Encounters', 'Avg DPS', 'Max DPS'],
+        ...aggregatePlayers(logs, activeFilters).map((p) => [
+          p.displayName || p.account, p.account, p.profession,
+          String(p.encounters), String(Math.round(p.avgDps)), String(Math.round(p.maxDps)),
+        ]),
+      ];
+      await copyText(toCsv(rows));
+      backfillMessage = 'CSV copied to clipboard!';
+      setTimeout(() => {
+        backfillMessage = '';
+      }, 3000);
+    } catch (e: any) {
+      console.error(e);
+      backfillMessage = 'Failed to copy CSV: ' + e.toString();
     }
   }
 </script>
@@ -1101,6 +1224,17 @@
         <option value="nm">Normal Mode</option>
         <option value="cm">Challenge Mode</option>
         <option value="lcm">Legendary CM</option>
+      </select>
+      <select class="an-select" bind:value={squadSizeFilter} title="Filter by squad size">
+        {#each SQUAD_SIZE_BANDS as b}
+          <option value={b.id}>{b.label}</option>
+        {/each}
+      </select>
+      <select class="an-select" bind:value={playerFilter} title="Only logs this player took part in">
+        <option value="">All Players</option>
+        {#each availableAccounts as a}
+          <option value={a}>{a}</option>
+        {/each}
       </select>
       <div class="an-pills">
         {#each [['7d','7 Days'],['30d','30 Days'],['90d','90 Days'],['all','All Time'],['custom','Custom']] as [v,l]}
@@ -1140,14 +1274,24 @@
         {/if}
         <i class="fa-solid fa-chevron-down" style="font-size:10px; opacity:0.6;"></i>
       </button>
-      <button 
-        class="an-pill" 
-        style="display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; margin-left: auto;" 
-        onclick={exportStats}
-        title="Copy Markdown Report to clipboard"
-      >
-        <i class="fa-solid fa-copy"></i> Export Report
-      </button>
+      <div style="display:flex; gap:6px; margin-left:auto;">
+        <button
+          class="an-pill"
+          style="display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px;"
+          onclick={exportStats}
+          title="Copy a Markdown report to the clipboard"
+        >
+          <i class="fa-solid fa-copy"></i> Export MD
+        </button>
+        <button
+          class="an-pill"
+          style="display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px;"
+          onclick={exportCsv}
+          title="Copy CSV data to the clipboard"
+        >
+          <i class="fa-solid fa-file-csv"></i> Export CSV
+        </button>
+      </div>
     </div>
   </div>
 
@@ -1278,8 +1422,8 @@
     {#if insightCards.length > 0}
       <div style="display:flex; flex-wrap:wrap; gap:8px;">
         {#each insightCards as c}
-          <div style="display:inline-flex; align-items:center; gap:6px; background:rgba(255,255,255,0.03); border:1px solid var(--border); border-left:3px solid {c.tone === 'good' ? '#10b981' : c.tone === 'bad' ? '#ef4444' : 'var(--accent)'}; border-radius:8px; padding:6px 12px; font-size:12px; font-weight:600; color:var(--text);">
-            <span>{c.icon}</span><span>{c.text}</span>
+          <div class="an-insight {c.tone}">
+            <i class={c.icon}></i><span>{c.text}</span>
           </div>
         {/each}
       </div>
@@ -1288,7 +1432,7 @@
     <!-- Summary cards -->
     <div class="an-cards">
       <div class="an-card">
-        <div class="an-card-val an-cyan">{stats.totalLogs}</div>
+        <div class="an-card-val an-accent">{stats.totalLogs}</div>
         <div class="an-card-label">Total Encounters</div>
         {#if cardTrends}
           {@const t = cardTrends.total}
@@ -1300,7 +1444,7 @@
         {/if}
       </div>
       <div class="an-card">
-        <div class="an-card-val an-green">{stats.totalKills}</div>
+        <div class="an-card-val an-success">{stats.totalKills}</div>
         <div class="an-card-label">Kills</div>
         {#if cardTrends}
           {@const t = cardTrends.kills}
@@ -1312,7 +1456,7 @@
         {/if}
       </div>
       <div class="an-card">
-        <div class="an-card-val an-red">{stats.totalWipes}</div>
+        <div class="an-card-val an-fail">{stats.totalWipes}</div>
         <div class="an-card-label">Wipes</div>
         {#if cardTrends}
           {@const t = cardTrends.wipes}
@@ -1324,7 +1468,7 @@
         {/if}
       </div>
       <div class="an-card">
-        <div class="an-card-val {stats.overallSuccessRate >= 50 ? 'an-green' : 'an-red'}">{fmtPct(stats.overallSuccessRate)}<span class="an-unit">%</span></div>
+        <div class="an-card-val {stats.overallSuccessRate >= 50 ? 'an-success' : 'an-fail'}">{fmtPct(stats.overallSuccessRate)}<span class="an-unit">%</span></div>
         <div class="an-card-label">Kill Rate</div>
         {#if cardTrends}
           {@const t = cardTrends.rate}
@@ -1336,7 +1480,7 @@
         {/if}
       </div>
       <div class="an-card">
-        <div class="an-card-val an-purple">{fmtDur(stats.avgDuration)}</div>
+        <div class="an-card-val an-warn">{fmtDur(stats.avgDuration)}</div>
         <div class="an-card-label">Avg Kill Duration</div>
         {#if cardTrends}
           {@const t = cardTrends.avgDur}
@@ -1470,55 +1614,63 @@
         </div>
       </div>
       
-      <div style="position:relative; width:100%;">
-        <canvas
-          class="an-canvas"
-          bind:this={dpsCanvas}
-          style="height:210px;"
-          onmousemove={handleDpsCanvasMouseMove}
-          onmouseleave={handleDpsCanvasMouseLeave}
-        ></canvas>
-
+      <div class="an-chart-box" bind:this={dpsBox}>
+        {#if dpsGeom && !dpsGeom.empty}
+          <svg class="an-svg" width={dpsGeom.W} height={dpsGeom.H} viewBox="0 0 {dpsGeom.W} {dpsGeom.H}"
+               role="img" aria-label="Player DPS comparison"
+               onmousemove={handleDpsMouseMove} onmouseleave={handleDpsMouseLeave}>
+            {#each dpsGeom.grid as g}
+              <line x1={dpsGeom.PL} y1={g.y} x2={dpsGeom.W - dpsGeom.PR} y2={g.y} class="an-grid" />
+              <text x={dpsGeom.PL - 8} y={g.y + 3} class="an-axis-text" text-anchor="end">{(g.val / 1000).toFixed(1)}k</text>
+            {/each}
+            {#each dpsGeom.lines as l}
+              <polyline points={l.points} fill="none" stroke={l.color} stroke-width="2.2"
+                        stroke-linejoin="round" stroke-linecap="round" />
+              {#if dpsGeom.showDots}
+                {#each l.dots as d}
+                  <circle cx={d.x} cy={d.y} r={d.hot ? 6.5 : 4}
+                          fill={l.color} stroke="var(--bg-panel)" stroke-width={d.hot ? 2 : 1.5} />
+                {/each}
+              {/if}
+            {/each}
+            {#each dpsGeom.xLabels as xl}
+              <text x={xl.x} y={dpsGeom.H - dpsGeom.PB + 16} class="an-axis-text" text-anchor="middle">{xl.label}</text>
+            {/each}
+            <line x1={dpsGeom.PL} y1={dpsGeom.baseY} x2={dpsGeom.W - dpsGeom.PR} y2={dpsGeom.baseY} class="an-axis" />
+          </svg>
+        {:else}
+          <p class="an-chart-empty">{dpsGeom?.empty === 'no-data' ? 'No player performance logs found for selected filters' : 'Select encounters to compare DPS'}</p>
+        {/if}
+      </div>
+      <div class="an-detail" aria-live="polite">
         {#if tooltipData.visible && tooltipData.point}
-          <div
-            class="dps-tooltip"
-            bind:this={tooltipEl}
-            style="left:{tooltipData.x}px; top:{tooltipData.y}px; transform: translate(-50%, {tooltipData.flip ? '0' : '-100%'});"
-          >
-            <div class="dps-tooltip-title" style="margin-bottom:6px;">
-              <span class="dps-tooltip-status {tooltipData.point.success ? 'kill' : 'wipe'}">
-                {tooltipData.point.success ? 'KILL' : 'WIPE'}
-              </span>
-              <span>{tooltipData.point.bossName} ({tooltipData.point.label})</span>
-            </div>
-            
-            <div style="display:flex; flex-direction:column; gap:4px;">
-              {#each selectedAccounts as acc}
-                {#if tooltipData.point.players[acc]}
-                  {@const pMatch = tooltipData.point.players[acc]}
-                  <div style="display:flex; align-items:center; justify-space-between; gap:12px; font-size:11px;">
-                    <span style="display:flex; align-items:center; gap:5px; color:{getPlayerColor(acc)}; font-weight:600;">
-                      <span style="width:6px; height:6px; border-radius:50%; background:{getPlayerColor(acc)};"></span>
-                      {#if profIconFor(pMatch.profession, pMatch.elite_spec)}
-                        <img src={profIconFor(pMatch.profession, pMatch.elite_spec)} alt="" style="width:17px; height:17px; object-fit:contain;" />
-                      {/if}
-                      <span style="font-weight:400; color:var(--text-muted);">{pMatch.charName}</span>
-                      <span>{acc}</span>
-                    </span>
-                    <span style="color:var(--text); font-weight:700;">
-                      {pMatch.value.toLocaleString()}
-                    </span>
-                  </div>
-                {/if}
-              {/each}
-            </div>
-
-            {#if !tooltipData.point.success && tooltipData.point.bossHpLeft != null}
-              <div class="dps-tooltip-val" style="color: #fca5a5; margin-top: 6px; border-top: 1px solid rgba(255,255,255,0.1); padding-top:4px;">
-                Wipe HP: <strong>{tooltipData.point.bossHpLeft.toFixed(1)}%</strong>
-              </div>
-            {/if}
+          <span class="an-detail-status {tooltipData.point.success ? 'kill' : 'wipe'}">
+            {tooltipData.point.success ? 'KILL' : 'WIPE'}
+          </span>
+          <span class="an-detail-title">{tooltipData.point.bossName} ({tooltipData.point.label})</span>
+          <div class="an-detail-rows">
+            {#each selectedAccounts as acc}
+              {#if tooltipData.point.players[acc]}
+                {@const pMatch = tooltipData.point.players[acc]}
+                <div class="an-detail-row">
+                  <span class="an-detail-player">
+                    <span class="an-dot" style="background:{getPlayerColor(acc)};"></span>
+                    {#if profIconFor(pMatch.profession, pMatch.elite_spec)}
+                      <img src={profIconFor(pMatch.profession, pMatch.elite_spec)} alt="" class="an-detail-prof" />
+                    {/if}
+                    <span class="an-detail-char">{pMatch.charName}</span>
+                    <span class="an-detail-acct">{acc}</span>
+                  </span>
+                  <span class="an-detail-val">{pMatch.value.toLocaleString()}</span>
+                </div>
+              {/if}
+            {/each}
           </div>
+          {#if !tooltipData.point.success && tooltipData.point.bossHpLeft != null}
+            <div class="an-detail-hp">Wipe HP: <strong>{tooltipData.point.bossHpLeft.toFixed(1)}%</strong></div>
+          {/if}
+        {:else}
+          <span class="an-detail-hint">Hover a point for details</span>
         {/if}
       </div>
 
@@ -1555,7 +1707,7 @@
           <span class="an-section-title"><i class="fa-solid fa-trophy"></i> Cerus Leaderboard</span>
           <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
             {#if cerusScopeUrls.length > MAX_AGGREGATE_LOGS}
-              <span class="an-warn">⚠ {cerusScopeUrls.length} logs — averages may be skewed</span>
+              <span class="an-warn-pill">⚠ {cerusScopeUrls.length} logs — averages may be skewed</span>
             {/if}
             {#if cerusLoaded && cerusLogCount > 0}
               <span class="an-muted-sm">Aggregated from {cerusLogCount} log{cerusLogCount === 1 ? '' : 's'}</span>
@@ -1581,28 +1733,275 @@
       </div>
     {/if}
 
-    <!-- Grid container for secondary charts -->
+    <!-- Activity heatmap: one cell per day in the filter window, gaps included -->
+    <div class="an-section">
+      <div class="an-section-head">
+        <span class="an-section-title"><i class="fa-solid fa-calendar-days"></i> Encounter Activity</span>
+        <span class="an-muted-sm">{scopedAttempts.length} attempt{scopedAttempts.length !== 1 ? 's' : ''}</span>
+      </div>
+      <div class="hm" bind:this={heatBox}>
+        {#if activityCells}
+          <div class="hm-body">
+            <span class="hm-days">
+              <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+            </span>
+            <div class="hm-main" style="width:{activityCells.gridW}px">
+              <div class="hm-month-track">
+                {#each activityCells.monthLabels as m}
+                  <span class="hm-month" style="left:{m.left}px">{m.label}</span>
+                {/each}
+              </div>
+              <div class="hm-grid" style="--cell:{activityCells.cell}px;grid-template-columns:repeat({activityCells.weeks.length}, var(--cell))">
+                {#each activityCells.weeks as w}
+                  {#each w.days as d}
+                    <button
+                      class="hm-cell"
+                      class:pad={!d.inRange}
+                      class:empty={d.inRange && d.count === 0}
+                      style="background:{heatColor(d)};opacity:{heatAlpha(d.count, activityCells.max)}"
+                      onmouseover={() => { hmHover = d; }}
+                      onfocus={() => { hmHover = d; }}
+                      onmouseleave={() => { hmHover = null; }}
+                      onblur={() => { hmHover = null; }}
+                      aria-label="{d.date.getMonth() + 1}/{d.date.getDate()}: {d.count} attempt{d.count !== 1 ? 's' : ''}"
+                    ></button>
+                  {/each}
+                {/each}
+              </div>
+            </div>
+          </div>
+          <div class="hm-legend">
+            <span class="hm-leg"><span class="hm-leg-dot" style="background:var(--success)"></span>Kills</span>
+            <span class="hm-leg"><span class="hm-leg-dot" style="background:var(--fail)"></span>Wipes</span>
+            <span class="hm-leg hm-leg-gap">Fewer</span>
+            {#each [0.25, 0.45, 0.65, 0.85, 1] as a}
+              <span class="hm-leg-swatch" style="background:var(--text-muted);opacity:{a}"></span>
+            {/each}
+            <span class="hm-leg">More</span>
+          </div>
+        {:else}
+          <p class="an-chart-empty">No activity in this range</p>
+        {/if}
+      </div>
+      <div class="an-detail" aria-live="polite">
+        {#if hmHover}
+          {@const h = hmHover}
+          <span class="an-detail-title">{h.date.getMonth() + 1}/{h.date.getDate()}/{h.date.getFullYear()}</span>
+          <span class="an-muted-sm">{h.count} attempt{h.count !== 1 ? 's' : ''}</span>
+          <span class="an-detail-val">{h.kills} kill{h.kills !== 1 ? 's' : ''} · {h.wipes} wipe{h.wipes !== 1 ? 's' : ''}</span>
+        {:else}
+          <span class="an-detail-hint">Hover a day for details</span>
+        {/if}
+      </div>
+    </div>
+
+    <!-- Grid container for the remaining charts -->
     <div class="an-charts-grid">
-      <!-- Activity chart -->
+      <!-- Wipe depth -->
       <div class="an-section">
         <div class="an-section-head">
-          <span class="an-section-title"><i class="fa-solid fa-chart-column"></i> Encounter Activity</span>
-          <div class="an-legend">
-            <span class="an-leg-dot" style="background:#10b981;"></span><span class="an-leg-label">Kills</span>
-            <span class="an-leg-dot" style="background:#ef4444;"></span><span class="an-leg-label">Wipes</span>
-          </div>
+          <span class="an-section-title"><i class="fa-solid fa-heart-crack"></i> Wipe Depth</span>
+          <span class="an-muted-sm">{wipeTotal} wipe{wipeTotal !== 1 ? 's' : ''} in this range</span>
         </div>
-        <canvas class="an-canvas" bind:this={activityCanvas} style="height:200px;"></canvas>
+        <div class="an-chart-box" bind:this={wipeBox}>
+          {#if wipeGeom}
+            <svg class="an-svg" width={wipeGeom.W} height={wipeGeom.H} viewBox="0 0 {wipeGeom.W} {wipeGeom.H}"
+                 role="img" aria-label="Wipe depth">
+              {#each wipeGeom.rows as r}
+                <text x={wipeGeom.PL - 6} y={r.y + r.h / 2 + 4} class="an-axis-text" text-anchor="end">{r.label}</text>
+                <rect x={wipeGeom.PL} y={r.y} width={wipeGeom.trackW} height={r.h} class="an-track" rx="4" />
+                {#if r.w > 0}<rect x={wipeGeom.PL} y={r.y} width={r.w} height={r.h} class="an-bar-accent" rx="4" />{/if}
+                {#if r.count > 0}<text x={wipeGeom.PL + r.w + 4} y={r.y + r.h / 2 + 4} class="an-bar-val">{r.count}</text>{/if}
+              {/each}
+            </svg>
+          {:else}
+            <p class="an-chart-empty">No wipes in this range</p>
+          {/if}
+        </div>
       </div>
 
-      <!-- Wipe depth + profession distribution -->
+      <!-- Squad composition -->
       <div class="an-section">
-        <div class="an-section-head" style="display: grid; grid-template-columns: 1fr 1fr; gap: 32px; padding-bottom: 8px;">
-          <span class="an-section-title"><i class="fa-solid fa-heart-crack"></i> Wipe Depth</span>
-          <span class="an-section-title" style="border-left: 1px solid var(--border); padding-left: 16px;"><i class="fa-solid fa-user-group"></i> Squad Composition</span>
+        <div class="an-section-head">
+          <span class="an-section-title"><i class="fa-solid fa-user-group"></i> Squad Composition</span>
         </div>
-        <canvas class="an-canvas" bind:this={wipeCanvas} style="height:200px;"></canvas>
+        <div class="an-prof-rows">
+          {#each profRows as p}
+            <div class="an-prof-row">
+              <span class="an-prof-name" title={p.name}>{p.name}</span>
+              <span class="an-prof-track"><span class="an-prof-bar" style="width:{p.barPct}%;background:{p.color}"></span></span>
+              <span class="an-prof-pct">{p.pct.toFixed(1)}%</span>
+            </div>
+          {:else}
+            <p class="an-chart-empty">No profession data</p>
+          {/each}
+        </div>
       </div>
+    </div>
+
+    <!-- Squad defense trend: one point per log, loaded on demand -->
+    <div class="an-section">
+      <div class="an-section-head">
+        <span class="an-section-title"><i class="fa-solid fa-shield-halved"></i> Squad Defense</span>
+        {#if defSummary}
+          <span class="an-muted-sm">
+            {defSummary.logs} log{defSummary.logs !== 1 ? 's' : ''} · avg {defSummary.avgMitigationRate.toFixed(1)}% mitigated
+          </span>
+        {/if}
+      </div>
+
+      <!-- The chart box is always rendered so its width can be measured: the
+           geometry depends on that width, and binding it inside the branch that
+           needs the geometry would deadlock (no box → no width → no geometry →
+           no box). -->
+      <div class="an-chart-box" bind:this={defBox}>
+        {#if defLoading}
+          <div class="an-loading"><i class="fa-solid fa-spinner fa-spin"></i> Reading defense stats from {scopedAttempts.length} log{scopedAttempts.length !== 1 ? 's' : ''}…</div>
+        {:else if defError}
+          <div class="an-error">{defError}</div>
+          <button class="an-btn" onclick={loadDefenseTrend}><i class="fa-solid fa-rotate"></i> Retry</button>
+        {:else if defLoaded && defGeom}
+          <svg class="an-svg" width={defGeom.W} height={defGeom.H} viewBox="0 0 {defGeom.W} {defGeom.H}"
+               role="img" aria-label="Squad mitigation rate over time"
+               onmousemove={handleDefMouseMove}
+               onmouseleave={() => { defHover = null; }}>
+            {#each defGeom.grid as g}
+              <line x1={defGeom.PL} y1={g.y} x2={defGeom.W - defGeom.PR} y2={g.y} class="an-grid" />
+              <text x={defGeom.PL - 6} y={g.y + 4} class="an-axis-text" text-anchor="end">{Math.round(g.val)}%</text>
+            {/each}
+            {#each defGeom.lines as l}
+              <polyline points={l.points} fill="none" stroke={l.color} stroke-width="2" stroke-linejoin="round" />
+              {#each l.dots as d}
+                <circle cx={d.x} cy={d.y} r="3.5" fill={l.color} />
+              {/each}
+            {/each}
+            {#each defGeom.xLabels as xl}
+              <text x={xl.x} y={defGeom.H - 12} class="an-axis-text" text-anchor="middle">{xl.label}</text>
+            {/each}
+          </svg>
+        {:else if defLoaded}
+          <p class="an-chart-empty">No defense data in this range</p>
+        {:else}
+          <div class="cl-empty">
+            <p>Squad-wide mitigation rate per log, across the {scopedAttempts.length} log{scopedAttempts.length !== 1 ? 's' : ''} in this filter. Reads each log's Elite Insights report, so it takes a moment on a large history.</p>
+            <button class="an-btn an-btn-primary" onclick={loadDefenseTrend}>
+              <i class="fa-solid fa-shield-halved"></i> Load Squad Defense
+            </button>
+          </div>
+        {/if}
+      </div>
+
+      {#if defLoaded}
+        <div class="an-detail" aria-live="polite">
+          {#if defHover}
+            {@const dh = defHover}
+            <span class="an-detail-title">{dh.boss}</span>
+            <span class="an-muted-sm">{fmtDateShort(dh.date)}{dh.success ? ' · kill' : ' · wipe'}</span>
+            <span class="an-detail-val">{dh.mitigationRate.toFixed(1)}% mitigated · {dh.downs} downs ({dh.downsPerHour.toFixed(1)}/h)</span>
+            <span class="an-detail-val">{dh.cleanses} cleanses · {dh.strips} strips · {dh.revives} revives</span>
+          {:else if defSummary}
+            <span class="an-detail-title">{defSummary.avgMitigationRate.toFixed(1)}% mitigated</span>
+            <span class="an-muted-sm">{defSummary.avgDownsPerHour.toFixed(1)} downs/h</span>
+            <span class="an-detail-val">{defSummary.cleanses} cleanses · {defSummary.strips} strips · {defSummary.revives} revives</span>
+          {:else}
+            <span class="an-detail-hint">Hover a point for details</span>
+          {/if}
+        </div>
+      {/if}
+    </div>
+
+    <!-- Squad healing trend: healing per hour per log, loaded on demand -->
+    <div class="an-section">
+      <div class="an-section-head">
+        <span class="an-section-title"><i class="fa-solid fa-heart-pulse"></i> Squad Healing</span>
+        {#if healSummary}
+          <span class="an-muted-sm">
+            {healSummary.logs} log{healSummary.logs !== 1 ? 's' : ''} · avg {fmtCompact(healSummary.avgHealingPerHour)}/h
+          </span>
+        {/if}
+      </div>
+
+      <div class="an-chart-box" bind:this={healBox}>
+        {#if healLoading}
+          <div class="an-loading"><i class="fa-solid fa-spinner fa-spin"></i> Reading healing stats from {scopedAttempts.length} log{scopedAttempts.length !== 1 ? 's' : ''}…</div>
+        {:else if healError}
+          <div class="an-error">{healError}</div>
+          <button class="an-btn" onclick={loadHealingTrend}><i class="fa-solid fa-rotate"></i> Retry</button>
+        {:else if healLoaded && healGeom}
+          <svg class="an-svg" width={healGeom.W} height={healGeom.H} viewBox="0 0 {healGeom.W} {healGeom.H}"
+               role="img" aria-label="Squad healing per hour over time"
+               onmousemove={handleHealMouseMove}
+               onmouseleave={() => { healHover = null; }}>
+            {#each healGeom.grid as g}
+              <line x1={healGeom.PL} y1={g.y} x2={healGeom.W - healGeom.PR} y2={g.y} class="an-grid" />
+              <text x={healGeom.PL - 6} y={g.y + 4} class="an-axis-text" text-anchor="end">{fmtCompact(g.val)}</text>
+            {/each}
+            {#each healGeom.lines as l}
+              <polyline points={l.points} fill="none" stroke={l.color} stroke-width="2" stroke-linejoin="round" />
+              {#each l.dots as d}
+                <circle cx={d.x} cy={d.y} r="3.5" fill={l.color} />
+              {/each}
+            {/each}
+            {#each healGeom.xLabels as xl}
+              <text x={xl.x} y={healGeom.H - 12} class="an-axis-text" text-anchor="middle">{xl.label}</text>
+            {/each}
+          </svg>
+        {:else if healLoaded}
+          <p class="an-chart-empty">No healing data in this range</p>
+        {:else}
+          <div class="cl-empty">
+            <p>Squad healing per hour for each log in this filter, from the arcdps healing extension. Logs recorded without it are skipped.</p>
+            <button class="an-btn an-btn-primary" onclick={loadHealingTrend}>
+              <i class="fa-solid fa-heart-pulse"></i> Load Squad Healing
+            </button>
+          </div>
+        {/if}
+      </div>
+
+      {#if healLoaded}
+        <div class="an-detail" aria-live="polite">
+          {#if healHover}
+            {@const hh = healHover}
+            <span class="an-detail-title">{hh.boss}</span>
+            <span class="an-muted-sm">{fmtDateShort(hh.date)}{hh.success ? ' · kill' : ' · wipe'}</span>
+            <span class="an-detail-val">{fmtCompact(hh.healingPerHour)}/h · {fmtCompact(hh.healing)} total · {fmtCompact(hh.downedHealing)} on downed allies</span>
+            <span class="an-detail-val">{hh.healers.slice(0, 3).map(h => `${h.name} ${fmtCompact(h.healing)}`).join(' · ') || 'No healing recorded'}</span>
+          {:else if healSummary}
+            <span class="an-detail-title">{fmtCompact(healSummary.totalHealing)} healed</span>
+            <span class="an-muted-sm">{fmtCompact(healSummary.totalDownedHealing)} on downed allies</span>
+            <span class="an-detail-val">{healSummary.healers.slice(0, 3).map(h => `${h.name} ${fmtCompact(h.healing)}`).join(' · ')}</span>
+          {:else}
+            <span class="an-detail-hint">Hover a point for details</span>
+          {/if}
+        </div>
+      {/if}
+
+      {#if healLoaded && healSummary && healSummary.healers.length > 0}
+        <div class="hl-rows">
+          {#each healSummary.healers.slice(0, 5) as h}
+            {@const hIcon = profIconByName(h.profession)}
+            <div class="hl-row">
+              {#if hIcon}<img src={hIcon} alt={h.profession} class="hl-icon" />{:else}<span class="hl-icon"></span>{/if}
+              <span class="hl-who">
+                <span class="hl-name" title={h.account}>{h.name}</span>
+                <span class="hl-stats">
+                  {h.downedHealing > 0 ? `${fmtCompact(h.downedHealing)} downed · ` : ''}{h.logs} log{h.logs !== 1 ? 's' : ''}
+                </span>
+              </span>
+              <span class="hl-val">{fmtCompact(h.healing)} healed</span>
+              {#if h.sources.length > 0}
+                <span class="hl-src">
+                  {#each h.sources as s, i}
+                    {#if i > 0}<span class="hl-sep">-</span>{/if}
+                    {#if s.icon}<img src={s.icon} alt="" class="hl-skill" loading="lazy" />{/if}
+                    <span class="hl-src-name">{s.name} ({fmtCompact(s.healing)})</span>
+                  {/each}
+                </span>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      {/if}
     </div>
 
     <!-- Boss breakdown table -->
@@ -1643,7 +2042,7 @@
                 <td class="an-td-num an-kill">{b.kills}</td>
                 <td class="an-td-num an-wipe">{b.wipes}</td>
                 <td class="an-td-num">
-                  <span class="an-rate-pill {b.successRate >= 50 ? 'an-rate-green' : b.successRate >= 25 ? 'an-rate-yellow' : 'an-rate-red'}">
+                  <span class="an-rate-pill {b.successRate >= 50 ? 'an-rate-success' : b.successRate >= 25 ? 'an-rate-warn' : 'an-rate-fail'}">
                     {fmtPct(b.successRate)}%
                   </span>
                 </td>
@@ -1657,6 +2056,105 @@
       </div>
     </div>
 
+    <!-- Attempt timeline: one lane per boss, one dot per attempt -->
+    <div class="an-section">
+      <div class="an-section-head">
+        <span class="an-section-title"><i class="fa-solid fa-timeline"></i> Attempt Timeline</span>
+        <span class="an-muted-sm">{scopedAttempts.length} attempt{scopedAttempts.length !== 1 ? 's' : ''}</span>
+      </div>
+      <div class="ln-wrap" bind:this={laneBox}>
+        {#if attemptLanes}
+          <div class="ln-lanes">
+            {#each attemptLanes.lanes as name, i}
+              <div class="ln-lane">
+                <span class="ln-label" title={name}>{name}</span>
+                <span class="ln-track">
+                  {#each attemptLanes.buckets[i] as c}
+                    <button
+                      class="ln-dot {c.items[0].success === true ? 'kill' : 'wipe'}"
+                      style="left:{c.x}%"
+                      onmouseover={() => { laneHover = c; }}
+                      onfocus={() => { laneHover = c; }}
+                      onmouseleave={() => { laneHover = null; }}
+                      onblur={() => { laneHover = null; }}
+                      aria-label="{c.items.length} attempt{c.items.length !== 1 ? 's' : ''} on {name}"
+                    >
+                      {#if c.items.length > 1}<span class="ln-count">×{c.items.length}</span>{/if}
+                    </button>
+                  {/each}
+                </span>
+              </div>
+            {/each}
+          </div>
+          <div class="ln-axis">
+            <span></span>
+            <span class="ln-axis-track">
+              {#each attemptLanes.ticks as t}
+                <span class="ln-axis-label" style="left:{t.x}%">{t.label}</span>
+              {/each}
+            </span>
+          </div>
+        {:else}
+          <p class="an-chart-empty">No attempts in this filter</p>
+        {/if}
+      </div>
+      <div class="an-detail" aria-live="polite">
+        {#if laneHover}
+          {@const lh = laneHover}
+          <span class="an-detail-title">{lh.items[0].boss_name ?? 'Unknown'}</span>
+          <span class="an-muted-sm">{lh.items.length} attempt{lh.items.length !== 1 ? 's' : ''}</span>
+          <div class="an-detail-rows">
+            {#each [...lh.items].sort((a, b) => parseLogDate(b.timestamp).getTime() - parseLogDate(a.timestamp).getTime()) as a}
+              <div class="an-detail-row">
+                <span class="an-detail-player">
+                  <span class="an-dot {a.success === true ? 'kill' : 'wipe'}"></span>
+                  <span class="an-detail-acct">{fmtWhen(a.timestamp)}</span>
+                </span>
+                <span class="an-detail-val">
+                  {a.success === true
+                    ? (a.duration != null ? fmtDur(a.duration) : '—')
+                    : (a.boss_hp_left != null ? fmtPct(a.boss_hp_left) + '%' : '—')}
+                </span>
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <span class="an-detail-hint">Hover a dot for details</span>
+        {/if}
+      </div>
+    </div>
+
+    <!-- Attempt feed: every attempt in the current filter, newest first -->
+    <div class="an-section">
+      <div class="an-section-head">
+        <span class="an-section-title"><i class="fa-solid fa-list"></i> Attempts</span>
+        <span class="an-muted-sm">
+          {attempts.length}{stats.totalLogs > attempts.length ? ` of ${stats.totalLogs}` : ''} attempt{stats.totalLogs !== 1 ? 's' : ''} in this filter
+        </span>
+      </div>
+      <div class="at-feed">
+        <div class="at-row at-head">
+          <span></span><span>Boss</span><span>Mode</span><span>When</span><span>Duration</span><span>Party</span>
+        </div>
+        {#each attempts as a}
+          <div class="at-row">
+            <span class="at-dot {a.success === true ? 'kill' : 'wipe'}" title={a.success === true ? 'Kill' : 'Wipe'}></span>
+            <span class="at-boss" title={a.boss_name ?? ''}>{a.boss_name ?? 'Unknown'}</span>
+            <span class="at-mode">{modeLabel(a)}</span>
+            <span class="at-time">{fmtWhen(a.timestamp)}</span>
+            <span class="at-dur">
+              {a.success === true
+                ? (a.duration != null ? fmtDur(a.duration) : '—')
+                : (a.boss_hp_left != null ? fmtPct(a.boss_hp_left) + '% left' : '—')}
+            </span>
+            <span class="at-party">{a.num_players ?? '—'}</span>
+          </div>
+        {:else}
+          <p class="an-chart-empty">No attempts in this filter</p>
+        {/each}
+      </div>
+    </div>
+
   {/if}
 </div>
 
@@ -1664,15 +2162,19 @@
   .analytics-wrap{display:flex;flex-direction:column;gap:20px;width:100%;min-width:0;}
   .an-charts-grid {
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 20px;
     width: 100%;
+    min-width: 0;
   }
   @media (min-width: 1024px) {
     .an-charts-grid {
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     }
   }
+  /* Flex items default to min-width:auto, so a card holding a wide SVG would
+     refuse to shrink and the chart would clip instead of rescaling. */
+  .an-chart-box{min-width:0;}
   .an-filter-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
   .an-select{
     background:var(--bg-card);border:1px solid var(--border);border-radius:8px;
@@ -1693,12 +2195,12 @@
   }
   .an-empty{
     display:flex;flex-direction:column;align-items:center;justify-content:center;
-    padding:80px 24px;background:var(--bg-card);border:1px dashed var(--border);
-    border-radius:14px;color:var(--text);text-align:center;
+    padding:80px 24px;background:var(--bg-panel);border:1px dashed var(--border);
+    border-radius:var(--radius);color:var(--text);text-align:center;
   }
   .an-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;}
   .an-card{
-    background:var(--bg-card);border:1px solid var(--border);border-radius:12px;
+    background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius);
     padding:14px 16px;display:flex;flex-direction:column;gap:4px;
     transition:border-color .2s,box-shadow .2s;
   }
@@ -1706,7 +2208,7 @@
     border-color:color-mix(in srgb,var(--accent) 50%,transparent);
     box-shadow:0 4px 20px color-mix(in srgb,var(--accent) 12%,transparent);
   }
-  .an-card-val{font-size:28px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:.01em;}
+  .an-card-val{font-size:22px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:.01em;}
   .an-unit{font-size:14px;font-weight:700;color:var(--text-muted);margin-left:1px;}
   .an-card-label{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);}
   .an-card-delta{font-size:10px;font-weight:700;margin-top:5px;display:flex;align-items:center;gap:4px;font-variant-numeric:tabular-nums;}
@@ -1714,22 +2216,33 @@
   .an-card-delta.bad{color:var(--fail);}
   .an-card-delta.same{color:var(--text-muted);font-weight:600;}
   .an-card-delta-cap{font-size:9px;font-weight:500;opacity:.65;text-transform:uppercase;letter-spacing:.04em;}
-  .an-cyan{color:#22d3ee;}
-  .an-green{color:#10b981;}
-  .an-red{color:#ef4444;}
-  .an-purple{color:#a78bfa;}
-  .an-gold{color:#fbbf24;}
+  .an-accent{color:var(--accent);}
+  .an-success{color:var(--success);}
+  .an-fail{color:var(--fail);}
+  .an-warn{color:var(--warn);}
+  .an-gold{color:var(--gold);}
+  .an-insight{
+    display:inline-flex; align-items:center; gap:6px;
+    background:color-mix(in srgb,#fff 3%,transparent);
+    border:1px solid var(--border); border-left:3px solid var(--accent);
+    border-radius:8px; padding:6px 12px; font-size:12px; font-weight:600; color:var(--text);
+  }
+  .an-insight i{color:var(--accent);}
+  .an-insight.good{border-left-color:var(--success);}
+  .an-insight.good i{color:var(--success);}
+  .an-insight.bad{border-left-color:var(--fail);}
+  .an-insight.bad i{color:var(--fail);}
   .an-section{
-    background:var(--bg-card);border:1px solid var(--border);border-radius:14px;
-    padding:14px 16px;display:flex;flex-direction:column;gap:12px;
+    background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius);
+    padding:14px 16px;display:flex;flex-direction:column;gap:12px;min-width:0;
   }
   .an-section-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
   .an-section-title{
     font-size:11px;font-weight:700;text-transform:uppercase;
-    letter-spacing:.08em;color:var(--text);display:flex;align-items:center;gap:7px;
+    letter-spacing:.03em;color:var(--text);display:flex;align-items:center;gap:7px;
   }
   .an-section-title i{color:var(--accent);font-size:12px;}
-  .an-warn{font-size:11px;font-weight:600;color:var(--fail);background:color-mix(in srgb,var(--fail) 12%,transparent);border:1px solid color-mix(in srgb,var(--fail) 35%,transparent);padding:3px 8px;border-radius:6px;}
+  .an-warn-pill{font-size:11px;font-weight:600;color:var(--fail);background:color-mix(in srgb,var(--fail) 12%,transparent);border:1px solid color-mix(in srgb,var(--fail) 35%,transparent);padding:3px 8px;border-radius:6px;}
   .an-loading{display:flex;align-items:center;gap:8px;padding:18px 4px;color:var(--text-muted);font-size:13px;}
   .an-error{padding:18px 4px;color:var(--fail);font-size:13px;}
   .an-muted-sm{font-size:11px;color:var(--text-muted);}
@@ -1740,9 +2253,114 @@
   .cl-empty{display:flex;flex-direction:column;align-items:flex-start;gap:12px;padding:22px 4px 8px;}
   .cl-empty p{margin:0;color:var(--text-muted);font-size:13px;max-width:560px;}
 
-  .an-leg-dot{width:10px;height:10px;border-radius:50%;display:inline-block;}
-  .an-leg-label{font-size:10px;color:var(--text-muted);}
-  .an-canvas{width:100%;display:block;border-radius:8px;}
+  .an-svg{display:block;max-width:100%;}
+  /* Activity heatmap */
+  .hm{min-width:0;overflow-x:auto;}
+  .hm-month-track{position:relative;display:block;height:13px;margin-bottom:2px;min-width:0;}
+  .hm-month{position:absolute;top:0;font-size:9px;color:var(--text-muted);white-space:nowrap;}
+  .hm-body{display:flex;gap:6px;min-width:0;align-items:flex-start;}
+  .hm-main{min-width:0;}
+  .hm-days{display:grid;grid-template-rows:repeat(7, var(--cell, 14px));gap:4px;flex:none;margin-top:15px;}
+  .hm-days span{font-size:8px;color:var(--text-muted);display:flex;align-items:center;}
+  .hm-grid{
+    display:grid;grid-auto-flow:column;grid-template-rows:repeat(7, var(--cell, 14px));
+    gap:4px;min-width:0;
+  }
+  .hm-cell{
+    width:var(--cell, 14px);height:var(--cell, 14px);
+    border:none;border-radius:3px;padding:0;cursor:pointer;
+    background:color-mix(in srgb, #fff 5%, transparent);
+    transition:transform .18s var(--ease-spring);
+  }
+  .hm-cell.pad{visibility:hidden;}
+  .hm-cell.empty{cursor:default;}
+  .hm-cell:not(.pad):not(.empty):hover,
+  .hm-cell:not(.pad):not(.empty):focus-visible{transform:scale(1.25);z-index:2;outline:none;}
+  .hm-legend{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:9px;color:var(--text-muted);margin-top:8px;}
+  .hm-leg{display:inline-flex;align-items:center;gap:4px;}
+  .hm-leg-gap{margin-left:10px;}
+  .hm-leg-dot{width:8px;height:8px;border-radius:2px;display:inline-block;}
+  .hm-leg-swatch{width:10px;height:10px;border-radius:2px;display:inline-block;}
+  /* Squad Healing healer blocks — the death/down recap pattern */
+  .hl-rows{display:flex;flex-direction:column;gap:4px;margin-top:10px;min-width:0;}
+  .hl-row{
+    display:grid;grid-template-columns:18px minmax(0,1fr) auto;
+    align-items:center;gap:2px 8px;
+    padding:6px 8px;border-radius:6px;
+    background:color-mix(in srgb,#fff 3%,transparent);
+    transition:background-color .14s;
+  }
+  .hl-row:hover{background:color-mix(in srgb,#fff 6%,transparent);}
+  .hl-icon{width:16px;height:16px;border-radius:3px;object-fit:cover;flex:none;background:color-mix(in srgb,#fff 10%,transparent);}
+  .hl-who{display:flex;flex-direction:column;min-width:0;gap:1px;}
+  .hl-name{font-size:11px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .hl-stats{font-size:10px;color:var(--text);white-space:nowrap;font-variant-numeric:tabular-nums;}
+  .hl-val{font-size:11px;font-weight:700;color:var(--text);white-space:nowrap;font-variant-numeric:tabular-nums;}
+  .hl-src{
+    grid-column:1 / -1;display:flex;align-items:center;gap:5px;flex-wrap:wrap;
+    min-width:0;padding-top:2px;border-top:1px solid color-mix(in srgb,var(--border) 55%,transparent);
+  }
+  .hl-src-name{font-size:10px;color:var(--text);white-space:nowrap;}
+  .hl-skill{width:14px;height:14px;border-radius:3px;object-fit:cover;flex:none;background:color-mix(in srgb,#fff 10%,transparent);}
+  .hl-sep{font-size:10px;color:var(--text-muted);}
+  .an-grid{stroke:var(--border);stroke-width:1;}
+  .an-axis{stroke:var(--border);stroke-width:1;}
+  .an-axis-text{fill:var(--text-muted);font-size:10px;font-family:var(--font);}
+  .an-track{fill:color-mix(in srgb,#fff 4%,transparent);}
+  .an-bar-accent{fill:var(--accent);}
+  .an-bar-val{fill:var(--text);font-size:10px;font-weight:700;font-family:var(--font);}
+  .an-chart-empty{margin:0;padding:28px 4px;color:var(--text-muted);font-size:12px;text-align:center;}
+  .an-prof-rows{display:flex;flex-direction:column;gap:8px;}
+  .an-prof-row{display:grid;grid-template-columns:88px 1fr 46px;align-items:center;gap:8px;}
+  .an-prof-name{font-size:10px;font-weight:600;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .an-prof-track{height:8px;border-radius:4px;background:color-mix(in srgb,#fff 4%,transparent);overflow:hidden;}
+  .an-prof-bar{display:block;height:100%;border-radius:4px;}
+  .an-prof-pct{font-size:10px;font-weight:700;color:var(--text);text-align:right;font-variant-numeric:tabular-nums;}
+  .at-feed{display:flex;flex-direction:column;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;}
+  .at-row{
+    display:grid;grid-template-columns:14px minmax(0,1fr) 46px 74px 74px 44px;
+    align-items:center;gap:8px;padding:6px 10px;min-width:0;
+    border-bottom:1px solid color-mix(in srgb,var(--border) 50%,transparent);
+    transition:background-color .14s;
+  }
+  .at-row:last-child{border-bottom:none;}
+  .at-row:not(.at-head):hover{background:color-mix(in srgb,#fff 4%,transparent);}
+  .at-head{
+    background:color-mix(in srgb,#fff 3%,transparent);
+    font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;
+    color:var(--text-muted);padding:5px 10px;
+  }
+  .at-dot{width:8px;height:8px;border-radius:50%;justify-self:center;}
+  .at-dot.kill{background:var(--success);}
+  .at-dot.wipe{background:var(--fail);}
+  .at-boss{font-size:11px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .at-mode{font-size:9px;font-weight:700;color:var(--text-muted);text-align:right;}
+  .at-time,.at-dur,.at-party{font-size:10px;color:var(--text-muted);text-align:right;font-variant-numeric:tabular-nums;}
+  /* Attempt timeline */
+  .ln-wrap{min-width:0;}
+  .ln-lanes{display:flex;flex-direction:column;gap:2px;min-width:0;}
+  .ln-lane{display:grid;grid-template-columns:96px minmax(0,1fr);gap:8px;align-items:center;height:26px;min-width:0;}
+  .ln-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .ln-track{position:relative;display:block;height:100%;min-width:0;background:color-mix(in srgb,#fff 2%,transparent);border-radius:4px;}
+  .ln-dot{
+    position:absolute;top:50%;transform:translate(-50%,-50%);
+    width:10px;height:10px;border-radius:50%;padding:0;border:none;cursor:pointer;
+    background:var(--success);
+    transition:transform .18s var(--ease-spring);
+  }
+  .ln-dot.wipe{background:var(--fail);}
+  .ln-dot:hover,.ln-dot:focus-visible{transform:translate(-50%,-50%) scale(1.5);z-index:2;outline:none;}
+  .ln-count{
+    position:absolute;top:-8px;right:-10px;
+    font-size:8px;font-weight:800;line-height:1;
+    background:var(--bg-card);border:1px solid var(--border);border-radius:6px;
+    padding:1px 3px;color:var(--text);
+  }
+  .ln-axis{display:grid;grid-template-columns:96px minmax(0,1fr);gap:8px;margin-top:4px;}
+  .ln-axis-track{position:relative;height:14px;min-width:0;}
+  .ln-axis-label{position:absolute;transform:translateX(-50%);font-size:9px;color:var(--text-muted);white-space:nowrap;}
+  .an-detail-player .an-dot.kill{background:var(--success);}
+  .an-detail-player .an-dot.wipe{background:var(--fail);}
   .an-table-wrap{overflow-x:auto;border-radius:10px;border:1px solid var(--border);}
   .an-table{width:100%;border-collapse:collapse;font-size:12px;}
   .an-table thead tr{
@@ -1768,17 +2386,14 @@
     background: color-mix(in srgb, var(--accent) 12%, rgba(255, 255, 255, 0.02));
     border-left: 3px solid var(--accent);
   }
-  .an-row.interactive.focused td {
-    color: #fff;
-  }
   .an-td-boss{padding:8px 12px;font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;}
   .an-td-num{padding:8px 12px;text-align:right;font-variant-numeric:tabular-nums;color:var(--text-muted);white-space:nowrap;}
-  .an-kill{color:#10b981;font-weight:600;}
-  .an-wipe{color:#ef4444;font-weight:600;}
+  .an-kill{color:var(--success);font-weight:600;}
+  .an-wipe{color:var(--fail);font-weight:600;}
   .an-rate-pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;}
-  .an-rate-green{background:color-mix(in srgb,#10b981 18%,transparent);color:#6ee7b7;}
-  .an-rate-yellow{background:color-mix(in srgb,#fbbf24 18%,transparent);color:#fcd34d;}
-  .an-rate-red{background:color-mix(in srgb,#ef4444 18%,transparent);color:#fca5a5;}
+  .an-rate-success{background:color-mix(in srgb,var(--success) 18%,transparent);color:var(--success);}
+  .an-rate-warn{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn);}
+  .an-rate-fail{background:color-mix(in srgb,var(--fail) 18%,transparent);color:var(--fail);}
 
   /* Backfill Banner styling */
   .an-backfill-banner {
@@ -1874,50 +2489,38 @@
     filter: invert(1) brightness(100);
   }
 
-  /* Personal DPS Tooltip */
-  .dps-tooltip {
-    position: absolute;
-    transform: translate(-50%, -100%);
-    pointer-events: none;
-    background: rgba(20, 20, 26, 0.94);
-    backdrop-filter: blur(8px);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 6px 10px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
-    z-index: 10;
-    white-space: nowrap;
+  /* DPS chart detail strip — reserved space, so the card does not jump */
+  .an-detail{
+    display:flex; align-items:center; flex-wrap:wrap; gap:6px 10px;
+    min-height:34px; padding:6px 10px;
+    background:var(--bg-panel); border:1px solid var(--border); border-radius:var(--radius);
+    font-size:11px;
   }
-  .dps-tooltip-title {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text);
-    margin-bottom: 2px;
-  }
-  .dps-tooltip-status {
+  .an-detail-title{font-weight:700;color:var(--text);}
+  .an-detail-rows{display:flex; flex-wrap:wrap; gap:2px 16px; flex:1; min-width:0;}
+  .an-detail-row{display:flex; align-items:center; justify-content:space-between; gap:10px; min-width:190px;}
+  .an-detail-player{display:flex; align-items:center; gap:5px; min-width:0;}
+  .an-detail-player .an-dot{width:6px; height:6px; border-radius:50%; flex:none;}
+  .an-detail-prof{width:17px; height:17px; object-fit:contain;}
+  .an-detail-char{color:var(--text-muted);}
+  .an-detail-acct{color:var(--text);font-weight:600;}
+  .an-detail-val{color:var(--text);font-weight:700;font-variant-numeric:tabular-nums;}
+  .an-detail-hp{color:var(--fail);width:100%;margin-top:2px;border-top:1px solid var(--border);padding-top:4px;}
+  .an-detail-hint{color:var(--text-muted);opacity:.8;}
+  .an-detail-status {
     font-size: 9px;
     font-weight: 700;
     padding: 1px 4px;
     border-radius: 3px;
     text-transform: uppercase;
   }
-  .dps-tooltip-status.kill {
-    background: rgba(16, 185, 129, 0.2);
-    color: #10b981;
+  .an-detail-status.kill {
+    background: color-mix(in srgb, var(--success) 20%, transparent);
+    color: var(--success);
   }
-  .dps-tooltip-status.wipe {
-    background: rgba(239, 68, 68, 0.2);
-    color: #ef4444;
-  }
-  .dps-tooltip-val {
-    font-size: 11px;
-    color: var(--text-muted);
-  }
-  .dps-tooltip-val strong {
-    color: #a78bfa;
+  .an-detail-status.wipe {
+    background: color-mix(in srgb, var(--fail) 20%, transparent);
+    color: var(--fail);
   }
 
   /* Searchable Account Dropdown */
@@ -1962,7 +2565,7 @@
     top: calc(100% + 4px);
     right: 0;
     width: 240px;
-    background: #18181f;
+    background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: 8px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
@@ -2029,8 +2632,8 @@
     color: var(--text);
   }
   .an-acc-item.selected {
-    background: rgba(167, 139, 250, 0.15);
-    color: #a78bfa;
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    color: var(--accent);
     font-weight: 600;
   }
   .an-acc-item-name {
@@ -2057,9 +2660,9 @@
     padding: 20px;
   }
   .prof-modal {
-    background: #16171f;
+    background: var(--bg-card);
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: var(--radius);
     width: min(440px, 100%);
     max-height: 80vh;
     overflow-y: auto;
@@ -2123,8 +2726,8 @@
     transition: background 0.15s ease, border-color 0.15s ease;
   }
   .prof-cell:hover {
-    background: rgba(168, 85, 247, 0.12);
-    border-color: rgba(168, 85, 247, 0.4);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
   }
   .prof-cell-icon {
     width: 40px;
@@ -2148,7 +2751,7 @@
     font-size: 11px;
   }
   .prof-cell-check {
-    color: #c084fc;
+    color: var(--accent);
     font-size: 12px;
   }
 
@@ -2164,7 +2767,7 @@
     position: fixed;
     bottom: 24px;
     right: 24px;
-    background: #1e1e24;
+    background: var(--bg-card);
     border: 1px solid var(--border);
     color: var(--text);
     padding: 12px 18px;
@@ -2185,9 +2788,9 @@
     100% { background-position: 200% 0; }
   }
   .skeleton-card {
-    background: var(--bg-card);
+    background: var(--bg-panel);
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: var(--radius);
     padding: 14px 16px;
     display: flex;
     flex-direction: column;
@@ -2211,9 +2814,9 @@
     animation: shimmer 1.5s infinite linear;
   }
   .skeleton-section {
-    background: var(--bg-card);
+    background: var(--bg-panel);
     border: 1px solid var(--border);
-    border-radius: 14px;
+    border-radius: var(--radius);
     padding: 16px;
     display: flex;
     flex-direction: column;
@@ -2245,7 +2848,10 @@
     .skeleton-chart-body,
     .an-acc-menu,
     .an-toast,
-    .an-progress-bar {
+    .an-progress-bar,
+    .ln-dot,
+    .hm-cell,
+    .hl-row {
       animation: none !important;
       transition: none !important;
     }

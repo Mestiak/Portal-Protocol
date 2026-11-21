@@ -29,16 +29,23 @@
     return copy;
   });
 
-  // Cohort cards: aggregate value + label + placeholder dash (encounter-stat style).
-  // Color per your spec: Orb Eff (blue), Total Orbs (blue), Rage Hits (yellow),
-  // Shadows Reached (purple), Boons Corrupted (red).
+  // Cohort cards: aggregate value, label, and a per-log sparkline of the same
+  // metric across the logs in the cohort.
+  function sparkPoints(series: number[]): string {
+    if (series.length < 2) return '';
+    const max = Math.max(...series, 1);
+    return series
+      .map((v, i) => `${((i / (series.length - 1)) * 64).toFixed(1)},${(17 - (v / max) * 15).toFixed(1)}`)
+      .join(' ');
+  }
+
   const cards = $derived([
-    { label: 'Orb Efficiency', value: `${report.orbEfficiency}%`, cls: 'cl-blue', series: perLog.orbEff },
-    { label: 'Total Orbs', value: report.totalOrbs, cls: 'cl-blue', series: perLog.orbs },
-    { label: 'Rage Hits', value: report.rageHits, cls: 'cl-yellow', series: perLog.rageHits },
-    { label: 'Shadows Reached', value: report.shadowsReached, cls: 'cl-purple', series: perLog.shadows },
-    { label: 'Boons Corrupted', value: report.boonStrippedPlayers, cls: 'cl-red', series: perLog.stripped },
-    { label: 'Best Pull', value: `${report.bestPull}%`, cls: 'cl-green', series: perLog.bestPull },
+    { label: 'Orb Efficiency', value: `${report.orbEfficiency}%`, cls: 'cl-accent', series: perLog.orbEff },
+    { label: 'Total Orbs', value: report.totalOrbs, cls: 'cl-accent', series: perLog.orbs },
+    { label: 'Rage Hits', value: report.rageHits, cls: 'cl-warn', series: perLog.rageHits },
+    { label: 'Shadows Reached', value: report.shadowsReached, cls: 'cl-accent', series: perLog.shadows },
+    { label: 'Boons Corrupted', value: report.boonStrippedPlayers, cls: 'cl-fail', series: perLog.stripped },
+    { label: 'Best Pull', value: `${report.bestPull}%`, cls: 'cl-success', series: perLog.bestPull },
   ]);
 </script>
 
@@ -48,7 +55,11 @@
     <div class="an-card cl-card">
       <div class="cl-card-val {c.cls}">{c.value}</div>
       <div class="cl-card-label">{c.label}</div>
-      <div class="cl-card-dash" aria-hidden="true"></div>
+      {#if c.series.length > 1}
+        <svg class="cl-spark" viewBox="0 0 64 18" preserveAspectRatio="none" aria-hidden="true">
+          <polyline class={c.cls} points={sparkPoints(c.series)} vector-effect="non-scaling-stroke" />
+        </svg>
+      {/if}
     </div>
   {/each}
 </div>
@@ -94,14 +105,18 @@
 <style>
   .cl-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
   .cl-card { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; }
-  .cl-card-val { font-size: 28px; font-weight: 800; line-height: 1; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: .01em; }
-  .cl-card-val.cl-blue { color: var(--accent); }
-  .cl-card-val.cl-yellow { color: #f4c542; }
-  .cl-card-val.cl-purple { color: #b18cff; }
-  .cl-card-val.cl-red { color: #ff5d5d; }
-  .cl-card-val.cl-green { color: #3ddc97; }
-  .cl-card-label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--text); }
-  .cl-card-dash { width: 28px; height: 4px; border-radius: 2px; background: color-mix(in srgb, #fff 22%, transparent); margin-top: 2px; }
+  .cl-card-val { font-size: 22px; font-weight: 800; line-height: 1; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+  .cl-card-val.cl-accent { color: var(--accent); }
+  .cl-card-val.cl-warn { color: var(--warn); }
+  .cl-card-val.cl-fail { color: var(--fail); }
+  .cl-card-val.cl-success { color: var(--success); }
+  .cl-card-label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+  .cl-spark { width: 100%; height: 18px; margin-top: 4px; }
+  .cl-spark polyline { fill: none; stroke-width: 1.5; }
+  .cl-spark .cl-accent { stroke: var(--accent); }
+  .cl-spark .cl-warn { stroke: var(--warn); }
+  .cl-spark .cl-fail { stroke: var(--fail); }
+  .cl-spark .cl-success { stroke: var(--success); }
 
   .sm-table { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
   .sm-row { display: grid; grid-template-columns: 2fr 0.9fr 0.9fr 0.9fr 1fr 1fr; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border); }
@@ -115,7 +130,7 @@
   .sm-num.sm-sort.active { color: var(--accent); }
   .sm-cell { font-size: 12px; color: var(--text); }
   .sm-player { display: flex; align-items: center; gap: 9px; min-width: 0; }
-  .sm-prof { width: 22px; height: 22px; border-radius: 5px; flex: 0 0 auto; background: #0c0d12; }
+  .sm-prof { width: 22px; height: 22px; border-radius: 5px; flex: 0 0 auto; background: var(--bg-sidebar); }
   .sm-names { display: flex; flex-direction: column; line-height: 1.15; min-width: 0; }
   .sm-toon { font-weight: 600; }
   .sm-acct { font-size: 11px; color: var(--text-muted); }

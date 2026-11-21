@@ -44,10 +44,30 @@ export interface AnalyticsFilters {
   range: string;
   profession?: string | number; // "all" or a PROFESSIONS key / elite_spec id
   professionKind?: "all" | "core" | "spec"; // base-id vs elite-spec-id
+  /** Squad-size band id from SQUAD_SIZE_BANDS; undefined/“any” means no filter. */
+  squadSize?: string;
+  /** Cleaned account name; only logs that player took part in. */
+  player?: string;
   customStart?: string;
   customEnd?: string;
   customStartTime?: string; // HH:MM, for sub-day filtering within a custom date
   customEndTime?: string;   // HH:MM
+}
+
+/** Squad-size bands for the Analytics filter. */
+export const SQUAD_SIZE_BANDS: { id: string; label: string; min: number; max: number }[] = [
+  { id: "any", label: "Any Size", min: 0, max: Number.POSITIVE_INFINITY },
+  { id: "1-4", label: "1–4 players", min: 1, max: 4 },
+  { id: "5", label: "5 players", min: 5, max: 5 },
+  { id: "6-9", label: "6–9 players", min: 6, max: 9 },
+  { id: "10", label: "10 players", min: 10, max: 99 },
+];
+
+export function squadSizeMatches(size: number | null | undefined, bandId: string | undefined): boolean {
+  if (!bandId || bandId === "any") return true;
+  const band = SQUAD_SIZE_BANDS.find((b) => b.id === bandId);
+  if (!band || size == null) return false;
+  return size >= band.min && size <= band.max;
 }
 
 export interface BossStats {
@@ -59,14 +79,6 @@ export interface BossStats {
   avgDuration: number | null;
   shortestKill: number | null;
   avgWipeHp: number | null;
-}
-
-export interface ActivityPoint {
-  label: string;
-  date: Date;
-  kills: number;
-  wipes: number;
-  total: number;
 }
 
 export interface ProfessionCount {
@@ -94,7 +106,6 @@ export interface AggregatedStats {
   shortestKill: number | null;
   mostPlayedBoss: string | null;
   bossBreakdown: BossStats[];
-  activitySeries: ActivityPoint[];
   professionFrequency: ProfessionCount[];
   wipeDepthBuckets: WipeBucket[];
   empty: boolean;
@@ -104,13 +115,19 @@ export interface AggregatedStats {
 
 const MAX_CACHE_SIZE = 64;
 
+// Boss HP remaining at the wipe. The low end is where the interesting
+// resolution is (a 2% wipe and a 9% wipe are different), so the top bucket
+// stops at half and the rest is split into 15-point bands rather than one
+// catch-all.
 const WIPE_BUCKETS: Omit<WipeBucket, "count">[] = [
-  { label: "0-10%",  min: 0,  max: 10  },
-  { label: "10-20%", min: 10, max: 20  },
-  { label: "20-30%", min: 20, max: 30  },
-  { label: "30-40%", min: 30, max: 40  },
-  { label: "40-50%", min: 40, max: 50  },
-  { label: "50%+",   min: 50, max: 101 },
+  { label: "0-10%",  min: 0,  max: 10 },
+  { label: "10-20%", min: 10, max: 20 },
+  { label: "20-30%", min: 20, max: 30 },
+  { label: "30-40%", min: 30, max: 40 },
+  { label: "40-50%", min: 40, max: 50 },
+  { label: "50-65%", min: 50, max: 65 },
+  { label: "65-80%", min: 65, max: 80 },
+  { label: "80%+",   min: 80, max: 101 },
 ];
 
 // ─── Memoization ──────────────────────────────────────────────────────────────
@@ -147,7 +164,9 @@ function hashLogs(logs: AnalyticsLog[]): string {
 }
 
 function memoKey(logs: AnalyticsLog[], filters: AnalyticsFilters): string {
-  return `${hashLogs(logs)}|${filters.boss}|${filters.mode}|${filters.range}|${filters.profession ?? 'all'}|${filters.professionKind ?? 'all'}|${filters.customStart ?? ''}|${filters.customEnd ?? ''}|${filters.customStartTime ?? ''}|${filters.customEndTime ?? ''}`;
+  // Every field the render path derives must appear here. A filter that is
+  // missing from this key silently serves the previous selection's stats.
+  return `${hashLogs(logs)}|${filters.boss}|${filters.mode}|${filters.range}|${filters.profession ?? 'all'}|${filters.professionKind ?? 'all'}|${filters.squadSize ?? 'any'}|${filters.player ?? ''}|${filters.customStart ?? ''}|${filters.customEnd ?? ''}|${filters.customStartTime ?? ''}|${filters.customEndTime ?? ''}`;
 }
 
 function memoSet(key: string, value: AggregatedStats): void {
@@ -232,6 +251,11 @@ function applyFilters(logs: AnalyticsLog[], filters: AnalyticsFilters): Analytic
     if (endDate && d > endDate) return false;
     if (filters.boss !== "all" && log.boss_name !== filters.boss) return false;
     if (!passesMode(log, filters.mode)) return false;
+    if (!squadSizeMatches(log.num_players, filters.squadSize)) return false;
+    if (filters.player) {
+      const hit = (log.players ?? []).some((p) => cleanAccountName(p.account ?? "") === filters.player);
+      if (!hit) return false;
+    }
     if ((filters.profession ?? "all") !== "all") {
       const want = Number(filters.profession);
       const hit = (log.players ?? []).some((p) =>
@@ -241,6 +265,11 @@ function applyFilters(logs: AnalyticsLog[], filters: AnalyticsFilters): Analytic
     }
     return true;
   });
+}
+
+/** The logs currently in scope for a filter set. */
+export function filterLogs(logs: AnalyticsLog[], filters: AnalyticsFilters): AnalyticsLog[] {
+  return applyFilters(logs, filters);
 }
 
 // ─── Boss breakdown ───────────────────────────────────────────────────────────
@@ -270,45 +299,7 @@ function buildBossBreakdown(logs: AnalyticsLog[]): BossStats[] {
   return result.sort((a, b) => b.total - a.total);
 }
 
-// ─── Activity series ──────────────────────────────────────────────────────────
-
-function getISOWeek(date: Date): number {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
-}
-
 const SHORT_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-
-function buildActivitySeries(logs: AnalyticsLog[], range: string): ActivityPoint[] {
-  const byWeek = range === "90d" || range === "all";
-  const years = new Set(logs.map(l => parseLogDate(l.timestamp).getFullYear()));
-  const multiYear = years.size > 1;
-  const map = new Map<string, { kills: number; wipes: number; date: Date }>();
-  for (const log of logs) {
-    const d = parseLogDate(log.timestamp);
-    const key = byWeek
-      ? `${d.getFullYear()}-W${String(getISOWeek(d)).padStart(2, "0")}`
-      : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    if (!map.has(key)) map.set(key, { kills: 0, wipes: 0, date: d });
-    const entry = map.get(key)!;
-    if (log.success === true) entry.kills++;
-    else if (log.success === false) entry.wipes++;
-  }
-  return Array.from(map.entries())
-    .sort((a, b) => a[1].date.getTime() - b[1].date.getTime())
-    .map(([, data]) => ({
-      label: byWeek
-        ? `W${getISOWeek(data.date)} ${SHORT_MONTHS[data.date.getMonth()]}${multiYear ? ` ${data.date.getFullYear()}` : ''}`
-        : `${SHORT_MONTHS[data.date.getMonth()]} ${data.date.getDate()}${multiYear ? `, ${data.date.getFullYear()}` : ''}`,
-      date: data.date,
-      kills: data.kills,
-      wipes: data.wipes,
-      total: data.kills + data.wipes,
-    }));
-}
 
 // ─── Profession frequency ─────────────────────────────────────────────────────
 
@@ -482,7 +473,7 @@ export function aggregateStats(logs: AnalyticsLog[], filters: AnalyticsFilters):
     const empty: AggregatedStats = {
       totalLogs: 0, totalKills: 0, totalWipes: 0, uniquePlayers: 0, overallSuccessRate: 0,
       avgDuration: null, shortestKill: null, mostPlayedBoss: null,
-      bossBreakdown: [], activitySeries: [], professionFrequency: [],
+      bossBreakdown: [], professionFrequency: [],
       wipeDepthBuckets: [], empty: true,
     };
     memoSet(key, empty);
@@ -507,7 +498,6 @@ export function aggregateStats(logs: AnalyticsLog[], filters: AnalyticsFilters):
     shortestKill,
     mostPlayedBoss: bossBreakdown[0]?.boss ?? null,
     bossBreakdown,
-    activitySeries: buildActivitySeries(filtered, filters.range),
     professionFrequency: buildProfessionFrequency(filtered),
     wipeDepthBuckets: buildWipeDepthBuckets(wipes),
     empty: false,
