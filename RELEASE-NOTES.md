@@ -9,6 +9,8 @@ healing are finally readable across a whole session, not just one log.
 
 **Encounter Activity** — your play as a calendar. Brighter days are busier, greener days are cleaner, and the days you didn't play now show up instead of silently disappearing.
 
+**Compare by Phase** — the Player Performance chart has a phase selector: pick the full fight or any phase and compare target or cleave DPS per player in it, with the same hover detail.
+
 **Attempt Timeline** — every attempt on one chart, with a lane per boss and a dot per pull. Hover a dot for the boss, the time and how far you got.
 
 **Attempts Feed** — every kill and wipe, newest first, with the boss, mode, time, duration (or boss HP left) and squad size.
