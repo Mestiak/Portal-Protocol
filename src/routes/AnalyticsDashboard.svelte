@@ -12,6 +12,7 @@
   import { extractDefenseSupport } from '../lib/defenseSupport';
   import { summarizeDefense, summarizeTrend, type DefenseTrendPoint } from '../lib/defenseTrend';
   import { summarizeHealing, summarizeHealingTrend, type HealingTrendPoint } from '../lib/healingTrend';
+  import { summarizePhaseBreakdown, buildPhaseBreakdown, type PhaseLogReport, type PhaseMetric } from '../lib/phaseBreakdown';
   import { fmtTime, toCsv } from '../lib/format';
   import { wipeLayout, professionRows, dpsLayout } from '../lib/chartScale';
   import { buildProfessionGroups, ELITE_SPEC_ICONS, PROFESSIONS, PROFESSION_NAME_ICONS, type ProfessionGroup } from '../lib/professionData';
@@ -712,6 +713,65 @@
       healLoaded = false;
     } finally {
       healLoading = false;
+    }
+  }
+
+  // ─── Phase breakdown ─────────────────────────────────────────────────────────
+  // Per-phase DPS / cleave / breakbar, averaged across the logs in the filter.
+  // Phase names are encounter-specific, so this only makes sense for one boss.
+  let phaseReports = $state<PhaseLogReport[] | null>(null);
+  let phaseLoading = $state(false);
+  let phaseLoaded = $state(false);
+  let phaseError = $state<string | null>(null);
+  let phaseSelected = $state(0);
+  let phaseMetric = $state<PhaseMetric>('dps');
+
+  let phaseColumns = $derived(buildPhaseBreakdown(phaseReports ?? [])?.phases ?? []);
+  let activePhase = $derived(phaseColumns[Math.min(phaseSelected, Math.max(phaseColumns.length - 1, 0))]);
+  let phaseRows = $derived.by(() => {
+    const players = activePhase?.players ?? [];
+    const max = players.reduce((m, p) => Math.max(m, p[phaseMetric]), 0);
+    return players.map((p, i) => ({
+      ...p,
+      rank: i + 1,
+      pct: max > 0 ? (p[phaseMetric] / max) * 100 : 0,
+    }));
+  });
+
+  const PHASE_METRICS: { id: PhaseMetric; label: string }[] = [
+    { id: 'dps', label: 'DPS' },
+    { id: 'cleave', label: 'Cleave' },
+    { id: 'breakbar', label: 'Breakbar' },
+  ];
+
+  // Phase names belong to one encounter, so switching boss invalidates what is
+  // loaded — drop it rather than showing another boss's phases.
+  $effect(() => {
+    void bossFilter;
+    phaseReports = null;
+    phaseLoaded = false;
+    phaseError = null;
+    phaseSelected = 0;
+  });
+
+  async function loadPhaseBreakdown() {
+    const recs = filterLogs(logs, activeFilters).filter(l => l.url);
+    if (recs.length === 0) { phaseError = 'No logs in the current filter scope.'; phaseLoaded = false; return; }
+    phaseError = null;
+    phaseLoading = true;
+    try {
+      const { points, failed, total } = await loadLogReports('phases', (raw) => summarizePhaseBreakdown(raw));
+      phaseReports = points;
+      phaseLoaded = points.length > 0;
+      phaseSelected = 0;
+      if (points.length === 0) {
+        phaseError = `No phase data found. ${points.length}/${total} logs had per-phase data; ${failed} unreachable.`;
+      }
+    } catch (e) {
+      phaseError = String(e);
+      phaseLoaded = false;
+    } finally {
+      phaseLoading = false;
     }
   }
 
@@ -1504,6 +1564,72 @@
         {/if}
       </div>
     </div>
+
+    <!-- Phase breakdown: dps / cleave / breakbar per phase, across the filter -->
+    {#if bossFilter !== 'all'}
+    <div class="an-section">
+      <div class="an-section-head" style="justify-content:space-between; flex-wrap:wrap; gap:10px;">
+        <span class="an-section-title"><i class="fa-solid fa-layer-group"></i> Phase Breakdown</span>
+        {#if activePhase}
+          <span class="an-muted-sm">
+            {activePhase.players.length} player{activePhase.players.length !== 1 ? 's' : ''} · averaged over the filtered logs
+          </span>
+        {/if}
+      </div>
+
+      <div class="an-chart-box">
+        {#if phaseLoading}
+          <div class="an-loading"><i class="fa-solid fa-spinner fa-spin"></i> Reading phases from {scopedAttempts.length} log{scopedAttempts.length !== 1 ? 's' : ''}…</div>
+        {:else if phaseError}
+          <div class="an-error">{phaseError}</div>
+          <button class="an-btn" onclick={loadPhaseBreakdown}><i class="fa-solid fa-rotate"></i> Retry</button>
+        {:else if phaseLoaded && phaseColumns.length > 0}
+          <div class="ph-pills">
+            {#each phaseColumns as ph, i}
+              <button class="an-pill" class:active={phaseSelected === i} onclick={() => phaseSelected = i} title={ph.name}>
+                {ph.name}
+              </button>
+            {/each}
+          </div>
+          <div class="ph-pills">
+            {#each PHASE_METRICS as m}
+              <button class="an-pill" class:active={phaseMetric === m.id} onclick={() => phaseMetric = m.id}>
+                {m.label}
+              </button>
+            {/each}
+          </div>
+
+          <div class="ph-rows">
+            {#each phaseRows as r}
+              {@const rIcon = profIconByName(r.profession)}
+              <div class="ph-row">
+                <span class="ph-rank">{r.rank}</span>
+                {#if rIcon}<img src={rIcon} alt={r.profession} class="ph-icon" />{:else}<span class="ph-icon"></span>{/if}
+                <span class="ph-who">
+                  <span class="ph-name" title={r.account}>{r.name}</span>
+                  <span class="ph-sub">{r.logs} log{r.logs !== 1 ? 's' : ''}</span>
+                </span>
+                <span class="ph-bar"><i style="height:{r.pct.toFixed(1)}%"></i></span>
+                <span class="ph-val">{fmtCompact(r[phaseMetric])}</span>
+              </div>
+            {/each}
+          </div>
+          {#if phaseRows.length === 0}
+            <p class="an-chart-empty">No players in this phase</p>
+          {/if}
+        {:else if phaseLoaded}
+          <p class="an-chart-empty">No phase data in this range</p>
+        {:else}
+          <div class="cl-empty">
+            <p>Every player's DPS, cleave and breakbar for each phase of the fight, averaged across the logs in this filter. Phase data comes from Elite Insights, so this reads one report per log.</p>
+            <button class="an-btn an-btn-primary" onclick={loadPhaseBreakdown}>
+              <i class="fa-solid fa-layer-group"></i> Load Phase Breakdown
+            </button>
+          </div>
+        {/if}
+      </div>
+    </div>
+    {/if}
 
     <!-- Player Performance Line Chart & Comparison -->
     {#if bossFilter !== 'all'}
@@ -2322,6 +2448,32 @@
   .hl-src-name{font-size:10px;color:var(--text);white-space:nowrap;}
   .hl-skill{width:14px;height:14px;border-radius:3px;object-fit:cover;flex:none;background:color-mix(in srgb,#fff 10%,transparent);}
   .hl-sep{font-size:10px;color:var(--text-muted);}
+  /* Phase breakdown — ranked rows in the Stats modal's panel style */
+  .ph-pills{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;}
+  .ph-rows{display:flex;flex-direction:column;gap:4px;min-width:0;}
+  .ph-row{
+    display:grid;grid-template-columns:16px 16px minmax(0,1fr) 5px auto;
+    align-items:center;gap:2px 8px;
+    padding:6px 8px;border-radius:6px;
+    background:color-mix(in srgb,#fff 3%,transparent);
+    transition:background-color .14s;
+  }
+  .ph-row:hover{background:color-mix(in srgb,#fff 6%,transparent);}
+  .ph-rank{font-size:9px;color:var(--text-muted);font-variant-numeric:tabular-nums;}
+  .ph-icon{width:14px;height:14px;border-radius:4px;object-fit:cover;flex:none;background:color-mix(in srgb,#fff 10%,transparent);}
+  .ph-who{display:flex;flex-direction:column;min-width:0;gap:1px;}
+  .ph-name{font-size:10px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .ph-sub{font-size:9px;color:var(--text-muted);white-space:nowrap;font-variant-numeric:tabular-nums;}
+  .ph-bar{
+    position:relative;width:3px;height:18px;border-radius:2px;
+    background:color-mix(in srgb,#fff 7%,transparent);overflow:hidden;
+  }
+  .ph-bar i{
+    position:absolute;bottom:0;left:0;right:0;display:block;
+    background:var(--accent);border-radius:2px;
+    transition:height .5s var(--ease-smooth);
+  }
+  .ph-val{font-size:10px;color:var(--text);white-space:nowrap;text-align:right;min-width:54px;font-variant-numeric:tabular-nums;}
   .an-grid{stroke:var(--border);stroke-width:1;}
   .an-axis{stroke:var(--border);stroke-width:1;}
   .an-axis-text{fill:var(--text-muted);font-size:10px;font-family:var(--font);}
@@ -2871,7 +3023,9 @@
     .ln-dot,
     .hm-cell,
     .hl-row,
-    .an-help {
+    .an-help,
+    .ph-row,
+    .ph-bar i {
       animation: none !important;
       transition: none !important;
     }
