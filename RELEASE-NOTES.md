@@ -1,15 +1,22 @@
-# Portal Protocol 0.8.4 — Patch Notes
+# Portal Protocol 0.8.5 — Patch Notes
 
-The Cerus stats page is rebuilt — the fight reads at a glance, and the Empowered numbers now match Elite Insights.
+The Analytics tab is rebuilt — your play at a glance, and the squad's defense and
+healing are finally readable across a whole session, not just one log.
 
 ---
 
-## 🐉 Cerus Stats — Rebuilt
+## 📊 Analytics — Rebuilt
 
-**Stat Cards** — Orb Block Efficiency, Shadows Reached Cerus, Empowered Stacks, Squad Rage Hits and Total of Boon Stripped, restyled as clean panels with the value up top.
+**Encounter Activity** — your play as a calendar. Brighter days are busier, greener days are cleaner, and the days you didn't play now show up instead of silently disappearing.
 
-**Empowered, Phase by Phase** — each phase is its own card: who held the stacks, ranked, with the orbs that fed them and a bar showing the split. Stacks go to the player who actually took them, and a collapsible history feed walks the fight in order.
+**Attempt Timeline** — every attempt on one chart, with a lane per boss and a dot per pull. Hover a dot for the boss, the time and how far you got.
 
-**Fight Timeline** — the fight on five lanes: orbs blocked and leaked, Cry of Rage hits, shadows reaching Cerus, and close spawns. Every phase is banded behind the lanes and an efficiency line runs along the bottom. Hover a dot for the details.
+**Attempts Feed** — every kill and wipe, newest first, with the boss, mode, time, duration (or boss HP left) and squad size.
 
-**Squad Mechanics** — restyled to match, with rank, profession icons and click-to-sort columns.
+**Squad Defense** — your squad's mitigation rate over time, read from each log's Elite Insights report.
+
+**Squad Healing** — healing per hour for each log, plus a healer leaderboard with profession icons and each healer's biggest sources.
+
+**More Filters** — narrow the whole tab by squad size, or to the logs a specific player took part in.
+
+**Export CSV** — the boss breakdown and player performance as a spreadsheet, alongside the existing Markdown report.
