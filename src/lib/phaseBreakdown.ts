@@ -49,9 +49,6 @@ export interface PhaseBreakdown {
   phases: PhaseColumn[];
 }
 
-/** The three per-phase metrics the comparison can show. */
-export type PhaseMetric = 'dps' | 'cleave' | 'breakbar';
-
 function num(v: unknown): number {
   return typeof v === "number" && Number.isFinite(v) ? v : 0;
 }

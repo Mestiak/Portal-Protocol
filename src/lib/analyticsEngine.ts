@@ -615,6 +615,8 @@ export interface PlayerDpsMatch {
   account: string;
   charName: string;
   profession?: number;
+  /** EI reports a profession name rather than an id; present on per-phase points. */
+  professionName?: string;
   elite_spec?: number | null;
   value: number;
 }
