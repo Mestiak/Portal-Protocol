@@ -63,6 +63,7 @@
   // payload / stats count for no useful gain.
   const isCerus = $derived(!!mechanics && mechanics.boss === "Cerus");
   const isValeGuardian = $derived(!!mechanics && mechanics.boss === "Vale Guardian");
+  const isDeimos = $derived(!!mechanics && mechanics.boss === "Deimos");
   const isHT = $derived(!!mechanics && /harvest temple/i.test(mechanics.boss));
   let targetsOpen = $state(false); // collapsed by default — fights like Cerus spawn 25+ adds
   // Shadows tab accordion state
@@ -94,7 +95,7 @@
   // Single source of truth for the active sub-view. STATS section: Statistics
   // (cards+chart, default) | Boon Uptime (table). MECHANICS section (Cerus
   // only): Shadows | Orbs | Empowered.
-  type Tab = "statistics" | "boon" | "defense" | "support" | "revealed" | "shadows" | "orbs" | "empowered" | "teleports";
+  type Tab = "statistics" | "boon" | "defense" | "support" | "revealed" | "shadows" | "orbs" | "empowered" | "teleports" | "oils";
   let activeTab = $state<Tab>("statistics");
   // ── Phase breakdown ──
   // EI stores every per-phase metric as a positional array indexed by phase, so one
@@ -1205,7 +1206,8 @@
         activeTab = (mechanics && mechanics.boss === "Cerus")
           ? "statistics"
           : (isValeGuardian ? "teleports"
-          : (isHT && revealFeatureReady && (mechanics?.revealedBreakers.length ?? 0) > 0 ? "revealed" : "boon"));
+          : (isDeimos ? "oils"
+          : (isHT && revealFeatureReady && (mechanics?.revealedBreakers.length ?? 0) > 0 ? "revealed" : "boon")));
       } catch (e: any) {
         error = typeof e === "string" ? e : (e?.message || "Failed to load stats");
       } finally {
@@ -1346,6 +1348,12 @@
             <span class="tabs-divider"></span>
             <button class="top-tab" class:active={activeTab === "teleports"} onclick={() => (activeTab = "teleports")}>
               <i class="fa-solid fa-bolt"></i> Teleports
+            </button>
+          {/if}
+          {#if isDeimos}
+            <span class="tabs-divider"></span>
+            <button class="top-tab" class:active={activeTab === "oils"} onclick={() => (activeTab = "oils")}>
+              <i class="fa-solid fa-oil-can"></i> Oils
             </button>
           {/if}
         </nav>
@@ -1956,6 +1964,78 @@
                            onerror={(ev) => { (ev.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
                       <span class="feed-name" title={d.player.account}>{d.player.name}</span>
                       <span class="feed-cause"><span>{d.cause}: {d.causeDetail}</span></span>
+                    </div>
+                  {/each}
+                </div>
+              </div>
+            {/if}
+
+          {:else if activeTab === "oils" && isDeimos}
+            <!-- OILS (Deimos) -->
+            {@const oilSummary = mechanics?.oilSummary}
+            {@const oilRows = mechanics?.oilPlayers ?? []}
+            {@const oilEvents = mechanics?.oils ?? []}
+            {@const oilDowns = mechanics?.oilDowns ?? []}
+            <div class="ds-toolbar">
+              <span class="stats-hint">Rapid Decay oils set off by players — the first touch of each slick, not every expansion</span>
+            </div>
+            {#if oilSummary}
+              <div class="enc-summary">
+                <span><strong>{oilSummary.total}</strong> oil{oilSummary.total !== 1 ? 's' : ''}</span>
+                <span><strong>{oilSummary.players}</strong> player{oilSummary.players !== 1 ? 's' : ''}</span>
+                <span><strong>{oilSummary.downsAfterOil}</strong> down{oilSummary.downsAfterOil !== 1 ? 's' : ''} caused by oil</span>
+              </div>
+            {/if}
+            {#if oilRows.length === 0}
+              <div class="stat-note">No oil data for this log.</div>
+            {:else}
+              <div class="ds-block">
+                <div class="ds-block-title">Players <span class="ds-block-hint">{oilRows.length} players</span></div>
+                <div class="enc-head">
+                  <span class="enc-cap">#</span>
+                  <span class="enc-cap"></span>
+                  <span class="enc-cap">Player</span>
+                  <span class="enc-cap">Oils</span>
+                  <span class="enc-cap">Downs</span>
+                </div>
+                <div class="enc-rows">
+                  {#each oilRows as p, i}
+                    <div class="enc-row">
+                      <span class="enc-rank">{i + 1}</span>
+                      <img class="enc-icon" src={profIcon(p.profession)} alt={p.profession}
+                           onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                      <span class="enc-name" title={p.account}>{p.name}</span>
+                      <span class="enc-num">{p.count}</span>
+                      <span class="enc-num">{p.downs}</span>
+                    </div>
+                  {/each}
+                </div>
+              </div>
+
+              <div class="ds-block">
+                <div class="ds-block-title">Oils <span class="ds-block-hint">{oilEvents.length} slicks triggered</span></div>
+                <div class="feed">
+                  {#each oilEvents as o}
+                    <div class="feed-row">
+                      <span class="feed-time">{fmtTime(o.time)}</span>
+                      <img class="enc-icon" src={profIcon(o.profession)} alt={o.profession}
+                           onerror={(ev) => { (ev.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                      <span class="feed-name" title={o.account}>{o.name}</span>
+                    </div>
+                  {/each}
+                </div>
+              </div>
+
+              <div class="ds-block">
+                <div class="ds-block-title">Downs caused by oil <span class="ds-block-hint">{oilDowns.length} downs</span></div>
+                <div class="feed">
+                  {#each oilDowns as d}
+                    <div class="feed-row">
+                      <span class="feed-time">{fmtTime(d.time)}</span>
+                      <img class="enc-icon" src={profIcon(d.profession)} alt={d.profession}
+                           onerror={(ev) => { (ev.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                      <span class="feed-name" title={d.account}>{d.name}</span>
+                      <span class="feed-cause"><span>Oil: Rapid Decay (Black expanding oil)</span></span>
                     </div>
                   {/each}
                 </div>

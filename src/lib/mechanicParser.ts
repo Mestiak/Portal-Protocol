@@ -109,6 +109,14 @@ export interface OilPlayer {
   downs: number; // downs caused by oil
 }
 
+/** A down attributed to the oil, for the event feed. */
+export interface OilDown {
+  time: number;
+  name: string;
+  account: string;
+  profession: string;
+}
+
 export interface MechanicPhase {
   phaseName: string;
   start: number;
@@ -202,6 +210,7 @@ export interface MechanicReport {
   // Deimos oils (absent on every other boss).
   oils?: OilTrigger[];
   oilPlayers?: OilPlayer[];
+  oilDowns?: OilDown[];
   oilSummary?: { total: number; players: number; downsAfterOil: number };
   rawMechanicsCount?: number;
   debugMechanicNames?: { mechanics: string[]; buffs: string[] };
@@ -572,12 +581,25 @@ function extractDeimos(logData: Json): MechanicReport {
   // A down belongs to the oil when that player was taking Rapid Decay damage just
   // beforehand.
   const oilHits = collectMechanics(logData, "Oil");
-  const downs = collectMechanics(logData, "Downed");
   const downsByPlayer = new Map<string, number>();
-  for (const d of downs) {
+  const oilDowns: OilDown[] = [];
+  for (const d of collectMechanics(logData, "Downed")) {
     const hit = oilHits.some((h) => h.actor === d.actor && d.time - OIL_DOWN_WINDOW_MS <= h.time && h.time <= d.time);
     if (!hit) continue;
     downsByPlayer.set(d.actor, (downsByPlayer.get(d.actor) ?? 0) + 1);
+    oilDowns.push({
+      time: Math.round((d.time / 1000) * 10) / 10,
+      name: d.actor,
+      account: "",
+      profession: "",
+    });
+  }
+  for (const d of oilDowns) {
+    const id = identity.get(d.name);
+    if (id) {
+      d.account = id.account;
+      d.profession = id.profession;
+    }
   }
 
   const byPlayer = new Map<string, OilPlayer>();
@@ -615,6 +637,7 @@ function extractDeimos(logData: Json): MechanicReport {
     orbLeaderboard: [], orbPhaseLeaders: [], phases: [], squadLedger: [], revealedBreakers: [],
     oils: triggers.sort((a, b) => a.time - b.time),
     oilPlayers: players,
+    oilDowns: oilDowns.sort((a, b) => a.time - b.time),
     oilSummary: {
       total,
       players: players.filter((p) => p.count > 0).length,
