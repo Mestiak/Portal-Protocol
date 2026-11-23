@@ -2021,6 +2021,13 @@
                       <img class="enc-icon" src={profIcon(o.profession)} alt={o.profession}
                            onerror={(ev) => { (ev.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
                       <span class="feed-name" title={o.account}>{o.name}</span>
+                      {#if o.downs.length > 0}
+                        <span class="feed-downs">
+                          {#each o.downs as d}
+                            <span>- {d.name} went down by this oil</span>
+                          {/each}
+                        </span>
+                      {/if}
                     </div>
                   {/each}
                 </div>
@@ -2111,6 +2118,11 @@
     font-size: 10px; color: var(--text-muted);
   }
   .feed-cause span { color: var(--text); }
+  .feed-downs {
+    grid-column: 1 / -1; display: flex; flex-direction: column; gap: 2px;
+    font-size: 10px; color: var(--text-muted);
+  }
+  .feed-downs span { color: var(--warn); }
   .enc-tag { margin-left: 6px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); }
   .stats-modal-close {
     background: color-mix(in srgb,#fff 6%,transparent); border: 1px solid var(--border);
