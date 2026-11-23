@@ -2025,7 +2025,12 @@
                       {#if o.downs.length > 0}
                         <span class="feed-downs">
                           {#each o.downs as d}
-                            <span>- <b>{d.name}</b> went down by this oil at {fmtTime(d.time)}</span>
+                            <span class="feed-down">
+                              <span>-</span>
+                              <img class="feed-down-icon" src={profIcon(d.profession)} alt={d.profession}
+                                   onerror={(ev) => { (ev.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                              <span class="feed-down-txt"><b>{d.name}</b> went down by this oil at <b>{fmtTime(d.time)}</b></span>
+                            </span>
                           {/each}
                         </span>
                       {/if}
@@ -2108,8 +2113,10 @@
     grid-column: 1 / -1; display: flex; flex-direction: column; gap: 2px;
     font-size: 10px; color: var(--text-muted);
   }
-  .feed-downs span { color: var(--warn); }
-  .feed-downs b { color: var(--text); font-weight: 700; }
+  .feed-down { display: flex; align-items: center; gap: 5px; min-width: 0; color: var(--warn); }
+  .feed-down-icon { width: 14px; height: 14px; border-radius: 3px; object-fit: cover; flex: none; background: #0c0c0f; }
+  .feed-down-txt { min-width: 0; }
+  .feed-down b { color: var(--text); font-weight: 700; }
   .enc-tag { margin-left: 6px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); }
   .stats-modal-close {
     background: color-mix(in srgb,#fff 6%,transparent); border: 1px solid var(--border);
