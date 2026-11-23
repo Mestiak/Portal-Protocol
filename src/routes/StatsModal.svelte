@@ -1939,7 +1939,7 @@
                       <img class="vg-icon" src={profIcon(e.player.profession)} alt={e.player.profession}
                            onerror={(ev) => { (ev.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
                       <span class="vg-feed-name" title={e.player.account}>
-                        {e.player.name}{#if e.source === "split"} <span class="vg-tag">split</span>{/if}
+                        {e.player.name}{#if e.source === "split"}<span class="vg-tag">- split</span>{/if}
                       </span>
                     </div>
                   {/each}
@@ -2031,7 +2031,7 @@
     font-size: 10px; color: var(--text-muted);
   }
   .vg-feed-cause span { color: var(--text); }
-  .vg-tag { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); }
+  .vg-tag { margin-left: 6px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); }
   .stats-modal-close {
     background: color-mix(in srgb,#fff 6%,transparent); border: 1px solid var(--border);
     color: var(--text-muted); width: 30px; height: 30px; border-radius: 8px; cursor: pointer; font-size: 13px;
