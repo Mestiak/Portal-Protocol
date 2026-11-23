@@ -662,6 +662,19 @@
       ]
     },
     {
+      version: "0.8.6",
+      date: "November 2026",
+      notes: [
+        {
+          category: "⚔️ Encounter Tabs",
+          items: [
+            { title: "Vale Guardian — Teleports", desc: "A Teleports tab for Vale Guardian: every Unstable Magic Spike on each player, split between the boss and the split guardians, with timestamps and what caused any down that followed." },
+            { title: "Deimos — Oils", desc: "An Oils tab for Deimos, normal and CM: every Rapid Decay slick a player set off, plus who went down to it and when." }
+          ]
+        }
+      ]
+    },
+    {
       version: "0.8.5",
       date: "November 2026",
       notes: [
