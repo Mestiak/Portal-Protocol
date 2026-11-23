@@ -111,14 +111,6 @@ export interface OilPlayer {
   downs: number; // downs caused by oil
 }
 
-/** A down attributed to the oil, for the event feed. */
-export interface OilDown {
-  time: number;
-  name: string;
-  account: string;
-  profession: string;
-}
-
 export interface MechanicPhase {
   phaseName: string;
   start: number;
@@ -212,7 +204,6 @@ export interface MechanicReport {
   // Deimos oils (absent on every other boss).
   oils?: OilTrigger[];
   oilPlayers?: OilPlayer[];
-  oilDowns?: OilDown[];
   oilSummary?: { total: number; players: number; downsAfterOil: number };
   rawMechanicsCount?: number;
   debugMechanicNames?: { mechanics: string[]; buffs: string[] };
@@ -585,38 +576,24 @@ function extractDeimos(logData: Json): MechanicReport {
   // beforehand.
   const oilHits = collectMechanics(logData, "Oil");
   const downsByPlayer = new Map<string, number>();
-  const oilDowns: OilDown[] = [];
+  const orderedTriggers = [...triggers].sort((a, b) => a.time - b.time);
   for (const d of collectMechanics(logData, "Downed")) {
     const hit = oilHits.some((h) => h.actor === d.actor && d.time - OIL_DOWN_WINDOW_MS <= h.time && h.time <= d.time);
     if (!hit) continue;
     downsByPlayer.set(d.actor, (downsByPlayer.get(d.actor) ?? 0) + 1);
-    oilDowns.push({
-      time: Math.round((d.time / 1000) * 10) / 10,
-      name: d.actor,
-      account: "",
-      profession: "",
-    });
-  }
-  for (const d of oilDowns) {
-    const id = identity.get(d.name);
-    if (id) {
-      d.account = id.account;
-      d.profession = id.profession;
-    }
-  }
 
-  // Attribute each down to the slick that was newest when it happened. The oil
-  // events carry no slick id, so the trigger time is the only handle available —
-  // a slick keeps ticking long after it goes off, and a down always follows a
-  // trigger rather than preceding one.
-  const orderedTriggers = [...triggers].sort((a, b) => a.time - b.time);
-  for (const d of oilDowns) {
+    // Pin the down to the slick that was newest when it happened. The oil events
+    // carry no slick id, so the trigger time is the only handle available — a
+    // slick keeps ticking long after it goes off, and a down always follows a
+    // trigger rather than preceding one.
+    const id = identity.get(d.actor);
+    const at = Math.round((d.time / 1000) * 10) / 10;
     let owner: OilTrigger | undefined;
     for (const t of orderedTriggers) {
-      if (t.time <= d.time) owner = t;
+      if (t.time <= at) owner = t;
       else break;
     }
-    owner?.downs.push({ name: d.name, account: d.account, profession: d.profession });
+    owner?.downs.push({ name: d.actor, account: id?.account ?? "", profession: id?.profession ?? "" });
   }
 
   const byPlayer = new Map<string, OilPlayer>();
@@ -654,7 +631,6 @@ function extractDeimos(logData: Json): MechanicReport {
     orbLeaderboard: [], orbPhaseLeaders: [], phases: [], squadLedger: [], revealedBreakers: [],
     oils: triggers.sort((a, b) => a.time - b.time),
     oilPlayers: players,
-    oilDowns: oilDowns.sort((a, b) => a.time - b.time),
     oilSummary: {
       total,
       players: players.filter((p) => p.count > 0).length,

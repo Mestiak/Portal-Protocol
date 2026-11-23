@@ -1975,7 +1975,6 @@
             {@const oilSummary = mechanics?.oilSummary}
             {@const oilRows = mechanics?.oilPlayers ?? []}
             {@const oilEvents = mechanics?.oils ?? []}
-            {@const oilDowns = mechanics?.oilDowns ?? []}
             <div class="ds-toolbar">
               <span class="stats-hint">Rapid Decay oils set off by players — the first touch of each slick, not every expansion</span>
             </div>
@@ -2024,25 +2023,10 @@
                       {#if o.downs.length > 0}
                         <span class="feed-downs">
                           {#each o.downs as d}
-                            <span>- {d.name} went down by this oil</span>
+                            <span>- <b>{d.name}</b> went down by this oil</span>
                           {/each}
                         </span>
                       {/if}
-                    </div>
-                  {/each}
-                </div>
-              </div>
-
-              <div class="ds-block">
-                <div class="ds-block-title">Downs caused by oil <span class="ds-block-hint">{oilDowns.length} downs</span></div>
-                <div class="feed">
-                  {#each oilDowns as d}
-                    <div class="feed-row">
-                      <span class="feed-time">{fmtTime(d.time)}</span>
-                      <img class="enc-icon" src={profIcon(d.profession)} alt={d.profession}
-                           onerror={(ev) => { (ev.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
-                      <span class="feed-name" title={d.account}>{d.name}</span>
-                      <span class="feed-cause"><span>Oil: Rapid Decay (Black expanding oil)</span></span>
                     </div>
                   {/each}
                 </div>
@@ -2123,6 +2107,7 @@
     font-size: 10px; color: var(--text-muted);
   }
   .feed-downs span { color: var(--warn); }
+  .feed-downs b { color: var(--text); font-weight: 700; }
   .enc-tag { margin-left: 6px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); }
   .stats-modal-close {
     background: color-mix(in srgb,#fff 6%,transparent); border: 1px solid var(--border);
