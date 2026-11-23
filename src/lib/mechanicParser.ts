@@ -72,6 +72,26 @@ export interface MechanicTabPlayer {
   percent: number;
 }
 
+/** A down that followed a teleport, with the mechanic that caused it. */
+export interface TeleportDown {
+  /** Seconds into the fight, 1 dp. */
+  time: number;
+  cause: string;       // 'Green' | 'Floor' | 'Seeker' | 'Boss Attack'
+  causeDetail: string; // EI's full description, e.g. 'Unstable Pylon (Red Floor dmg)'
+}
+
+export interface TeleportPlayer {
+  name: string;
+  account: string;
+  profession: string;
+  bossTp: number;
+  splitTp: number;
+  total: number;
+  /** Every teleport in order, with the fight time and which side cast it. */
+  events: { time: number; source: 'boss' | 'split' }[];
+  downs: TeleportDown[];
+}
+
 export interface MechanicPhase {
   phaseName: string;
   start: number;
@@ -158,6 +178,10 @@ export interface MechanicReport {
   squadLedger: SquadLedgerPlayer[];
   // Harvest Temple stealth breaks (empty unless boss === "Harvest Temple").
   revealedBreakers: RevealedEvent[];
+  // Vale Guardian teleports. Absent on every other boss, so the existing
+  // extractors do not have to carry them.
+  teleports?: TeleportPlayer[];
+  teleportSummary?: { total: number; bossTp: number; splitTp: number; downsAfterTp: number };
   rawMechanicsCount?: number;
   debugMechanicNames?: { mechanics: string[]; buffs: string[] };
 }
@@ -261,6 +285,7 @@ export function extractMechanics(logData: Json, bossName: string, localRevealedS
   if (key.includes("ura")) return extractUra(logData);
   if (key.includes("dhuum")) return extractDhuum(logData);
   if (key.includes("harvest") || key.includes("temple")) return extractHarvestTemple(logData, localRevealedSources);
+  if (key.includes("vale") || key.includes("spirit vale")) return extractValeGuardian(logData);
   // Unknown / non-mechanic boss → only the Combat + generic summary apply.
   return null;
 }
@@ -312,6 +337,163 @@ function extractDhuum(logData: Json): MechanicReport {
     orbEfficiency: 0, totalOrbs: 0, totalOrbsLeaked: 0, totalOrbsSpawned: 0, shadowsReached: 0, shadowsLeaked: 0,
     empoweredGained: 0, rageHits: 0, bestPull: 0, timeline: [], boonStrippedPlayers: 0, totalEnvyStrips: 0,
     totalMaliceDamage: 0, malicePlayers: [], maliceTargetCount: 0, shadowPhases: [], orbLeaderboard: [], orbPhaseLeaders: [], phases: [], squadLedger: [], revealedBreakers: [] };
+}
+
+// ─── Vale Guardian ────────────────────────────────────────────────────────────
+// EI models both teleports as PlayerDstHealthDamageHitMechanic with a 500 ms
+// window, and emits one event per hit inside it — so the same teleport shows up
+// several times, at timestamps a few milliseconds apart. Dedupe per player within
+// that same 500 ms window.
+const VG_DEDUPE_MS = 500;
+// A down counts as caused by a teleport when it lands within two seconds of it.
+// Whether the player was already under fire is not filtered out: the cause line
+// reports what actually landed, so a down that was already coming still shows it.
+const VG_DOWN_WINDOW_MS = 2000;
+const VG_CAUSE_TAIL_MS = 500;
+
+interface VgEvent {
+  actor: string;
+  time: number;
+  desc: string;
+}
+
+function extractValeGuardian(logData: Json): MechanicReport {
+  const isLCM = /(legendary|lcm)/i.test(String(logData.fightName || ""));
+
+  // Mechanics are matched by their exact EI name; the descriptions carry the
+  // human-readable cause ("Unstable Pylon (Red Floor dmg)").
+  const collect = (name: string): VgEvent[] => {
+    const out: VgEvent[] = [];
+    for (const m of Array.isArray(logData.mechanics) ? logData.mechanics : []) {
+      if (String(m?.name ?? "") !== name) continue;
+      const desc = String(m?.description ?? "");
+      for (const e of Array.isArray(m?.mechanicsData) ? m.mechanicsData : []) {
+        if (!e || typeof e.time !== "number" || !e.actor) continue;
+        out.push({ actor: String(e.actor), time: e.time, desc });
+      }
+    }
+    return out;
+  };
+
+  // Dedupe is per actor: the whole squad is often teleported in the same instant.
+  const dedupePerActor = (events: VgEvent[]): VgEvent[] => {
+    const byActor = new Map<string, VgEvent[]>();
+    for (const e of events) {
+      const list = byActor.get(e.actor) ?? [];
+      list.push(e);
+      byActor.set(e.actor, list);
+    }
+    const out: VgEvent[] = [];
+    for (const list of byActor.values()) {
+      list.sort((a, b) => a.time - b.time);
+      let last = -Infinity;
+      for (const e of list) {
+        if (e.time - last < VG_DEDUPE_MS) continue;
+        out.push(e);
+        last = e.time;
+      }
+    }
+    return out;
+  };
+
+  const bossTp = dedupePerActor(collect("Boss TP"));
+  const splitTp = dedupePerActor(collect("Split TP"));
+  const downs = dedupePerActor(collect("Downed"));
+  const green = collect("Green");
+  const seeker = collect("Seeker");
+  const floors = [...collect("Floor R"), ...collect("Floor B"), ...collect("Floor G")];
+
+  const identity = new Map<string, { account: string; profession: string }>();
+  for (const p of Array.isArray(logData.players) ? logData.players : []) {
+    identity.set(String(p?.name ?? ""), {
+      account: String(p?.account ?? ""),
+      profession: String(p?.profession ?? ""),
+    });
+  }
+
+  const names = new Set<string>([
+    ...identity.keys(),
+    ...bossTp.map((e) => e.actor),
+    ...splitTp.map((e) => e.actor),
+  ]);
+
+  const consumedDowns = new Set<VgEvent>();
+  const causePriority = (kind: string) => (kind === "Green" ? 3 : kind === "Floor" ? 2 : 1);
+
+  const players: TeleportPlayer[] = [];
+  for (const name of names) {
+    const id = identity.get(name) ?? { account: "", profession: "" };
+    const teleports = [
+      ...bossTp.filter((e) => e.actor === name).map((e) => ({ ...e, source: "boss" as const })),
+      ...splitTp.filter((e) => e.actor === name).map((e) => ({ ...e, source: "split" as const })),
+    ].sort((a, b) => a.time - b.time);
+
+    const playerDowns: TeleportDown[] = [];
+    for (const tp of teleports) {
+      const down = downs.find(
+        (d) => d.actor === name && d.time > tp.time && d.time <= tp.time + VG_DOWN_WINDOW_MS && !consumedDowns.has(d),
+      );
+      if (!down) continue;
+      consumedDowns.add(down);
+
+      const candidates = [
+        ...green.filter((e) => e.actor === name).map((e) => ({ e, kind: "Green" })),
+        ...floors.filter((e) => e.actor === name).map((e) => ({ e, kind: "Floor" })),
+        ...seeker.filter((e) => e.actor === name).map((e) => ({ e, kind: "Seeker" })),
+      ].filter((c) => c.e.time >= tp.time && c.e.time <= down.time + VG_CAUSE_TAIL_MS);
+
+      let cause = "Boss Attack";
+      let causeDetail = tp.desc || "Unstable Magic Spike";
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => {
+          const byPriority = causePriority(b.kind) - causePriority(a.kind);
+          if (byPriority !== 0) return byPriority;
+          return Math.abs(a.e.time - down.time) - Math.abs(b.e.time - down.time);
+        });
+        cause = candidates[0].kind;
+        causeDetail = candidates[0].e.desc || cause;
+      }
+
+      playerDowns.push({
+        time: Math.round((down.time / 1000) * 10) / 10,
+        cause,
+        causeDetail,
+      });
+    }
+
+    players.push({
+      name,
+      account: id.account,
+      profession: id.profession,
+      bossTp: teleports.filter((t) => t.source === "boss").length,
+      splitTp: teleports.filter((t) => t.source === "split").length,
+      total: teleports.length,
+      events: teleports.map((t) => ({
+        time: Math.round((t.time / 1000) * 10) / 10,
+        source: t.source,
+      })),
+      downs: playerDowns,
+    });
+  }
+
+  players.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+  const total = players.reduce((s, p) => s + p.total, 0);
+  const bossTotal = players.reduce((s, p) => s + p.bossTp, 0);
+  const splitTotal = players.reduce((s, p) => s + p.splitTp, 0);
+  const downsAfterTp = players.reduce((s, p) => s + p.downs.length, 0);
+
+  return {
+    boss: "Vale Guardian",
+    isLCM,
+    summary: combatSummary(logData),
+    orbEfficiency: 0, totalOrbs: 0, totalOrbsLeaked: 0, totalOrbsSpawned: 0,
+    shadowsReached: 0, shadowsLeaked: 0, empoweredGained: 0, rageHits: 0, bestPull: 0,
+    timeline: [], boonStrippedPlayers: 0, totalEnvyStrips: 0,
+    totalMaliceDamage: 0, malicePlayers: [], maliceTargetCount: 0, shadowPhases: [],
+    orbLeaderboard: [], orbPhaseLeaders: [], phases: [], squadLedger: [], revealedBreakers: [],
+    teleports: players,
+    teleportSummary: { total, bossTp: bossTotal, splitTp: splitTotal, downsAfterTp },
+  };
 }
 
 // ─── Harvest Temple ────────────────────────────────────────────────────────────
