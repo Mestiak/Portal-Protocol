@@ -1887,6 +1887,12 @@
             <!-- TELEPORTS (Vale Guardian) -->
             {@const tpSummary = mechanics?.teleportSummary}
             {@const tpRows = mechanics?.teleports ?? []}
+            {@const tpEvents = tpRows
+              .flatMap((p) => p.events.map((e) => ({ ...e, player: p })))
+              .sort((a, b) => a.time - b.time)}
+            {@const tpDowns = tpRows
+              .flatMap((p) => p.downs.map((d) => ({ ...d, player: p })))
+              .sort((a, b) => a.time - b.time)}
             <div class="ds-toolbar">
               <span class="stats-hint">Unstable Magic Spike teleports, from the boss and the split guardians</span>
             </div>
@@ -1901,34 +1907,58 @@
             {#if tpRows.length === 0}
               <div class="stat-note">No teleport data for this log.</div>
             {:else}
-              <div class="vg-head">
-                <span class="vg-cap">#</span>
-                <span class="vg-cap"></span>
-                <span class="vg-cap">Player</span>
-                <span class="vg-cap">Teleports</span>
-                <span class="vg-cap">Downs</span>
-              </div>
-              <div class="vg-rows">
-                {#each tpRows as p, i}
-                  <div class="vg-row">
-                    <span class="vg-rank">{i + 1}</span>
-                    <img class="ax-row-icon" src={profIcon(p.profession)} alt={p.profession}
-                         onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
-                    <span class="vg-who">
+              <div class="ds-block">
+                <div class="ds-block-title">Players <span class="ds-block-hint">{tpRows.length} players</span></div>
+                <div class="vg-head">
+                  <span class="vg-cap">#</span>
+                  <span class="vg-cap"></span>
+                  <span class="vg-cap">Player</span>
+                  <span class="vg-cap">Teleports</span>
+                  <span class="vg-cap">Downs</span>
+                </div>
+                <div class="vg-rows">
+                  {#each tpRows as p, i}
+                    <div class="vg-row">
+                      <span class="vg-rank">{i + 1}</span>
+                      <img class="vg-icon" src={profIcon(p.profession)} alt={p.profession}
+                           onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
                       <span class="vg-name" title={p.account}>{p.name}</span>
-                      <span class="vg-times">
-                        {p.events.length > 0
-                          ? p.events.map((e) => `${e.time}s${e.source === 'split' ? ' (split)' : ''}`).join(' · ')
-                          : '—'}
+                      <span class="vg-num">{p.total}<span class="vg-sub"> · {p.bossTp} boss / {p.splitTp} split</span></span>
+                      <span class="vg-num">{p.downs.length}</span>
+                    </div>
+                  {/each}
+                </div>
+              </div>
+
+              <div class="ds-block">
+                <div class="ds-block-title">Teleports <span class="ds-block-hint">{tpEvents.length} events</span></div>
+                <div class="vg-feed">
+                  {#each tpEvents as e}
+                    <div class="vg-feed-row">
+                      <span class="vg-feed-time">{fmtTime(e.time)}</span>
+                      <img class="vg-icon" src={profIcon(e.player.profession)} alt={e.player.profession}
+                           onerror={(ev) => { (ev.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                      <span class="vg-feed-name" title={e.player.account}>
+                        {e.player.name}{#if e.source === "split"} <span class="vg-tag">split</span>{/if}
                       </span>
-                      {#each p.downs as d}
-                        <span class="vg-down">↓ {d.time}s — {d.cause}: {d.causeDetail}</span>
-                      {/each}
-                    </span>
-                    <span class="vg-num">{p.total}<span class="vg-sub"> · {p.bossTp} boss / {p.splitTp} split</span></span>
-                    <span class="vg-num">{p.downs.length}</span>
-                  </div>
-                {/each}
+                    </div>
+                  {/each}
+                </div>
+              </div>
+
+              <div class="ds-block">
+                <div class="ds-block-title">Downs after a teleport <span class="ds-block-hint">{tpDowns.length} downs</span></div>
+                <div class="vg-feed">
+                  {#each tpDowns as d}
+                    <div class="vg-feed-row">
+                      <span class="vg-feed-time">{fmtTime(d.time)}</span>
+                      <img class="vg-icon" src={profIcon(d.player.profession)} alt={d.player.profession}
+                           onerror={(ev) => { (ev.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                      <span class="vg-feed-name" title={d.player.account}>{d.player.name}</span>
+                      <span class="vg-feed-cause"><span>{d.cause}: {d.causeDetail}</span></span>
+                    </div>
+                  {/each}
+                </div>
               </div>
             {/if}
           {/if}
@@ -1969,7 +1999,7 @@
     font-size: 11px; color: var(--text-muted);
   }
   .vg-summary strong { color: #fff; font-variant-numeric: tabular-nums; }
-  .vg-head, .vg-row { display: grid; grid-template-columns: 18px 16px minmax(0, 1fr) 52px 40px; align-items: center; gap: 2px 8px; }
+  .vg-head, .vg-row { display: grid; grid-template-columns: 18px 20px minmax(0, 1fr) 52px 40px; align-items: center; gap: 2px 8px; }
   .vg-head { padding: 0 8px 4px; }
   .vg-cap { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; color: var(--text-muted); }
   .vg-cap:nth-child(4), .vg-cap:nth-child(5) { text-align: right; }
@@ -1981,12 +2011,27 @@
   }
   .vg-row:hover { background: color-mix(in srgb, #fff 6%, transparent); }
   .vg-rank { font-size: 9px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
-  .vg-who { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
-  .vg-name { font-size: 11px; font-weight: 700; color: var(--text); }
-  .vg-times { font-size: 10px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
-  .vg-down { font-size: 10px; color: var(--fail); }
+  .vg-icon { width: 20px; height: 20px; border-radius: 5px; object-fit: cover; background: #0c0c0f; }
+  .vg-name { font-size: 11px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .vg-num { font-size: 12px; font-weight: 800; color: #fff; text-align: right; font-variant-numeric: tabular-nums; }
   .vg-sub { display: block; font-size: 9px; font-weight: 600; color: var(--text-muted); }
+  /* Event feeds, mirroring the Defense tab's downs feed */
+  .vg-feed { display: flex; flex-direction: column; gap: 3px; }
+  .vg-feed-row {
+    display: grid; grid-template-columns: 38px 20px minmax(0, 1fr);
+    align-items: center; gap: 6px; padding: 4px 8px; border-radius: 6px;
+    background: color-mix(in srgb, #fff 3%, transparent);
+    transition: background-color .14s, transform .18s var(--ease-smooth);
+  }
+  .vg-feed-row:hover { background: color-mix(in srgb, #fff 6%, transparent); transform: translateX(2px); }
+  .vg-feed-time { font-size: 10px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .vg-feed-name { font-size: 11px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .vg-feed-cause {
+    grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 3px 10px;
+    font-size: 10px; color: var(--text-muted);
+  }
+  .vg-feed-cause span { color: var(--text); }
+  .vg-tag { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); }
   .stats-modal-close {
     background: color-mix(in srgb,#fff 6%,transparent); border: 1px solid var(--border);
     color: var(--text-muted); width: 30px; height: 30px; border-radius: 8px; cursor: pointer; font-size: 13px;
