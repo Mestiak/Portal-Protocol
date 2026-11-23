@@ -713,6 +713,13 @@
     return String(Math.round(n));
   }
 
+  /** Downed time in milliseconds as "45s" or "2:30". */
+  function fmtDownMs(ms: number): string {
+    const s = Math.floor(ms / 1000);
+    if (s < 60) return `${s}s`;
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  }
+
   function handleHealMouseMove(e: MouseEvent) {
     const g = healGeom;
     if (!g || g.hitboxes.length === 0) return;
@@ -1965,6 +1972,37 @@
         {/if}
       </div>
 
+      <!-- Squad-wide summary, in the Stats modal's Defense-tab panel style. -->
+      {#if defLoaded && defSummary}
+        <div class="df-panels">
+          <div class="df-panel">
+            <span class="df-panel-label"><i class="fa-solid fa-percent"></i> Mitigation</span>
+            <span class="df-panel-val">{defSummary.avgMitigationRate.toFixed(1)}%</span>
+            <span class="df-panel-sub">avg · {defSummary.logs} log{defSummary.logs !== 1 ? 's' : ''}</span>
+          </div>
+          <div class="df-panel">
+            <span class="df-panel-label"><i class="fa-solid fa-heart-crack"></i> Damage Taken</span>
+            <span class="df-panel-val">{fmtCompact(defSummary.damageTaken)}</span>
+            <span class="df-panel-sub">squad total</span>
+          </div>
+          <div class="df-panel">
+            <span class="df-panel-label"><i class="fa-solid fa-shield-halved"></i> Hits Mitigated</span>
+            <span class="df-panel-val">{fmtCompact(defSummary.hitsMitigated)}</span>
+            <span class="df-panel-sub">never landed</span>
+          </div>
+          <div class="df-panel">
+            <span class="df-panel-label"><i class="fa-solid fa-person-falling"></i> Downs</span>
+            <span class="df-panel-val">{defSummary.downs}</span>
+            <span class="df-panel-sub">{defSummary.avgDownsPerHour.toFixed(1)}/h avg</span>
+          </div>
+          <div class="df-panel">
+            <span class="df-panel-label"><i class="fa-solid fa-shield"></i> Barrier</span>
+            <span class="df-panel-val">{fmtCompact(defSummary.barrier)}</span>
+            <span class="df-panel-sub">absorbed</span>
+          </div>
+        </div>
+      {/if}
+
       <!-- The chart box is always rendered so its width can be measured: the
            geometry depends on that width, and binding it inside the branch that
            needs the geometry would deadlock (no box → no width → no geometry →
@@ -2011,13 +2049,19 @@
           {#if defHover}
             {@const dh = defHover}
             <span class="an-detail-title">{dh.boss}</span>
-            <span class="an-muted-sm">{fmtDateShort(dh.date)}{dh.success ? ' · kill' : ' · wipe'}</span>
-            <span class="an-detail-val">{dh.mitigationRate.toFixed(1)}% mitigated · {dh.downs} downs ({dh.downsPerHour.toFixed(1)}/h)</span>
-            <span class="an-detail-val">{dh.cleanses} cleanses · {dh.strips} strips · {dh.revives} revives</span>
-          {:else if defSummary}
-            <span class="an-detail-title">{defSummary.avgMitigationRate.toFixed(1)}% mitigated</span>
-            <span class="an-muted-sm">{defSummary.avgDownsPerHour.toFixed(1)} downs/h</span>
-            <span class="an-detail-val">{defSummary.cleanses} cleanses · {defSummary.strips} strips · {defSummary.revives} revives</span>
+            <span class="an-detail-status {dh.success ? 'kill' : 'wipe'}">{dh.success ? 'KILL' : 'WIPE'}</span>
+            <span class="an-muted-sm">{fmtDateShort(dh.date)}</span>
+            <div class="an-detail-rows">
+              <div class="an-detail-row"><span class="an-detail-label">Mitigation</span><span class="an-detail-val">{dh.mitigationRate.toFixed(1)}%</span></div>
+              <div class="an-detail-row"><span class="an-detail-label">Damage taken</span><span class="an-detail-val">{fmtCompact(dh.damageTaken)}</span></div>
+              <div class="an-detail-row"><span class="an-detail-label">Hits mitigated</span><span class="an-detail-val">{fmtCompact(dh.hitsMitigated)}</span></div>
+              <div class="an-detail-row"><span class="an-detail-label">Downs</span><span class="an-detail-val">{dh.downs} · {dh.downsPerHour.toFixed(1)}/h</span></div>
+              <div class="an-detail-row"><span class="an-detail-label">Time downed</span><span class="an-detail-val">{fmtDownMs(dh.downedTime)}</span></div>
+              <div class="an-detail-row"><span class="an-detail-label">Barrier</span><span class="an-detail-val">{fmtCompact(dh.barrier)}</span></div>
+              <div class="an-detail-row"><span class="an-detail-label">Cleanses</span><span class="an-detail-val">{dh.cleanses}</span></div>
+              <div class="an-detail-row"><span class="an-detail-label">Strips</span><span class="an-detail-val">{dh.strips}</span></div>
+              <div class="an-detail-row"><span class="an-detail-label">Revives</span><span class="an-detail-val">{dh.revives}</span></div>
+            </div>
           {:else}
             <span class="an-detail-hint">Hover a point for details</span>
           {/if}
@@ -2437,6 +2481,23 @@
   .hl-src-name{font-size:10px;color:var(--text);white-space:nowrap;}
   .hl-skill{width:14px;height:14px;border-radius:3px;object-fit:cover;flex:none;background:color-mix(in srgb,#fff 10%,transparent);}
   .hl-sep{font-size:10px;color:var(--text-muted);}
+  /* Squad Defense summary panels — the Stats modal's Defense-tab panel style */
+  .df-panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px;}
+  .df-panel{
+    display:flex;flex-direction:column;gap:2px;min-width:0;
+    padding:8px 12px;border-radius:8px;
+    background:color-mix(in srgb,#fff 2%,transparent);
+    border:1px solid var(--border);border-left:3px solid var(--accent);
+  }
+  .df-panel-label{
+    display:flex;align-items:center;gap:6px;
+    font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;
+    color:var(--text-muted);
+  }
+  .df-panel-label i{font-size:10px;color:var(--accent);}
+  .df-panel-val{font-size:20px;font-weight:800;color:#fff;line-height:1.15;font-variant-numeric:tabular-nums;}
+  .df-panel-sub{font-size:9px;color:var(--text-muted);font-variant-numeric:tabular-nums;}
+  .an-detail-label{font-size:11px;color:var(--text-muted);white-space:nowrap;}
   .an-grid{stroke:var(--border);stroke-width:1;}
   .an-axis{stroke:var(--border);stroke-width:1;}
   .an-axis-text{fill:var(--text-muted);font-size:10px;font-family:var(--font);}

@@ -16,8 +16,16 @@ export interface DefenseTrendPoint {
   durationSec: number;
   /** Blocked + evaded + dodged + invulned as a share of hits taken, 0-100. */
   mitigationRate: number;
+  /** Squad total raw damage taken before barrier. */
+  damageTaken: number;
+  /** Squad total hits that never landed (blocked + evaded + dodged + invulned). */
+  hitsMitigated: number;
   downs: number;
   downsPerHour: number;
+  /** Squad total time spent downed, in milliseconds. */
+  downedTime: number;
+  /** Squad total damage absorbed by barrier. */
+  barrier: number;
   cleanses: number;
   strips: number;
   revives: number;
@@ -44,6 +52,9 @@ export function summarizeDefense(
   let mitigated = 0;
   let hits = 0;
   let downs = 0;
+  let damageTaken = 0;
+  let downedTime = 0;
+  let barrier = 0;
   let cleanses = 0;
   let strips = 0;
   let revives = 0;
@@ -52,6 +63,9 @@ export function summarizeDefense(
     mitigated += p.blockedCount + p.evadedCount + p.dodgeCount + p.invulnedCount;
     hits += p.damageTakenCount;
     downs += p.downCount;
+    damageTaken += p.damageTaken;
+    downedTime += p.downDuration;
+    barrier += p.damageBarrier;
     const s = sup[i];
     if (s) {
       cleanses += s.condiCleanse;
@@ -66,8 +80,12 @@ export function summarizeDefense(
     success: meta.success,
     durationSec: meta.durationSec,
     mitigationRate: hits + mitigated > 0 ? (mitigated / (hits + mitigated)) * 100 : 0,
+    damageTaken,
+    hitsMitigated: mitigated,
     downs,
     downsPerHour: meta.durationSec > 0 ? (downs / meta.durationSec) * 3600 : 0,
+    downedTime,
+    barrier,
     cleanses,
     strips,
     revives,
@@ -78,20 +96,32 @@ export interface DefenseTrendSummary {
   logs: number;
   avgMitigationRate: number;
   avgDownsPerHour: number;
+  /** Totals across every log in the filter. */
+  damageTaken: number;
+  hitsMitigated: number;
+  downs: number;
+  downedTime: number;
+  barrier: number;
   cleanses: number;
   strips: number;
   revives: number;
 }
 
-/** Averages across a loaded trend, for the section's summary line. */
+/** Averages the rates and totals the counts across a loaded trend. */
 export function summarizeTrend(points: DefenseTrendPoint[]): DefenseTrendSummary | null {
   if (points.length === 0) return null;
   const total = (f: (p: DefenseTrendPoint) => number) =>
     points.reduce((s, p) => s + f(p), 0);
+  const n = points.length;
   return {
-    logs: points.length,
-    avgMitigationRate: total(p => p.mitigationRate) / points.length,
-    avgDownsPerHour: total(p => p.downsPerHour) / points.length,
+    logs: n,
+    avgMitigationRate: total(p => p.mitigationRate) / n,
+    avgDownsPerHour: total(p => p.downsPerHour) / n,
+    damageTaken: total(p => p.damageTaken),
+    hitsMitigated: total(p => p.hitsMitigated),
+    downs: total(p => p.downs),
+    downedTime: total(p => p.downedTime),
+    barrier: total(p => p.barrier),
     cleanses: total(p => p.cleanses),
     strips: total(p => p.strips),
     revives: total(p => p.revives),
