@@ -2023,7 +2023,7 @@
                       {#if o.downs.length > 0}
                         <span class="feed-downs">
                           {#each o.downs as d}
-                            <span>- <b>{d.name}</b> went down by this oil</span>
+                            <span>- <b>{d.name}</b> went down by this oil at {fmtTime(d.time)}</span>
                           {/each}
                         </span>
                       {/if}

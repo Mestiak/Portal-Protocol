@@ -99,7 +99,7 @@ export interface OilTrigger {
   account: string;
   profession: string;
   /** Players who went down to this particular slick. */
-  downs: { name: string; account: string; profession: string }[];
+  downs: { name: string; account: string; profession: string; time: number }[];
 }
 
 export interface OilPlayer {
@@ -593,7 +593,7 @@ function extractDeimos(logData: Json): MechanicReport {
       if (t.time <= at) owner = t;
       else break;
     }
-    owner?.downs.push({ name: d.actor, account: id?.account ?? "", profession: id?.profession ?? "" });
+    owner?.downs.push({ name: d.actor, account: id?.account ?? "", profession: id?.profession ?? "", time: at });
   }
 
   const byPlayer = new Map<string, OilPlayer>();
