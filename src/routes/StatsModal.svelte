@@ -41,6 +41,8 @@
   //    before that carry the close-spawn name inside `detail` and no fields.
   // 6: rage-hit rows carry their own actor. Caches from version 5 were parsed
   //    before that and credit one player with a whole simultaneous dome.
+  // 7: Deimos oil downs carry their own timestamp. Version 6 entries have the
+  //    down but no time, which rendered as "NaN:NaN".
   const STATS_CACHE_VERSION = 7;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
