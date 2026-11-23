@@ -92,6 +92,25 @@ export interface TeleportPlayer {
   downs: TeleportDown[];
 }
 
+/** One oil slick's first hit on a player — EI already dedupes per slick. */
+export interface OilTrigger {
+  time: number; // seconds into the fight, 1 dp
+  name: string;
+  account: string;
+  profession: string;
+  /** Players who went down to this particular slick. */
+  downs: { name: string; account: string; profession: string; time: number }[];
+}
+
+export interface OilPlayer {
+  name: string;
+  account: string;
+  profession: string;
+  count: number;
+  events: { time: number }[];
+  downs: number; // downs caused by oil
+}
+
 export interface MechanicPhase {
   phaseName: string;
   start: number;
@@ -182,6 +201,10 @@ export interface MechanicReport {
   // extractors do not have to carry them.
   teleports?: TeleportPlayer[];
   teleportSummary?: { total: number; bossTp: number; splitTp: number; downsAfterTp: number };
+  // Deimos oils (absent on every other boss).
+  oils?: OilTrigger[];
+  oilPlayers?: OilPlayer[];
+  oilSummary?: { total: number; players: number; downsAfterOil: number };
   rawMechanicsCount?: number;
   debugMechanicNames?: { mechanics: string[]; buffs: string[] };
 }
@@ -286,6 +309,7 @@ export function extractMechanics(logData: Json, bossName: string, localRevealedS
   if (key.includes("dhuum")) return extractDhuum(logData);
   if (key.includes("harvest") || key.includes("temple")) return extractHarvestTemple(logData, localRevealedSources);
   if (key.includes("vale") || key.includes("spirit vale")) return extractValeGuardian(logData);
+  if (key.includes("deimos")) return extractDeimos(logData);
   // Unknown / non-mechanic boss → only the Combat + generic summary apply.
   return null;
 }
@@ -351,57 +375,65 @@ const VG_DEDUPE_MS = 500;
 const VG_DOWN_WINDOW_MS = 2000;
 const VG_CAUSE_TAIL_MS = 500;
 
-interface VgEvent {
+interface MechEvent {
   actor: string;
   time: number;
   desc: string;
 }
 
+/** Every event of one mechanic, matched by its exact EI name. */
+function collectMechanics(logData: Json, name: string): MechEvent[] {
+  const out: MechEvent[] = [];
+  for (const m of Array.isArray(logData.mechanics) ? logData.mechanics : []) {
+    if (String(m?.name ?? "") !== name) continue;
+    const desc = String(m?.description ?? "");
+    for (const e of Array.isArray(m?.mechanicsData) ? m.mechanicsData : []) {
+      if (!e || typeof e.time !== "number" || !e.actor) continue;
+      out.push({ actor: String(e.actor), time: e.time, desc });
+    }
+  }
+  return out;
+}
+
+/**
+ * Collapse EI's per-hit duplicates within `windowMs`, per actor.
+ *
+ * The window is per actor because the whole squad often takes the same hit in the
+ * same instant — a global dedupe would collapse different players together.
+ */
+function dedupePerActor(events: MechEvent[], windowMs: number): MechEvent[] {
+  const byActor = new Map<string, MechEvent[]>();
+  for (const e of events) {
+    const list = byActor.get(e.actor) ?? [];
+    list.push(e);
+    byActor.set(e.actor, list);
+  }
+  const out: MechEvent[] = [];
+  for (const list of byActor.values()) {
+    list.sort((a, b) => a.time - b.time);
+    let last = -Infinity;
+    for (const e of list) {
+      if (e.time - last < windowMs) continue;
+      out.push(e);
+      last = e.time;
+    }
+  }
+  return out;
+}
+
 function extractValeGuardian(logData: Json): MechanicReport {
   const isLCM = /(legendary|lcm)/i.test(String(logData.fightName || ""));
 
-  // Mechanics are matched by their exact EI name; the descriptions carry the
-  // human-readable cause ("Unstable Pylon (Red Floor dmg)").
-  const collect = (name: string): VgEvent[] => {
-    const out: VgEvent[] = [];
-    for (const m of Array.isArray(logData.mechanics) ? logData.mechanics : []) {
-      if (String(m?.name ?? "") !== name) continue;
-      const desc = String(m?.description ?? "");
-      for (const e of Array.isArray(m?.mechanicsData) ? m.mechanicsData : []) {
-        if (!e || typeof e.time !== "number" || !e.actor) continue;
-        out.push({ actor: String(e.actor), time: e.time, desc });
-      }
-    }
-    return out;
-  };
-
-  // Dedupe is per actor: the whole squad is often teleported in the same instant.
-  const dedupePerActor = (events: VgEvent[]): VgEvent[] => {
-    const byActor = new Map<string, VgEvent[]>();
-    for (const e of events) {
-      const list = byActor.get(e.actor) ?? [];
-      list.push(e);
-      byActor.set(e.actor, list);
-    }
-    const out: VgEvent[] = [];
-    for (const list of byActor.values()) {
-      list.sort((a, b) => a.time - b.time);
-      let last = -Infinity;
-      for (const e of list) {
-        if (e.time - last < VG_DEDUPE_MS) continue;
-        out.push(e);
-        last = e.time;
-      }
-    }
-    return out;
-  };
-
-  const bossTp = dedupePerActor(collect("Boss TP"));
-  const splitTp = dedupePerActor(collect("Split TP"));
-  const downs = dedupePerActor(collect("Downed"));
-  const green = collect("Green");
-  const seeker = collect("Seeker");
-  const floors = [...collect("Floor R"), ...collect("Floor B"), ...collect("Floor G")];
+  const bossTp = dedupePerActor(collectMechanics(logData, "Boss TP"), VG_DEDUPE_MS);
+  const splitTp = dedupePerActor(collectMechanics(logData, "Split TP"), VG_DEDUPE_MS);
+  const downs = dedupePerActor(collectMechanics(logData, "Downed"), VG_DEDUPE_MS);
+  const green = collectMechanics(logData, "Green");
+  const seeker = collectMechanics(logData, "Seeker");
+  const floors = [
+    ...collectMechanics(logData, "Floor R"),
+    ...collectMechanics(logData, "Floor B"),
+    ...collectMechanics(logData, "Floor G"),
+  ];
 
   const identity = new Map<string, { account: string; profession: string }>();
   for (const p of Array.isArray(logData.players) ? logData.players : []) {
@@ -417,7 +449,7 @@ function extractValeGuardian(logData: Json): MechanicReport {
     ...splitTp.map((e) => e.actor),
   ]);
 
-  const consumedDowns = new Set<VgEvent>();
+  const consumedDowns = new Set<MechEvent>();
   const causePriority = (kind: string) => (kind === "Green" ? 3 : kind === "Floor" ? 2 : 1);
 
   const players: TeleportPlayer[] = [];
@@ -493,6 +525,117 @@ function extractValeGuardian(logData: Json): MechanicReport {
     orbLeaderboard: [], orbPhaseLeaders: [], phases: [], squadLedger: [], revealedBreakers: [],
     teleports: players,
     teleportSummary: { total, bossTp: bossTotal, splitTp: splitTotal, downsAfterTp },
+  };
+}
+
+// ─── Deimos ───────────────────────────────────────────────────────────────────
+// EI splits the oil into two mechanics. `Oil` is every tick of Rapid Decay on a
+// player (roughly once a second while they stand in it); `Oil T.` is
+// PlayerDstFirstHealthDamageMechanic, which keeps only the first hit per source
+// slick. Only the trigger counts as an oil being set off, so `Oil T.` is the
+// source of truth here — counting `Oil` would report a few hundred triggers for
+// three actual oils.
+const OIL_DOWN_WINDOW_MS = 2000;
+
+function extractDeimos(logData: Json): MechanicReport {
+  const isLCM = /(legendary|lcm|\bcm\b)/i.test(String(logData.fightName || ""));
+
+  // EI already dedupes per slick; drop only exact duplicates, so two slicks
+  // hitting different players in the same millisecond still count separately.
+  const seenTrigger = new Set<string>();
+  const triggers: OilTrigger[] = [];
+  for (const e of collectMechanics(logData, "Oil T.")) {
+    const key = `${e.actor}\u0000${e.time}`;
+    if (seenTrigger.has(key)) continue;
+    seenTrigger.add(key);
+    triggers.push({
+      time: Math.round((e.time / 1000) * 10) / 10,
+      name: e.actor,
+      account: "",
+      profession: "",
+      downs: [],
+    });
+  }
+
+  const identity = new Map<string, { account: string; profession: string }>();
+  for (const p of Array.isArray(logData.players) ? logData.players : []) {
+    identity.set(String(p?.name ?? ""), {
+      account: String(p?.account ?? ""),
+      profession: String(p?.profession ?? ""),
+    });
+  }
+  for (const t of triggers) {
+    const id = identity.get(t.name);
+    if (id) {
+      t.account = id.account;
+      t.profession = id.profession;
+    }
+  }
+
+  // A down belongs to the oil when that player was taking Rapid Decay damage just
+  // beforehand.
+  const oilHits = collectMechanics(logData, "Oil");
+  const downsByPlayer = new Map<string, number>();
+  const orderedTriggers = [...triggers].sort((a, b) => a.time - b.time);
+  for (const d of collectMechanics(logData, "Downed")) {
+    const hit = oilHits.some((h) => h.actor === d.actor && d.time - OIL_DOWN_WINDOW_MS <= h.time && h.time <= d.time);
+    if (!hit) continue;
+    downsByPlayer.set(d.actor, (downsByPlayer.get(d.actor) ?? 0) + 1);
+
+    // Pin the down to the slick that was newest when it happened. The oil events
+    // carry no slick id, so the trigger time is the only handle available — a
+    // slick keeps ticking long after it goes off, and a down always follows a
+    // trigger rather than preceding one.
+    const id = identity.get(d.actor);
+    const at = Math.round((d.time / 1000) * 10) / 10;
+    let owner: OilTrigger | undefined;
+    for (const t of orderedTriggers) {
+      if (t.time <= at) owner = t;
+      else break;
+    }
+    owner?.downs.push({ name: d.actor, account: id?.account ?? "", profession: id?.profession ?? "", time: at });
+  }
+
+  const byPlayer = new Map<string, OilPlayer>();
+  for (const name of identity.keys()) {
+    byPlayer.set(name, {
+      name,
+      account: identity.get(name)?.account ?? "",
+      profession: identity.get(name)?.profession ?? "",
+      count: 0,
+      events: [],
+      downs: downsByPlayer.get(name) ?? 0,
+    });
+  }
+  for (const t of triggers) {
+    let row = byPlayer.get(t.name);
+    if (!row) {
+      row = { name: t.name, account: t.account, profession: t.profession, count: 0, events: [], downs: 0 };
+      byPlayer.set(t.name, row);
+    }
+    row.count += 1;
+    row.events.push({ time: t.time });
+  }
+
+  const players = [...byPlayer.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  const total = players.reduce((s, p) => s + p.count, 0);
+
+  return {
+    boss: "Deimos",
+    isLCM,
+    summary: combatSummary(logData),
+    orbEfficiency: 0, totalOrbs: 0, totalOrbsLeaked: 0, totalOrbsSpawned: 0,
+    shadowsReached: 0, shadowsLeaked: 0, empoweredGained: 0, rageHits: 0, bestPull: 0,
+    timeline: [], boonStrippedPlayers: 0, totalEnvyStrips: 0,
+    totalMaliceDamage: 0, malicePlayers: [], maliceTargetCount: 0, shadowPhases: [],
+    orbLeaderboard: [], orbPhaseLeaders: [], phases: [], squadLedger: [], revealedBreakers: [],
+    oils: triggers.sort((a, b) => a.time - b.time),
+    oilPlayers: players,
+    oilSummary: {
+      total,
+      players: players.filter((p) => p.count > 0).length,
+      downsAfterOil: players.reduce((s, p) => s + p.downs, 0),
+    },
   };
 }
 
