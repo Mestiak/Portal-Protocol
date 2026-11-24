@@ -51,7 +51,8 @@
   // 10: Statues of Darkness reports gained the eye override fields
   //     (eyeOverrides/Players/Summary); version 9 entries have none.
   // 11: overrides carry `unmatched`, saying why no skill could be attributed.
-  const STATS_CACHE_VERSION = 11;
+  // 12: attribution also matches the CC skill-id table (src/lib/ccSkillIds.ts).
+  const STATS_CACHE_VERSION = 12;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;

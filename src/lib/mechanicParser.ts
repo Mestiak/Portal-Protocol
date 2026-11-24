@@ -10,6 +10,8 @@
 // (returned by the Rust `get_log_full` command, already fetched once for the
 // combat tab) and run the same math in-browser — no second download, no local
 // EVTC parser, no GW2 skill-API calls (we only need ids, not names).
+
+import { CC_SKILL_IDS } from "./ccSkillIds.ts";
 //
 // SCOPE: what the Stats-modal tabs render:
 //   • Statistics  — 4 cards + fight timeline (orb-block eff, shadows reached,
@@ -579,6 +581,8 @@ interface EyeCast {
   time: number; // ms
   name: string;
   icon: string;
+  /** Skill id from the rotation entry; drives the id table lookup. */
+  id?: number;
 }
 
 /** Turn a buff's per-source state list into [start, end] intervals in ms. */
@@ -626,7 +630,7 @@ function extractStatueOfDarkness(logData: Json): MechanicReport {
       const icon = String(info.icon ?? "");
       for (const c of Array.isArray(rg?.skills) ? rg.skills : []) {
         if (typeof c?.castTime !== "number") continue;
-        casts.push({ time: c.castTime, name, icon });
+        casts.push({ time: c.castTime, name, icon, id: rg?.id });
       }
     }
     casts.sort((a, b) => a.time - b.time);
@@ -639,6 +643,7 @@ function extractStatueOfDarkness(logData: Json): MechanicReport {
   for (const [name, casts] of castsByPlayer) {
     const cats = new Set<EyeOverride['category']>();
     for (const c of casts) {
+      for (const cat of CC_SKILL_IDS[String(c.id)] ?? []) cats.add(cat);
       const lower = c.name.toLowerCase();
       for (const [cat, words] of Object.entries(EYE_CC_KEYWORDS)) {
         if (words.some((w) => lower.includes(w))) cats.add(cat as EyeOverride['category']);
@@ -678,7 +683,10 @@ function extractStatueOfDarkness(logData: Json): MechanicReport {
           const seen = new Set<string>();
           const skills: EyeSkill[] = [];
           for (const c of windowCasts) {
-            if (!keywords.some((k) => c.name.toLowerCase().includes(k))) continue;
+            // The id table is authoritative; the name keywords are a fallback for
+            // skills the tooltip scan missed.
+            const byId = (CC_SKILL_IDS[String(c.id)] ?? []).includes(category);
+            if (!byId && !keywords.some((k) => c.name.toLowerCase().includes(k))) continue;
             if (seen.has(c.name)) continue;
             seen.add(c.name);
             skills.push({ name: c.name, icon: c.icon });
