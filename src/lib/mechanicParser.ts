@@ -154,6 +154,13 @@ export interface EyeOverride {
   account: string;
   profession: string;
   skills: EyeSkill[];    // empty when the source cannot be pinned to a cast
+  /**
+   * Present when `skills` is empty, so the gap reads as missing data rather than
+   * an oversight: `not-a-player-skill` means the player never cast a skill of this
+   * CC type at all (so it came from a familiar, trait, relic or proc), while
+   * `no-cast-at-moment` means they have one but none lands near this application.
+   */
+  unmatched?: 'no-cast-at-moment' | 'not-a-player-skill';
 }
 
 export interface EyePlayerRow {
@@ -626,6 +633,20 @@ function extractStatueOfDarkness(logData: Json): MechanicReport {
     castsByPlayer.set(String(p?.name ?? ""), casts);
   }
 
+  // Which CC categories each player has any skill for. A player with no Daze skill
+  // cannot have dazed the eye with one of their own casts.
+  const ccAvailable = new Map<string, Set<EyeOverride['category']>>();
+  for (const [name, casts] of castsByPlayer) {
+    const cats = new Set<EyeOverride['category']>();
+    for (const c of casts) {
+      const lower = c.name.toLowerCase();
+      for (const [cat, words] of Object.entries(EYE_CC_KEYWORDS)) {
+        if (words.some((w) => lower.includes(w))) cats.add(cat as EyeOverride['category']);
+      }
+    }
+    ccAvailable.set(name, cats);
+  }
+
   const overrides: EyeOverride[] = [];
   for (const eye of eyes) {
     const buffs = new Map<number, Json>();
@@ -670,6 +691,13 @@ function extractStatueOfDarkness(logData: Json): MechanicReport {
             account: idn?.account ?? "",
             profession: idn?.profession ?? "",
             skills,
+            ...(skills.length === 0
+              ? {
+                  unmatched: ccAvailable.get(src)?.has(category)
+                    ? ('no-cast-at-moment' as const)
+                    : ('not-a-player-skill' as const),
+                }
+              : {}),
           });
         }
       }

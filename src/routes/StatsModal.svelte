@@ -50,7 +50,8 @@
   //    which changes the slick list itself — version 8 entries carry the old rows.
   // 10: Statues of Darkness reports gained the eye override fields
   //     (eyeOverrides/Players/Summary); version 9 entries have none.
-  const STATS_CACHE_VERSION = 10;
+  // 11: overrides carry `unmatched`, saying why no skill could be attributed.
+  const STATS_CACHE_VERSION = 11;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;
@@ -2300,6 +2301,20 @@
                             </span>
                           {/each}
                         </span>
+                      {:else if o.unmatched === 'not-a-player-skill'}
+                        <span class="feed-downs">
+                          <span class="feed-down eo-unknown">
+                            <i class="fa-solid fa-circle-question"></i>
+                            <span class="feed-down-txt">not a player skill — familiar, trait or relic</span>
+                          </span>
+                        </span>
+                      {:else if o.unmatched === 'no-cast-at-moment'}
+                        <span class="feed-downs">
+                          <span class="feed-down eo-unknown">
+                            <i class="fa-solid fa-circle-question"></i>
+                            <span class="feed-down-txt">no matching cast for this moment</span>
+                          </span>
+                        </span>
                       {/if}
                     </div>
                   {/each}
@@ -2444,6 +2459,8 @@
   .eo-empty { padding: 6px 8px; font-size: 10px; color: var(--text-muted); }
   .eo-cc { width: 14px; height: 14px; margin-left: 6px; vertical-align: -2px; }
   .eo-skill { width: 14px; height: 14px; border-radius: 3px; object-fit: cover; flex: none; }
+  .eo-unknown { color: var(--text-muted); }
+  .eo-unknown i { font-size: 10px; }
   .stats-modal-close {
     background: color-mix(in srgb,#fff 6%,transparent); border: 1px solid var(--border);
     color: var(--text-muted); width: 30px; height: 30px; border-radius: 8px; cursor: pointer; font-size: 13px;
