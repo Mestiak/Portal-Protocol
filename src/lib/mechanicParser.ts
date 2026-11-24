@@ -174,6 +174,13 @@ export interface EyePlayerRow {
   total: number;
 }
 
+/** An eye blinking to a new spot, read from its replay position track. */
+export interface EyeTeleport {
+  time: number;          // seconds, 1 dp
+  eye: 'judgment' | 'fate';
+  eyeName: string;
+}
+
 export interface MechanicPhase {
   phaseName: string;
   start: number;
@@ -276,6 +283,7 @@ export interface MechanicReport {
   // Statues of Darkness stun overrides (absent on every other boss).
   eyeOverrides?: EyeOverride[];
   eyePlayers?: EyePlayerRow[];
+  eyeTeleports?: EyeTeleport[];
   eyeSummary?: { total: number; judgment: number; fate: number; players: number };
   rawMechanicsCount?: number;
   debugMechanicNames?: { mechanics: string[]; buffs: string[] };
@@ -601,6 +609,30 @@ interface EyeCast {
   id?: number;
 }
 
+/**
+ * Read an eye's teleports off its replay position track: consecutive samples are
+ * otherwise identical (the eye is stationary), so any jump is a blink.
+ */
+const EYE_TELEPORT_UNITS = 80;
+
+function eyeTeleportTimes(cr: Json): number[] {
+  const pos = Array.isArray(cr?.positions) ? cr.positions : [];
+  if (pos.length < 2) return [];
+  const start = Number(cr?.start ?? 0);
+  const end = Number(cr?.end ?? start);
+  const step = (end - start) / (pos.length - 1);
+  const out: number[] = [];
+  for (let i = 1; i < pos.length; i++) {
+    const a = pos[i - 1];
+    const b = pos[i];
+    if (!Array.isArray(a) || !Array.isArray(b)) continue;
+    if (Math.hypot(Number(b[0]) - Number(a[0]), Number(b[1]) - Number(a[1])) > EYE_TELEPORT_UNITS) {
+      out.push(start + i * step);
+    }
+  }
+  return out;
+}
+
 /** Turn a buff's per-source state list into [start, end] intervals in ms. */
 function eyeIntervals(states: unknown[], fallbackEnd: number): [number, number][] {
   const out: [number, number][] = [];
@@ -669,7 +701,16 @@ function extractStatueOfDarkness(logData: Json): MechanicReport {
   }
 
   const overrides: EyeOverride[] = [];
+  const teleports: EyeTeleport[] = [];
   for (const eye of eyes) {
+    for (const ms of eyeTeleportTimes(eye.target?.combatReplayData)) {
+      teleports.push({
+        time: Math.round((ms / 1000) * 10) / 10,
+        eye: eye.side,
+        eyeName: eye.name,
+      });
+    }
+
     const buffs = new Map<number, Json>();
     for (const b of Array.isArray(eye.target?.buffs) ? eye.target.buffs : []) {
       buffs.set(Number(b?.id), b);
@@ -761,6 +802,7 @@ function extractStatueOfDarkness(logData: Json): MechanicReport {
     orbLeaderboard: [], orbPhaseLeaders: [], phases: [], squadLedger: [], revealedBreakers: [],
     eyeOverrides: overrides,
     eyePlayers: players,
+    eyeTeleports: teleports,
     eyeSummary: {
       total: overrides.length,
       judgment: overrides.filter((o) => o.eye === 'judgment').length,

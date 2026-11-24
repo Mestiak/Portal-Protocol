@@ -53,7 +53,8 @@
   // 11: overrides carry `unmatched`, saying why no skill could be attributed.
   // 12: attribution also matches the CC skill-id table (src/lib/ccSkillIds.ts).
   // 13: stun (872) is tracked too, with the encounter-granted Flare ids.
-  const STATS_CACHE_VERSION = 13;
+  // 14: eye teleports are read from the replay position track.
+  const STATS_CACHE_VERSION = 14;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;
@@ -2228,6 +2229,13 @@
             {@const ovRows = mechanics?.eyeOverrides ?? []}
             {@const ovPlayers = mechanics?.eyePlayers ?? []}
             {@const ovShown = eyeFilter === "all" ? ovRows : ovRows.filter((o) => o.eye === eyeFilter)}
+            {@const ovTeleports = (mechanics?.eyeTeleports ?? []).filter(
+              (t) => eyeFilter === "all" || t.eye === eyeFilter,
+            )}
+            {@const ovFeed = [
+              ...ovShown.map((o) => ({ kind: 'cc' as const, time: o.time, cc: o })),
+              ...ovTeleports.map((t) => ({ kind: 'tp' as const, time: t.time, tp: t })),
+            ].sort((a, b) => a.time - b.time)}
             {@const ovShownSummary = {
               total: ovShown.length,
               players: new Set(ovShown.map((o) => o.name)).size,
@@ -2303,50 +2311,57 @@
               </div>
 
               <div class="ds-block">
-                <div class="ds-block-title">Overrides <span class="ds-block-hint">{ovShown.length} applications</span></div>
-                <div class="feed">
-                  {#each ovShown as o}
-                    <div class="feed-row" class:eo-stun={o.category === 'stun'}>
-                      <span class="feed-time">{fmtTime(o.time)}</span>
-                      <img class="enc-icon" src={profIcon(o.profession)} alt={o.profession}
-                           onerror={(ev) => { (ev.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
-                      <span class="feed-name" title={o.account}>
-                        {o.name}
-                        {#each [o.category] as c}
-                          <img class="eo-cc" src={ccIcon(c)} alt={c} title={c}
-                               onerror={(ev) => { (ev.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
-                        {/each}
-                        <span class="enc-tag">{o.eye === 'fate' ? 'Fate' : 'Judgment'}</span>
-                      </span>
-                      {#if o.skills.length > 0}
-                        <span class="feed-downs">
-                          {#each o.skills as s}
-                            <span class="feed-down">
-                              <img class="eo-skill" src={s.icon} alt="" title={s.name}
-                                   onerror={(ev) => { (ev.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
-                              <span class="feed-down-txt">{s.name}</span>
-                              <b>{o.duration}s</b>
-                            </span>
-                          {/each}
-                        </span>
-                      {:else if o.unmatched === 'not-a-player-skill'}
-                        <span class="feed-downs">
-                          <span class="feed-down eo-unknown">
-                            <i class="fa-solid fa-circle-question"></i>
-                            <span class="feed-down-txt">not a player skill — familiar, trait or relic</span>
-                          </span>
-                        </span>
-                      {:else if o.unmatched === 'no-cast-at-moment'}
-                        <span class="feed-downs">
-                          <span class="feed-down eo-unknown">
-                            <i class="fa-solid fa-circle-question"></i>
-                            <span class="feed-down-txt">no matching cast for this moment</span>
-                          </span>
-                        </span>
-                      {/if}
+              <div class="ds-block-title">Overrides <span class="ds-block-hint">{ovShown.length} applications · {ovTeleports.length} teleports</span></div>
+              <div class="feed">
+                {#each ovFeed as item}
+                  {#if item.kind === 'tp'}
+                    <div class="feed-row eo-tp-row">
+                      <span class="feed-time">{fmtTime(item.tp.time)}</span>
+                      <span class="eo-tp"><i class="fa-solid fa-bolt"></i> {item.tp.eyeName} teleports</span>
                     </div>
-                  {/each}
-                </div>
+                  {:else}
+                  <div class="feed-row" class:eo-stun={item.cc.category === 'stun'}>
+                    <span class="feed-time">{fmtTime(item.cc.time)}</span>
+                    <img class="enc-icon" src={profIcon(item.cc.profession)} alt={item.cc.profession}
+                         onerror={(ev) => { (ev.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                    <span class="feed-name" title={item.cc.account}>
+                      {item.cc.name}
+                      {#each [item.cc.category] as c}
+                        <img class="eo-cc" src={ccIcon(c)} alt={c} title={c}
+                             onerror={(ev) => { (ev.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
+                      {/each}
+                      <span class="enc-tag">{item.cc.eye === 'fate' ? 'Fate' : 'Judgment'}</span>
+                    </span>
+                    {#if item.cc.skills.length > 0}
+                      <span class="feed-downs">
+                        {#each item.cc.skills as s}
+                          <span class="feed-down">
+                            <img class="eo-skill" src={s.icon} alt="" title={s.name}
+                                 onerror={(ev) => { (ev.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
+                            <span class="feed-down-txt">{s.name}</span>
+                            <b>{item.cc.duration}s</b>
+                          </span>
+                        {/each}
+                      </span>
+                    {:else if item.cc.unmatched === 'not-a-player-skill'}
+                      <span class="feed-downs">
+                        <span class="feed-down eo-unknown">
+                          <i class="fa-solid fa-circle-question"></i>
+                          <span class="feed-down-txt">not a player skill — familiar, trait or relic</span>
+                        </span>
+                      </span>
+                    {:else if item.cc.unmatched === 'no-cast-at-moment'}
+                      <span class="feed-downs">
+                        <span class="feed-down eo-unknown">
+                          <i class="fa-solid fa-circle-question"></i>
+                          <span class="feed-down-txt">no matching cast for this moment</span>
+                        </span>
+                      </span>
+                    {/if}
+                  </div>
+                  {/if}
+                {/each}
+              </div>
               </div>
             {/if}
           {/if}
@@ -2474,6 +2489,12 @@
   /* One eye selected: let that column use the full width. */
   .eo-cols.eo-single { grid-template-columns: minmax(0, 1fr); }
   .eo-eye-chips { display: flex; gap: 6px; margin-left: auto; flex: none; }
+  /* An eye blinking away, interleaved with the CC timeline. */
+  .eo-tp {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11px; font-weight: 700; color: var(--warn);
+  }
+  .eo-tp-row { opacity: 1; }
   .eo-col { min-width: 0; }
   .eo-col-head {
     display: flex; align-items: center; justify-content: space-between;
