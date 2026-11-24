@@ -52,7 +52,8 @@
   //     (eyeOverrides/Players/Summary); version 9 entries have none.
   // 11: overrides carry `unmatched`, saying why no skill could be attributed.
   // 12: attribution also matches the CC skill-id table (src/lib/ccSkillIds.ts).
-  const STATS_CACHE_VERSION = 12;
+  // 13: stun (872) is tracked too, with the encounter-granted Flare ids.
+  const STATS_CACHE_VERSION = 13;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;
@@ -2222,9 +2223,9 @@
             {@const ovSummary = mechanics?.eyeSummary}
             {@const ovRows = mechanics?.eyeOverrides ?? []}
             {@const ovPlayers = mechanics?.eyePlayers ?? []}
-            {@const ccIcon = (c: string) => `https://wiki.guildwars2.com/wiki/Special:FilePath/${{ daze: 'Daze', fear: 'Fear', knockdown: 'Knockdown' }[c] ?? 'Daze'}.png`}
+            {@const ccIcon = (c: string) => `https://wiki.guildwars2.com/wiki/Special:FilePath/${{ daze: 'Daze', fear: 'Fear', knockdown: 'Knockdown', stun: 'Stun' }[c] ?? 'Daze'}.png`}
             <div class="ds-toolbar">
-              <span class="stats-hint">Daze, Fear and Knockdown applied to the eyes — CC that should have been left to the light orb's stun</span>
+              <span class="stats-hint">Daze, Fear and Knockdown applied to the eyes — CC that should have been left to the light orb's stun. Stuns are the orb's own Flare, listed so an untimely throw is visible</span>
             </div>
             {#if ovSummary}
               <div class="enc-summary">
@@ -2279,7 +2280,7 @@
                 <div class="ds-block-title">Overrides <span class="ds-block-hint">{ovRows.length} applications</span></div>
                 <div class="feed">
                   {#each ovRows as o}
-                    <div class="feed-row">
+                    <div class="feed-row" class:eo-stun={o.category === 'stun'}>
                       <span class="feed-time">{fmtTime(o.time)}</span>
                       <img class="enc-icon" src={profIcon(o.profession)} alt={o.profession}
                            onerror={(ev) => { (ev.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
@@ -2462,6 +2463,9 @@
   .eo-skill { width: 14px; height: 14px; border-radius: 3px; object-fit: cover; flex: none; }
   .eo-unknown { color: var(--text-muted); }
   .eo-unknown i { font-size: 10px; }
+  /* Light orb stuns are the intended mechanic, so they sit back and let the
+     unwanted CC (daze / fear / knockdown) stand out. */
+  .eo-stun { opacity: 0.62; }
   .stats-modal-close {
     background: color-mix(in srgb,#fff 6%,transparent); border: 1px solid var(--border);
     color: var(--text-muted); width: 30px; height: 30px; border-radius: 8px; cursor: pointer; font-size: 13px;

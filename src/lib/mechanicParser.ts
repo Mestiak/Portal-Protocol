@@ -151,7 +151,7 @@ export interface EyeOverride {
   duration: number;      // seconds the eye was incapacitated, 1 dp
   eye: 'judgment' | 'fate';
   eyeName: string;
-  category: 'daze' | 'fear' | 'knockdown';
+  category: 'daze' | 'fear' | 'knockdown' | 'stun';
   name: string;
   account: string;
   profession: string;
@@ -556,7 +556,22 @@ const EYE_CC_BUFFS: { id: number; category: EyeOverride['category'] }[] = [
   { id: 833, category: 'daze' },
   { id: 791, category: 'fear' },
   { id: 6892, category: 'knockdown' },
+  // Stun is the light orb's own incapacitate. Tracked because anyone holding an
+  // orb can throw it, and a Flare from the wrong player overrides the planned stun.
+  { id: EYE_STUN_BUFF, category: 'stun' },
 ];
+
+// Skills the encounter grants rather than the player. The public GW2 API does not
+// expose these ids, so they cannot come from the generated tooltip table.
+const EYE_ENCOUNTER_SKILL_IDS: Record<string, EyeOverride['category'][]> = {
+  47074: ['stun'], // Flare
+  48755: ['stun'], // Flare (second eye)
+};
+
+/** Skill ids that apply a given control effect, from both sources. */
+function eyeSkillCats(id: unknown): EyeOverride['category'][] {
+  return [...(CC_SKILL_IDS[String(id)] ?? []), ...(EYE_ENCOUNTER_SKILL_IDS[String(id)] ?? [])];
+}
 
 const EYE_CC_KEYWORDS: Record<EyeOverride['category'], string[]> = {
   daze: ['daze', 'magic bullet', 'distracting throw', 'backfire', 'wild strikes', 'supersonic arrow',
@@ -575,6 +590,7 @@ const EYE_CC_KEYWORDS: Record<EyeOverride['category'], string[]> = {
     'weight of the world', 'magnetic inversion', 'boulder', "dragon's maw", 'drop cannon',
     'force signet', 'brutal charge', 'charging bite', "bull's charge", 'topple', 'overpower',
     'knock down', 'flatten', 'earthquake', 'belly smash', 'spike trap', "wolf's pounce"],
+  stun: ['stun', 'flare', 'light orb'],
 };
 
 interface EyeCast {
@@ -643,7 +659,7 @@ function extractStatueOfDarkness(logData: Json): MechanicReport {
   for (const [name, casts] of castsByPlayer) {
     const cats = new Set<EyeOverride['category']>();
     for (const c of casts) {
-      for (const cat of CC_SKILL_IDS[String(c.id)] ?? []) cats.add(cat);
+      for (const cat of eyeSkillCats(c.id)) cats.add(cat);
       const lower = c.name.toLowerCase();
       for (const [cat, words] of Object.entries(EYE_CC_KEYWORDS)) {
         if (words.some((w) => lower.includes(w))) cats.add(cat as EyeOverride['category']);
@@ -685,7 +701,7 @@ function extractStatueOfDarkness(logData: Json): MechanicReport {
           for (const c of windowCasts) {
             // The id table is authoritative; the name keywords are a fallback for
             // skills the tooltip scan missed.
-            const byId = (CC_SKILL_IDS[String(c.id)] ?? []).includes(category);
+            const byId = eyeSkillCats(c.id).includes(category);
             if (!byId && !keywords.some((k) => c.name.toLowerCase().includes(k))) continue;
             if (seen.has(c.name)) continue;
             seen.add(c.name);
