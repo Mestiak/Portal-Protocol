@@ -569,16 +569,19 @@ const EYE_CC_BUFFS: { id: number; category: EyeOverride['category'] }[] = [
   { id: EYE_STUN_BUFF, category: 'stun' },
 ];
 
-// Skills the encounter grants rather than the player. The public GW2 API does not
-// expose these ids, so they cannot come from the generated tooltip table.
-const EYE_ENCOUNTER_SKILL_IDS: Record<string, EyeOverride['category'][]> = {
-  47074: ['stun'], // Flare
+// Skills the generated tooltip table cannot cover: encounter-granted skills, and
+// skills whose tooltip never states the effect because something else delivers it
+// (a mech or minion command applies its control from a distance). One line each,
+// added when a log proves the skill.
+const EYE_EXTRA_SKILL_IDS: Record<string, EyeOverride['category'][]> = {
+  47074: ['stun'], // Flare (light orb)
   48755: ['stun'], // Flare (second eye)
+  63121: ['daze'], // Jade Mortar (Jade Mech command)
 };
 
 /** Skill ids that apply a given control effect, from both sources. */
 function eyeSkillCats(id: unknown): EyeOverride['category'][] {
-  return [...(CC_SKILL_IDS[String(id)] ?? []), ...(EYE_ENCOUNTER_SKILL_IDS[String(id)] ?? [])];
+  return [...(CC_SKILL_IDS[String(id)] ?? []), ...(EYE_EXTRA_SKILL_IDS[String(id)] ?? [])];
 }
 
 const EYE_CC_KEYWORDS: Record<EyeOverride['category'], string[]> = {
