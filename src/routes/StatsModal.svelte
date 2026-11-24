@@ -922,6 +922,10 @@
   let subgroupFilter = $state<number | null>(null);   // null = show all
   let collapsedSubs = $state<Set<number>>(new Set());  // subgroups whose player rows are hidden
   let subgroupList = $derived(groupTotals.groups.map((g) => g.group));
+
+  // ── Which eye the Stun Overrides tab shows; 'all' keeps both columns ──
+  type EyeFilter = "all" | "judgment" | "fate";
+  let eyeFilter = $state<EyeFilter>("all");
   function toggleSubCollapse(g: number) {
     const next = new Set(collapsedSubs);
     if (next.has(g)) next.delete(g); else next.add(g);
@@ -2223,63 +2227,85 @@
             {@const ovSummary = mechanics?.eyeSummary}
             {@const ovRows = mechanics?.eyeOverrides ?? []}
             {@const ovPlayers = mechanics?.eyePlayers ?? []}
+            {@const ovShown = eyeFilter === "all" ? ovRows : ovRows.filter((o) => o.eye === eyeFilter)}
+            {@const ovShownSummary = {
+              total: ovShown.length,
+              players: new Set(ovShown.map((o) => o.name)).size,
+              judgment: ovShown.filter((o) => o.eye === "judgment").length,
+              fate: ovShown.filter((o) => o.eye === "fate").length,
+            }}
             {@const ccIcon = (c: string) => `https://wiki.guildwars2.com/wiki/Special:FilePath/${{ daze: 'Daze', fear: 'Fear', knockdown: 'Knockdown', stun: 'Stun' }[c] ?? 'Daze'}.png`}
             <div class="ds-toolbar">
               <span class="stats-hint">Daze, Fear and Knockdown applied to the eyes — CC that should have been left to the light orb's stun. Stuns are the orb's own Flare, listed so an untimely throw is visible</span>
+              <div class="eo-eye-chips">
+                <button class="sg-chip" class:active={eyeFilter === "all"} onclick={() => (eyeFilter = "all")}>Both eyes</button>
+                <button class="sg-chip" class:active={eyeFilter === "judgment"} onclick={() => (eyeFilter = "judgment")}>Judgment</button>
+                <button class="sg-chip" class:active={eyeFilter === "fate"} onclick={() => (eyeFilter = "fate")}>Fate</button>
+              </div>
             </div>
             {#if ovSummary}
               <div class="enc-summary">
-                <span><strong>{ovSummary.total}</strong> override{ovSummary.total !== 1 ? 's' : ''}</span>
-                <span><strong>{ovSummary.players}</strong> player{ovSummary.players !== 1 ? 's' : ''}</span>
-                <span><strong>{ovSummary.judgment}</strong> on Judgment</span>
-                <span><strong>{ovSummary.fate}</strong> on Fate</span>
+                <span><strong>{ovShownSummary.total}</strong> override{ovShownSummary.total !== 1 ? 's' : ''}</span>
+                <span><strong>{ovShownSummary.players}</strong> player{ovShownSummary.players !== 1 ? 's' : ''}</span>
+                {#if eyeFilter !== "fate"}
+                  <span><strong>{ovShownSummary.judgment}</strong> on Judgment</span>
+                {/if}
+                {#if eyeFilter !== "judgment"}
+                  <span><strong>{ovShownSummary.fate}</strong> on Fate</span>
+                {/if}
               </div>
             {/if}
             {#if ovRows.length === 0}
               <div class="stat-note">No stun overrides recorded — nobody used Daze, Fear or Knockdown on either eye.</div>
+            {:else if ovShown.length === 0}
+              <div class="stat-note">Nothing on this eye.</div>
             {:else}
               <div class="ds-block">
-                <div class="ds-block-title">Players <span class="ds-block-hint">{ovPlayers.filter((p) => p.total > 0).length} of {ovPlayers.length}</span></div>
-                <div class="eo-cols">
-                  <div class="eo-col">
-                    <div class="eo-col-head"><span>Eye of Judgment</span><span>{ovSummary?.judgment ?? 0}</span></div>
-                    <div class="eo-rows">
-                      {#each ovPlayers.filter((p) => p.judgment > 0) as p, i}
-                        <div class="eo-row">
-                          <span class="enc-rank">{i + 1}</span>
-                          <img class="enc-icon" src={profIcon(p.profession)} alt={p.profession}
-                               onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
-                          <span class="enc-name" title={p.account}>{p.name}</span>
-                          <span class="enc-num">{p.judgment}</span>
-                        </div>
-                      {:else}
-                        <div class="eo-empty">Nobody overrode this eye.</div>
-                      {/each}
+                <div class="ds-block-title">Players <span class="ds-block-hint">{ovPlayers.filter((p) => (eyeFilter === "fate" ? p.fate : eyeFilter === "judgment" ? p.judgment : p.total) > 0).length} of {ovPlayers.length}</span></div>
+                <div class="eo-cols" class:eo-single={eyeFilter !== "all"}>
+                  {#if eyeFilter !== "fate"}
+                    <div class="eo-col">
+                      <div class="eo-col-head"><span>Eye of Judgment</span><span>{ovSummary?.judgment ?? 0}</span></div>
+                      <div class="eo-rows">
+                        {#each ovPlayers.filter((p) => p.judgment > 0) as p, i}
+                          <div class="eo-row">
+                            <span class="enc-rank">{i + 1}</span>
+                            <img class="enc-icon" src={profIcon(p.profession)} alt={p.profession}
+                                 onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                            <span class="enc-name" title={p.account}>{p.name}</span>
+                            <span class="enc-num">{p.judgment}</span>
+                          </div>
+                        {:else}
+                          <div class="eo-empty">Nobody overrode this eye.</div>
+                        {/each}
+                      </div>
                     </div>
-                  </div>
-                  <div class="eo-col">
-                    <div class="eo-col-head"><span>Eye of Fate</span><span>{ovSummary?.fate ?? 0}</span></div>
-                    <div class="eo-rows">
-                      {#each ovPlayers.filter((p) => p.fate > 0) as p, i}
-                        <div class="eo-row">
-                          <span class="enc-rank">{i + 1}</span>
-                          <img class="enc-icon" src={profIcon(p.profession)} alt={p.profession}
-                               onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
-                          <span class="enc-name" title={p.account}>{p.name}</span>
-                          <span class="enc-num">{p.fate}</span>
-                        </div>
-                      {:else}
-                        <div class="eo-empty">Nobody overrode this eye.</div>
-                      {/each}
+                  {/if}
+                  {#if eyeFilter !== "judgment"}
+                    <div class="eo-col">
+                      <div class="eo-col-head"><span>Eye of Fate</span><span>{ovSummary?.fate ?? 0}</span></div>
+                      <div class="eo-rows">
+                        {#each ovPlayers.filter((p) => p.fate > 0) as p, i}
+                          <div class="eo-row">
+                            <span class="enc-rank">{i + 1}</span>
+                            <img class="enc-icon" src={profIcon(p.profession)} alt={p.profession}
+                                 onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                            <span class="enc-name" title={p.account}>{p.name}</span>
+                            <span class="enc-num">{p.fate}</span>
+                          </div>
+                        {:else}
+                          <div class="eo-empty">Nobody overrode this eye.</div>
+                        {/each}
+                      </div>
                     </div>
-                  </div>
+                  {/if}
                 </div>
               </div>
 
               <div class="ds-block">
-                <div class="ds-block-title">Overrides <span class="ds-block-hint">{ovRows.length} applications</span></div>
+                <div class="ds-block-title">Overrides <span class="ds-block-hint">{ovShown.length} applications</span></div>
                 <div class="feed">
-                  {#each ovRows as o}
+                  {#each ovShown as o}
                     <div class="feed-row" class:eo-stun={o.category === 'stun'}>
                       <span class="feed-time">{fmtTime(o.time)}</span>
                       <img class="enc-icon" src={profIcon(o.profession)} alt={o.profession}
@@ -2445,6 +2471,9 @@
   .pu-dot-taken { background: var(--fail); }
   /* Statues of Darkness stun overrides */
   .eo-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; min-width: 0; }
+  /* One eye selected: let that column use the full width. */
+  .eo-cols.eo-single { grid-template-columns: minmax(0, 1fr); }
+  .eo-eye-chips { display: flex; gap: 6px; margin-left: auto; flex: none; }
   .eo-col { min-width: 0; }
   .eo-col-head {
     display: flex; align-items: center; justify-content: space-between;
