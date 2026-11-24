@@ -2426,11 +2426,22 @@
                     <img class="enc-icon" src={profIcon(r.profession)} alt={r.profession}
                          onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
                     <span class="feed-name" title={r.account}>
-                      {r.name}
                       {#if r.kind === 'pickup'}
-                        <span class="ur-kind">picked up the shard</span>
+                        <img class="ur-icon" src="/mechanics/bloodstone_icon.png" alt="shard" title="Bloodstone shard"
+                             onerror={(e) => { (e.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
+                        <span class="ur-kind">{r.name} picked up the shard</span>
+                      {:else if r.kind === 'crust-drop'}
+                        <img class="ur-icon" src="/mechanics/geyser_icon.png" alt="geyser" title={r.target ?? ''}
+                             onerror={(e) => { (e.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
+                        <span class="ur-kind">{r.name} Dropped the shard</span>
+                      {:else if r.kind === 'bubble-drop'}
+                        <img class="ur-icon" src="/mechanics/bubble_icon.png" alt="bubble" title="Pressure Blast bubble"
+                             onerror={(e) => { (e.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
+                        <span class="ur-kind">{r.name} Dropped the shard</span>
                       {:else}
-                        <span class="ur-kind">Dropped the shard</span>
+                        <img class="ur-icon" src="/mechanics/bloodstone_icon.png" alt="shard" title="Bloodstone shard"
+                             onerror={(e) => { (e.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
+                        <span class="ur-kind">{r.name} Dropped the shard</span>
                       {/if}
                       {#if r.tag === 'saturated'}
                         <span class="enc-tag ur-tag ur-tag-saturated" title="Picked up while Bloodstone Saturation was active">saturated</span>
@@ -2443,6 +2454,8 @@
                     {#if r.kind === 'crust-drop'}
                       <span class="feed-downs">
                         <span class="feed-down">
+                          <img class="ur-icon" src="/mechanics/geyser_icon.png" alt="" title={r.target ?? ''}
+                               onerror={(e) => { (e.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
                           <span class="feed-down-txt">Remove Hardened Crust</span>
                           <b>{r.target}</b>
                         </span>
@@ -2450,6 +2463,8 @@
                     {:else if r.kind === 'bubble-drop'}
                       <span class="feed-downs">
                         <span class="feed-down">
+                          <img class="ur-icon" src="/mechanics/bubble_icon.png" alt="" title="Pressure Blast bubble"
+                               onerror={(e) => { (e.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
                           {#each r.freed.slice(0, 4) as f}
                             <img class="eo-skill" src={profIcon(f.profession)} alt={f.profession} title={f.profession} />
                             <span class="feed-down-txt">{f.name}</span>
@@ -2464,6 +2479,8 @@
                     {:else if r.kind === 'double-drop'}
                       <span class="feed-downs">
                         <span class="feed-down">
+                          <img class="ur-icon" src="/mechanics/bloodstone_icon.png" alt="" title="Bloodstone shard"
+                               onerror={(e) => { (e.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
                           <span class="feed-down-txt">picked up again at {fmtTime(r.againAt ?? 0)}</span>
                         </span>
                       </span>
@@ -2608,6 +2625,10 @@
   .eo-tp-row { opacity: 1; }
   /* Ura Bloodstone shards */
   .ur-kind { font-size: 10px; font-weight: 600; color: var(--text-muted); margin-left: 6px; }
+  .ur-icon {
+    width: 14px; height: 14px; border-radius: 3px; object-fit: cover;
+    vertical-align: -2px; flex: none;
+  }
   .ur-tag { margin-left: 6px; }
   .ur-tag-saturated, .ur-tag-warn { color: var(--warn); }
   .ur-tag-wasted { color: var(--fail); }
