@@ -111,6 +111,32 @@ export interface OilPlayer {
   downs: number; // downs caused by oil
 }
 
+/**
+ * One hold by the Ender's Echo (Dhuum CM).
+ *
+ * `time` is when the echo grabbed the player, `end` when it let go — measured as
+ * the last tick of the pickup buff, so it stays correct even when the buff is
+ * stripped because the player died instead.
+ */
+export interface EchoPickup {
+  time: number;            // seconds into the fight, 1 dp
+  end: number;             // seconds, 1 dp
+  name: string;
+  account: string;
+  profession: string;
+  /** Set when that hold is what killed the player. */
+  diedAt: number | null;   // seconds, 1 dp
+}
+
+export interface EchoPlayer {
+  name: string;
+  account: string;
+  profession: string;
+  count: number;
+  events: { time: number; end: number; diedAt: number | null }[];
+  deaths: number; // holds that ended in a death
+}
+
 export interface MechanicPhase {
   phaseName: string;
   start: number;
@@ -205,6 +231,11 @@ export interface MechanicReport {
   oils?: OilTrigger[];
   oilPlayers?: OilPlayer[];
   oilSummary?: { total: number; players: number; downsAfterOil: number };
+  // Dhuum CM Ender's Echo holds. Only present in CM — a Normal-mode log has no
+  // pickup events at all, and the tab reads their absence as "not this encounter".
+  echoPickups?: EchoPickup[];
+  echoPlayers?: EchoPlayer[];
+  echoSummary?: { total: number; players: number; deaths: number };
   rawMechanicsCount?: number;
   debugMechanicNames?: { mechanics: string[]; buffs: string[] };
 }
@@ -356,11 +387,116 @@ function extractUra(logData: Json): MechanicReport {
     empoweredGained: 0, rageHits: 0, bestPull: 0, timeline: [], boonStrippedPlayers: 0, totalEnvyStrips: 0,
     totalMaliceDamage: 0, malicePlayers: [], maliceTargetCount: 0, shadowPhases: [], orbLeaderboard: [], orbPhaseLeaders: [], phases: [], squadLedger: [], revealedBreakers: [] };
 }
+// ─── Dhuum CM (Ender's Echo pick ups) ─────────────────────────────────────────
+// EI applies EchosPickup through PlayerDstBuffApplyMechanic, which re-fires about
+// every 120 ms for as long as the player is held — so `Echo PU` is a per-tick
+// stream, not one event per pick up. One hold is a run of those ticks per player,
+// and a gap above ECHO_RUN_GAP_MS starts the next one.
+const ECHO_RUN_GAP_MS = 1500;
+// A death counts as taken by the echo when it lands at the end of the hold.
+// `F Echo` is deliberately not used: buffs are stripped on death as well, so that
+// mechanic fires both when the echo lets go and when the player dies.
+const ECHO_DEATH_TAIL_MS = 1500;
+
 function extractDhuum(logData: Json): MechanicReport {
-  return { boss: "Dhuum", isLCM: /(legendary|lcm)/i.test(logData.fightName || ""), summary: combatSummary(logData),
-    orbEfficiency: 0, totalOrbs: 0, totalOrbsLeaked: 0, totalOrbsSpawned: 0, shadowsReached: 0, shadowsLeaked: 0,
-    empoweredGained: 0, rageHits: 0, bestPull: 0, timeline: [], boonStrippedPlayers: 0, totalEnvyStrips: 0,
-    totalMaliceDamage: 0, malicePlayers: [], maliceTargetCount: 0, shadowPhases: [], orbLeaderboard: [], orbPhaseLeaders: [], phases: [], squadLedger: [], revealedBreakers: [] };
+  const isLCM = /(legendary|lcm)/i.test(String(logData.fightName || ""));
+  const isCM = logData.isCM === true || /\bcm\b/i.test(String(logData.fightName || ""));
+  const base: MechanicReport = {
+    boss: "Dhuum", isLCM, summary: combatSummary(logData),
+    orbEfficiency: 0, totalOrbs: 0, totalOrbsLeaked: 0, totalOrbsSpawned: 0,
+    shadowsReached: 0, shadowsLeaked: 0, empoweredGained: 0, rageHits: 0, bestPull: 0,
+    timeline: [], boonStrippedPlayers: 0, totalEnvyStrips: 0,
+    totalMaliceDamage: 0, malicePlayers: [], maliceTargetCount: 0, shadowPhases: [],
+    orbLeaderboard: [], orbPhaseLeaders: [], phases: [], squadLedger: [], revealedBreakers: [],
+  };
+  if (!isCM) return base;
+
+  const identity = new Map<string, { account: string; profession: string }>();
+  for (const p of Array.isArray(logData.players) ? logData.players : []) {
+    identity.set(String(p?.name ?? ""), {
+      account: String(p?.account ?? ""),
+      profession: String(p?.profession ?? ""),
+    });
+  }
+
+  const deathsByActor = new Map<string, number[]>();
+  for (const d of collectMechanics(logData, "Dead")) {
+    const list = deathsByActor.get(d.actor) ?? [];
+    list.push(d.time);
+    deathsByActor.set(d.actor, list);
+  }
+
+  // Group the pickup ticks per player, then split each list into holds.
+  const ticksByActor = new Map<string, MechEvent[]>();
+  for (const e of collectMechanics(logData, "Echo PU")) {
+    const list = ticksByActor.get(e.actor) ?? [];
+    list.push(e);
+    ticksByActor.set(e.actor, list);
+  }
+
+  const pickups: EchoPickup[] = [];
+  for (const [actor, ticks] of ticksByActor) {
+    ticks.sort((a, b) => a.time - b.time);
+    let runStart = ticks[0];
+    let prev = ticks[0];
+    const flush = () => {
+      const id = identity.get(actor);
+      const deaths = deathsByActor.get(actor) ?? [];
+      const death = deaths.find((t) => runStart.time <= t && t <= prev.time + ECHO_DEATH_TAIL_MS);
+      pickups.push({
+        time: Math.round((runStart.time / 1000) * 10) / 10,
+        end: Math.round((prev.time / 1000) * 10) / 10,
+        name: actor,
+        account: id?.account ?? "",
+        profession: id?.profession ?? "",
+        diedAt: death === undefined ? null : Math.round((death / 1000) * 10) / 10,
+      });
+    };
+    for (let i = 1; i < ticks.length; i++) {
+      const tick = ticks[i];
+      if (tick.time - prev.time > ECHO_RUN_GAP_MS) {
+        flush();
+        runStart = tick;
+      }
+      prev = tick;
+    }
+    flush();
+  }
+  pickups.sort((a, b) => a.time - b.time);
+
+  const byPlayer = new Map<string, EchoPlayer>();
+  for (const name of identity.keys()) {
+    byPlayer.set(name, {
+      name,
+      account: identity.get(name)?.account ?? "",
+      profession: identity.get(name)?.profession ?? "",
+      count: 0,
+      events: [],
+      deaths: 0,
+    });
+  }
+  for (const p of pickups) {
+    let row = byPlayer.get(p.name);
+    if (!row) {
+      row = { name: p.name, account: p.account, profession: p.profession, count: 0, events: [], deaths: 0 };
+      byPlayer.set(p.name, row);
+    }
+    row.count += 1;
+    row.events.push({ time: p.time, end: p.end, diedAt: p.diedAt });
+    if (p.diedAt !== null) row.deaths += 1;
+  }
+
+  const players = [...byPlayer.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  return {
+    ...base,
+    echoPickups: pickups,
+    echoPlayers: players,
+    echoSummary: {
+      total: pickups.length,
+      players: players.filter((p) => p.count > 0).length,
+      deaths: pickups.filter((p) => p.diedAt !== null).length,
+    },
+  };
 }
 
 // ─── Vale Guardian ────────────────────────────────────────────────────────────
