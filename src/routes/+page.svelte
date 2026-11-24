@@ -662,6 +662,22 @@
       ]
     },
     {
+      version: "0.8.7",
+      date: "November 2026",
+      notes: [
+        {
+          category: "⚔️ Encounter Tabs",
+          items: [
+            { title: "Statues of Darkness — Stun Overrides", desc: "A Stun Overrides tab for Statues of Darkness: every Daze, Fear or Knockdown on either eye — who did it, which skill, and how long the eye was held. The light orb's own Flare stuns are listed too, so you can see who threw an orb and when one overrode the planned stun." },
+            { title: "Filter by Eye", desc: "Show both eyes together, or just Eye of Judgment or Eye of Fate — the player rankings, counts and feed all follow." },
+            { title: "Eye Teleports", desc: "Each eye blinking to a new spot is marked on the same timeline, so a missed stun is easy to explain." },
+            { title: "Skill Names You Can Trust", desc: "Skills are named from a table of crowd-control skills built from official GW2 data, so far more rows name the real skill — including mech and minion commands like Jade Mortar and Artillery Slash." },
+            { title: "Deimos — Oils, Reworked", desc: "Oils are counted from the slick's own damage instead of its trigger, so no pool goes missing, and every down is credited to the slick that dealt it." }
+          ]
+        }
+      ]
+    },
+    {
       version: "0.8.6",
       date: "November 2026",
       notes: [
