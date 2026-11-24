@@ -137,6 +137,34 @@ export interface EchoPlayer {
   deaths: number; // holds that ended in a death
 }
 
+/** A skill attributed to an eye override, with its wiki icon. */
+export interface EyeSkill {
+  name: string;
+  icon: string;
+}
+
+/** One Daze/Fear/Knockdown application on an eye — anything but the intended stun. */
+export interface EyeOverride {
+  time: number;          // seconds, 1 dp
+  duration: number;      // seconds the eye was incapacitated, 1 dp
+  eye: 'judgment' | 'fate';
+  eyeName: string;
+  category: 'daze' | 'fear' | 'knockdown';
+  name: string;
+  account: string;
+  profession: string;
+  skills: EyeSkill[];    // empty when the source cannot be pinned to a cast
+}
+
+export interface EyePlayerRow {
+  name: string;
+  account: string;
+  profession: string;
+  judgment: number;
+  fate: number;
+  total: number;
+}
+
 export interface MechanicPhase {
   phaseName: string;
   start: number;
@@ -236,6 +264,10 @@ export interface MechanicReport {
   echoPickups?: EchoPickup[];
   echoPlayers?: EchoPlayer[];
   echoSummary?: { total: number; players: number; deaths: number };
+  // Statues of Darkness stun overrides (absent on every other boss).
+  eyeOverrides?: EyeOverride[];
+  eyePlayers?: EyePlayerRow[];
+  eyeSummary?: { total: number; judgment: number; fate: number; players: number };
   rawMechanicsCount?: number;
   debugMechanicNames?: { mechanics: string[]; buffs: string[] };
 }
@@ -341,6 +373,7 @@ export function extractMechanics(logData: Json, bossName: string, localRevealedS
   if (key.includes("harvest") || key.includes("temple")) return extractHarvestTemple(logData, localRevealedSources);
   if (key.includes("vale") || key.includes("spirit vale")) return extractValeGuardian(logData);
   if (key.includes("deimos")) return extractDeimos(logData);
+  if (key.includes("statue") || key.includes("darkness")) return extractStatueOfDarkness(logData);
   // Unknown / non-mechanic boss → only the Combat + generic summary apply.
   return null;
 }
@@ -495,6 +528,189 @@ function extractDhuum(logData: Json): MechanicReport {
       total: pickups.length,
       players: players.filter((p) => p.count > 0).length,
       deaths: pickups.filter((p) => p.diedAt !== null).length,
+    },
+  };
+}
+
+// ─── Statues of Darkness (Eyes) ───────────────────────────────────────────────
+// EI models the eyes' CC as `Hard CC Fate` / `Hard CC Judge`, but those entries
+// carry only player and time. The eye targets' own buff states are richer: they
+// name the kind of CC, who applied it, and for how long.
+//
+// Buff ids come from EI's SkillIDs.cs: Daze = 833, Fear = 791, Knockdown = 6892.
+// Stun (872) is the light orb's incapacitate and is deliberately not an override.
+const EYE_JUDGMENT_IDS = [19651, 19684];
+const EYE_FATE_ID = 19844;
+const EYE_STUN_BUFF = 872;
+
+const EYE_CC_BUFFS: { id: number; category: EyeOverride['category'] }[] = [
+  { id: 833, category: 'daze' },
+  { id: 791, category: 'fear' },
+  { id: 6892, category: 'knockdown' },
+];
+
+const EYE_CC_KEYWORDS: Record<EyeOverride['category'], string[]> = {
+  daze: ['daze', 'magic bullet', 'distracting throw', 'backfire', 'wild strikes', 'supersonic arrow',
+    'summon spirits', 'deft strike', 'flustering flute', 'deafening drum', 'headshot', 'smoldering arrow',
+    'diversion', 'chaos storm', 'mantra of distraction', 'power block', 'ineptitude', 'gouge',
+    'disrupting stab', 'tail lash', 'dazing strike', 'gale strike', 'face smash', 'confounding suggestions',
+    'chaotic interruption', 'shift signet', 'throw shield', 'disruption', 'mesmerize', 'shriek',
+    'tactical strike', 'choking gas', 'sleight of hand', 'half moon slash', 'dazing', 'bladesong dissonance',
+    'surprise shot', 'snap strike', 'mantra of silence', 'lesser chaos storm', 'focusing', 'gag swarm',
+    'darkrazor', 'polaric leap', 'comet', 'galvanic bomb', 'flashbang', 'call lightning', 'leeching bite',
+    'overclock signet', 'dazzling', 'addle', 'mental collapse', 'brilliant slam', 'brilliant', 'lunar impact'],
+  fear: ['fear', 'garish pillar', 'doom', 'terrify', 'wail of doom', "reaper's mark", 'frightening howl',
+    'fear me', 'spectral ring', 'innervate wanderlust'],
+  knockdown: ['knockdown', 'earthshaker', 'gravity well', 'wind shear', 'wanderlust', 'stomp', 'trip', 'quake',
+    'shadowwave', 'tremor', 'slick shoes', 'bane signet', 'hammer of wisdom', 'crashing waves',
+    'weight of the world', 'magnetic inversion', 'boulder', "dragon's maw", 'drop cannon',
+    'force signet', 'brutal charge', 'charging bite', "bull's charge", 'topple', 'overpower',
+    'knock down', 'flatten', 'earthquake', 'belly smash', 'spike trap', "wolf's pounce"],
+};
+
+interface EyeCast {
+  time: number; // ms
+  name: string;
+  icon: string;
+}
+
+/** Turn a buff's per-source state list into [start, end] intervals in ms. */
+function eyeIntervals(states: unknown[], fallbackEnd: number): [number, number][] {
+  const out: [number, number][] = [];
+  let start: number | null = null;
+  for (const s of states as [number, number][]) {
+    if (!Array.isArray(s)) continue;
+    const active = Number(s[1]) > 0;
+    if (active && start === null) start = Number(s[0]);
+    else if (!active && start !== null) { out.push([start, Number(s[0])]); start = null; }
+  }
+  // An application still running when the recording ends counts up to that end.
+  if (start !== null) out.push([start, fallbackEnd || start]);
+  return out;
+}
+
+function extractStatueOfDarkness(logData: Json): MechanicReport {
+  const isLCM = /(legendary|lcm)/i.test(String(logData.fightName || ""));
+  const fightEnd = Number(logData.durationMS) || 0;
+
+  const identity = new Map<string, { account: string; profession: string }>();
+  for (const p of Array.isArray(logData.players) ? logData.players : []) {
+    identity.set(String(p?.name ?? ""), {
+      account: String(p?.account ?? ""),
+      profession: String(p?.profession ?? ""),
+    });
+  }
+
+  const eyes: { side: EyeOverride['eye']; name: string; target: Json }[] = [];
+  for (const t of Array.isArray(logData.targets) ? logData.targets : []) {
+    const id = Number(t?.id);
+    if (id === EYE_FATE_ID) eyes.push({ side: 'fate', name: 'Eye of Fate', target: t });
+    else if (EYE_JUDGMENT_IDS.includes(id)) eyes.push({ side: 'judgment', name: 'Eye of Judgment', target: t });
+  }
+
+  // Every player's casts, so an override can be credited to the skill behind it.
+  const castsByPlayer = new Map<string, EyeCast[]>();
+  const skillMap = (logData.skillMap ?? {}) as Record<string, { name?: string; icon?: string }>;
+  for (const p of Array.isArray(logData.players) ? logData.players : []) {
+    const casts: EyeCast[] = [];
+    for (const rg of Array.isArray(p?.rotation) ? p.rotation : []) {
+      const info = skillMap["s" + rg?.id] ?? {};
+      const name = String(info.name ?? "") || ("id" + rg?.id);
+      const icon = String(info.icon ?? "");
+      for (const c of Array.isArray(rg?.skills) ? rg.skills : []) {
+        if (typeof c?.castTime !== "number") continue;
+        casts.push({ time: c.castTime, name, icon });
+      }
+    }
+    casts.sort((a, b) => a.time - b.time);
+    castsByPlayer.set(String(p?.name ?? ""), casts);
+  }
+
+  const overrides: EyeOverride[] = [];
+  for (const eye of eyes) {
+    const buffs = new Map<number, Json>();
+    for (const b of Array.isArray(eye.target?.buffs) ? eye.target.buffs : []) {
+      buffs.set(Number(b?.id), b);
+    }
+
+    // An override always lands right after a stun ends; anchoring on that end
+    // keeps the search window clear of the previous cast sequence.
+    const stunBuff = buffs.get(EYE_STUN_BUFF);
+    const stunEnds = stunBuff
+      ? Object.entries(stunBuff.statesPerSource ?? {})
+          .flatMap(([, states]) => eyeIntervals(states as unknown[], fightEnd).map(([, end]) => end))
+          .sort((a, b) => a - b)
+      : [];
+
+    for (const { id, category } of EYE_CC_BUFFS) {
+      const buff = buffs.get(id);
+      if (!buff) continue;
+      for (const [src, states] of Object.entries((buff.statesPerSource ?? {}) as Record<string, unknown[]>)) {
+        const idn = identity.get(src);
+        for (const [rawStart, rawEnd] of eyeIntervals(states, fightEnd)) {
+          const end = rawEnd || fightEnd || rawStart;
+          const anchor = stunEnds.filter((e) => e <= rawStart).pop() ?? rawStart;
+          const keywords = EYE_CC_KEYWORDS[category];
+          const seen = new Set<string>();
+          const skills: EyeSkill[] = [];
+          for (const c of castsByPlayer.get(src) ?? []) {
+            if (c.time < anchor - 8000 || c.time > rawStart + 500) continue;
+            if (!keywords.some((k) => c.name.toLowerCase().includes(k))) continue;
+            if (seen.has(c.name)) continue;
+            seen.add(c.name);
+            skills.push({ name: c.name, icon: c.icon });
+          }
+          overrides.push({
+            time: Math.round((rawStart / 1000) * 10) / 10,
+            duration: Math.round(((end - rawStart) / 1000) * 10) / 10,
+            eye: eye.side,
+            eyeName: eye.name,
+            category,
+            name: src,
+            account: idn?.account ?? "",
+            profession: idn?.profession ?? "",
+            skills,
+          });
+        }
+      }
+    }
+  }
+  overrides.sort((a, b) => a.time - b.time);
+
+  const byPlayer = new Map<string, EyePlayerRow>();
+  for (const name of identity.keys()) {
+    byPlayer.set(name, {
+      name,
+      account: identity.get(name)?.account ?? "",
+      profession: identity.get(name)?.profession ?? "",
+      judgment: 0, fate: 0, total: 0,
+    });
+  }
+  for (const o of overrides) {
+    let row = byPlayer.get(o.name);
+    if (!row) {
+      row = { name: o.name, account: o.account, profession: o.profession, judgment: 0, fate: 0, total: 0 };
+      byPlayer.set(o.name, row);
+    }
+    row[o.eye] += 1;
+    row.total += 1;
+  }
+  const players = [...byPlayer.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+
+  return {
+    boss: "Statues of Darkness", isLCM, summary: combatSummary(logData),
+    orbEfficiency: 0, totalOrbs: 0, totalOrbsLeaked: 0, totalOrbsSpawned: 0,
+    shadowsReached: 0, shadowsLeaked: 0, empoweredGained: 0, rageHits: 0, bestPull: 0,
+    timeline: [], boonStrippedPlayers: 0, totalEnvyStrips: 0,
+    totalMaliceDamage: 0, malicePlayers: [], maliceTargetCount: 0, shadowPhases: [],
+    orbLeaderboard: [], orbPhaseLeaders: [], phases: [], squadLedger: [], revealedBreakers: [],
+    eyeOverrides: overrides,
+    eyePlayers: players,
+    eyeSummary: {
+      total: overrides.length,
+      judgment: overrides.filter((o) => o.eye === 'judgment').length,
+      fate: overrides.filter((o) => o.eye === 'fate').length,
+      players: players.filter((p) => p.total > 0).length,
     },
   };
 }
