@@ -1,14 +1,17 @@
-# Portal Protocol 0.8.6 — Patch Notes
+# Portal Protocol 0.8.7 — Patch Notes
 
-Encounter-specific tabs come to the Stats modal — Vale Guardian's teleports and
-Deimos' oils, each with the players involved and what they cost.
+More encounter mechanics in the Stats modal — Statues of Darkness gets a tab that
+shows who is crowd-controlling the eyes instead of leaving it to the light orb,
+and Deimos' oils are counted properly.
 
 ---
 
 ## ⚔️ Encounter Tabs
 
-**Vale Guardian — Teleports** — a Teleports tab for Vale Guardian: every Unstable Magic Spike on each player, split between the boss and the split guardians, with timestamps and what caused any down that followed.
+**Statues of Darkness — Stun Overrides** — a Stun Overrides tab for Statues of Darkness: every Daze, Fear or Knockdown applied to either eye, who applied it and with which skill. The light orb's own Flare stuns are listed too, so you can see who threw an orb and when one overrode the planned stun, and each eye blinking to a new spot is marked on the same timeline.
 
-**Deimos — Oils** — an Oils tab for Deimos, normal and CM: every Rapid Decay slick a player set off, plus who went down to it and when.
+**Filter by Eye** — show both eyes together, or just Eye of Judgment or Eye of Fate; the player rankings, counts and feed all follow.
 
-**Dhuum CM — Pick Ups** — a Pick Ups tab for Dhuum CM: every Ender's Echo hold per player, with per-player totals, a hold timeline against the fight clock, and which holds took someone.
+**Skill Names You Can Trust** — skills are named from a table of crowd-control skills built from official GW2 data, so far more rows name the real skill — including mech and minion commands like Jade Mortar and Artillery Slash.
+
+**Deimos — Oils, Reworked** — oils are counted from the slick's own damage rather than its trigger, so no pool goes missing, and every down is credited to the slick that dealt it.

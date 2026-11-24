@@ -48,7 +48,15 @@
   //    never appeared and Dhuum CM fell back to Boon Uptime.
   // 9: Deimos oils are now derived from damage bursts rather than `Oil T.` alone,
   //    which changes the slick list itself — version 8 entries carry the old rows.
-  const STATS_CACHE_VERSION = 9;
+  // 10: Statues of Darkness reports gained the eye override fields
+  //     (eyeOverrides/Players/Summary); version 9 entries have none.
+  // 11: overrides carry `unmatched`, saying why no skill could be attributed.
+  // 12: attribution also matches the CC skill-id table (src/lib/ccSkillIds.ts).
+  // 13: stun (872) is tracked too, with the encounter-granted Flare ids.
+  // 14: eye teleports are read from the replay position track.
+  // 15: skills the tooltip scan cannot classify (minion / mech commands).
+  // 16: more of those (Artillery Slash).
+  const STATS_CACHE_VERSION = 16;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;
@@ -73,6 +81,7 @@
   const isDeimos = $derived(!!mechanics && mechanics.boss === "Deimos");
   // The echo fields exist only in CM, so their presence is the mode gate.
   const isDhuumCM = $derived(!!mechanics && mechanics.echoPickups !== undefined);
+  const isEyes = $derived(!!mechanics && mechanics.eyeOverrides !== undefined);
 
   // ── Dhuum CM echo holds ──
   // One lane per held player; each segment is one hold, laid out against the fight
@@ -147,7 +156,7 @@
   // Single source of truth for the active sub-view. STATS section: Statistics
   // (cards+chart, default) | Boon Uptime (table). MECHANICS section (Cerus
   // only): Shadows | Orbs | Empowered.
-  type Tab = "statistics" | "boon" | "defense" | "support" | "revealed" | "shadows" | "orbs" | "empowered" | "teleports" | "oils" | "pickups";
+  type Tab = "statistics" | "boon" | "defense" | "support" | "revealed" | "shadows" | "orbs" | "empowered" | "teleports" | "oils" | "pickups" | "overrides";
   let activeTab = $state<Tab>("statistics");
   // ── Phase breakdown ──
   // EI stores every per-phase metric as a positional array indexed by phase, so one
@@ -916,6 +925,10 @@
   let subgroupFilter = $state<number | null>(null);   // null = show all
   let collapsedSubs = $state<Set<number>>(new Set());  // subgroups whose player rows are hidden
   let subgroupList = $derived(groupTotals.groups.map((g) => g.group));
+
+  // ── Which eye the Stun Overrides tab shows; 'all' keeps both columns ──
+  type EyeFilter = "all" | "judgment" | "fate";
+  let eyeFilter = $state<EyeFilter>("all");
   function toggleSubCollapse(g: number) {
     const next = new Set(collapsedSubs);
     if (next.has(g)) next.delete(g); else next.add(g);
@@ -1260,7 +1273,8 @@
           : (isValeGuardian ? "teleports"
           : (isDeimos ? "oils"
           : (isDhuumCM ? "pickups"
-          : (isHT && revealFeatureReady && (mechanics?.revealedBreakers.length ?? 0) > 0 ? "revealed" : "boon"))));
+          : (isEyes ? "overrides"
+          : (isHT && revealFeatureReady && (mechanics?.revealedBreakers.length ?? 0) > 0 ? "revealed" : "boon")))));
       } catch (e: any) {
         error = typeof e === "string" ? e : (e?.message || "Failed to load stats");
       } finally {
@@ -1413,6 +1427,12 @@
             <span class="tabs-divider"></span>
             <button class="top-tab" class:active={activeTab === "pickups"} onclick={() => (activeTab = "pickups")}>
               <i class="fa-solid fa-hand-holding"></i> Pick Ups
+            </button>
+          {/if}
+          {#if isEyes}
+            <span class="tabs-divider"></span>
+            <button class="top-tab" class:active={activeTab === "overrides"} onclick={() => (activeTab = "overrides")}>
+              <i class="fa-solid fa-eye"></i> Stun Overrides
             </button>
           {/if}
         </nav>
@@ -2204,6 +2224,148 @@
                 </div>
               </div>
             {/if}
+
+          {:else if activeTab === "overrides" && isEyes}
+            <!-- STUN OVERRIDES (Statues of Darkness) -->
+            {@const ovSummary = mechanics?.eyeSummary}
+            {@const ovRows = mechanics?.eyeOverrides ?? []}
+            {@const ovPlayers = mechanics?.eyePlayers ?? []}
+            {@const ovShown = eyeFilter === "all" ? ovRows : ovRows.filter((o) => o.eye === eyeFilter)}
+            {@const ovTeleports = (mechanics?.eyeTeleports ?? []).filter(
+              (t) => eyeFilter === "all" || t.eye === eyeFilter,
+            )}
+            {@const ovFeed = [
+              ...ovShown.map((o) => ({ kind: 'cc' as const, time: o.time, cc: o })),
+              ...ovTeleports.map((t) => ({ kind: 'tp' as const, time: t.time, tp: t })),
+            ].sort((a, b) => a.time - b.time)}
+            {@const ovShownSummary = {
+              total: ovShown.length,
+              players: new Set(ovShown.map((o) => o.name)).size,
+              judgment: ovShown.filter((o) => o.eye === "judgment").length,
+              fate: ovShown.filter((o) => o.eye === "fate").length,
+            }}
+            {@const ccIcon = (c: string) => `https://wiki.guildwars2.com/wiki/Special:FilePath/${{ daze: 'Daze', fear: 'Fear', knockdown: 'Knockdown', stun: 'Stun' }[c] ?? 'Daze'}.png`}
+            <div class="ds-toolbar">
+              <span class="stats-hint">Daze, Fear and Knockdown applied to the eyes — CC that should have been left to the light orb's stun. Stuns are the orb's own Flare, listed so an untimely throw is visible</span>
+              <div class="eo-eye-chips">
+                <button class="sg-chip" class:active={eyeFilter === "all"} onclick={() => (eyeFilter = "all")}>Both eyes</button>
+                <button class="sg-chip" class:active={eyeFilter === "judgment"} onclick={() => (eyeFilter = "judgment")}>Judgment</button>
+                <button class="sg-chip" class:active={eyeFilter === "fate"} onclick={() => (eyeFilter = "fate")}>Fate</button>
+              </div>
+            </div>
+            {#if ovSummary}
+              <div class="enc-summary">
+                <span><strong>{ovShownSummary.total}</strong> override{ovShownSummary.total !== 1 ? 's' : ''}</span>
+                <span><strong>{ovShownSummary.players}</strong> player{ovShownSummary.players !== 1 ? 's' : ''}</span>
+                {#if eyeFilter !== "fate"}
+                  <span><strong>{ovShownSummary.judgment}</strong> on Judgment</span>
+                {/if}
+                {#if eyeFilter !== "judgment"}
+                  <span><strong>{ovShownSummary.fate}</strong> on Fate</span>
+                {/if}
+              </div>
+            {/if}
+            {#if ovRows.length === 0}
+              <div class="stat-note">No stun overrides recorded — nobody used Daze, Fear or Knockdown on either eye.</div>
+            {:else if ovShown.length === 0}
+              <div class="stat-note">Nothing on this eye.</div>
+            {:else}
+              <div class="ds-block">
+                <div class="ds-block-title">Players <span class="ds-block-hint">{ovPlayers.filter((p) => (eyeFilter === "fate" ? p.fate : eyeFilter === "judgment" ? p.judgment : p.total) > 0).length} of {ovPlayers.length}</span></div>
+                <div class="eo-cols" class:eo-single={eyeFilter !== "all"}>
+                  {#if eyeFilter !== "fate"}
+                    <div class="eo-col">
+                      <div class="eo-col-head"><span>Eye of Judgment</span><span>{ovSummary?.judgment ?? 0}</span></div>
+                      <div class="eo-rows">
+                        {#each ovPlayers.filter((p) => p.judgment > 0) as p, i}
+                          <div class="eo-row">
+                            <span class="enc-rank">{i + 1}</span>
+                            <img class="enc-icon" src={profIcon(p.profession)} alt={p.profession}
+                                 onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                            <span class="enc-name" title={p.account}>{p.name}</span>
+                            <span class="enc-num">{p.judgment}</span>
+                          </div>
+                        {:else}
+                          <div class="eo-empty">Nobody overrode this eye.</div>
+                        {/each}
+                      </div>
+                    </div>
+                  {/if}
+                  {#if eyeFilter !== "judgment"}
+                    <div class="eo-col">
+                      <div class="eo-col-head"><span>Eye of Fate</span><span>{ovSummary?.fate ?? 0}</span></div>
+                      <div class="eo-rows">
+                        {#each ovPlayers.filter((p) => p.fate > 0) as p, i}
+                          <div class="eo-row">
+                            <span class="enc-rank">{i + 1}</span>
+                            <img class="enc-icon" src={profIcon(p.profession)} alt={p.profession}
+                                 onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                            <span class="enc-name" title={p.account}>{p.name}</span>
+                            <span class="enc-num">{p.fate}</span>
+                          </div>
+                        {:else}
+                          <div class="eo-empty">Nobody overrode this eye.</div>
+                        {/each}
+                      </div>
+                    </div>
+                  {/if}
+                </div>
+              </div>
+
+              <div class="ds-block">
+              <div class="ds-block-title">Overrides <span class="ds-block-hint">{ovShown.length} applications · {ovTeleports.length} teleports</span></div>
+              <div class="feed">
+                {#each ovFeed as item}
+                  {#if item.kind === 'tp'}
+                    <div class="feed-row eo-tp-row">
+                      <span class="feed-time">{fmtTime(item.tp.time)}</span>
+                      <span class="eo-tp">{item.tp.eyeName} teleports</span>
+                    </div>
+                  {:else}
+                  <div class="feed-row" class:eo-stun={item.cc.category === 'stun'}>
+                    <span class="feed-time">{fmtTime(item.cc.time)}</span>
+                    <img class="enc-icon" src={profIcon(item.cc.profession)} alt={item.cc.profession}
+                         onerror={(ev) => { (ev.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                    <span class="feed-name" title={item.cc.account}>
+                      {item.cc.name}
+                      {#each [item.cc.category] as c}
+                        <img class="eo-cc" src={ccIcon(c)} alt={c} title={c}
+                             onerror={(ev) => { (ev.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
+                      {/each}
+                      <span class="enc-tag">{item.cc.eye === 'fate' ? 'Fate' : 'Judgment'}</span>
+                    </span>
+                    {#if item.cc.skills.length > 0}
+                      <span class="feed-downs">
+                        {#each item.cc.skills as s}
+                          <span class="feed-down">
+                            <img class="eo-skill" src={s.icon} alt="" title={s.name}
+                                 onerror={(ev) => { (ev.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
+                            <span class="feed-down-txt">{s.name}</span>
+                            <b>{item.cc.duration}s</b>
+                          </span>
+                        {/each}
+                      </span>
+                    {:else if item.cc.unmatched === 'not-a-player-skill'}
+                      <span class="feed-downs">
+                        <span class="feed-down eo-unknown">
+                          <i class="fa-solid fa-circle-question"></i>
+                          <span class="feed-down-txt">not a player skill — familiar, trait or relic</span>
+                        </span>
+                      </span>
+                    {:else if item.cc.unmatched === 'no-cast-at-moment'}
+                      <span class="feed-downs">
+                        <span class="feed-down eo-unknown">
+                          <i class="fa-solid fa-circle-question"></i>
+                          <span class="feed-down-txt">no matching cast for this moment</span>
+                        </span>
+                      </span>
+                    {/if}
+                  </div>
+                  {/if}
+                {/each}
+              </div>
+              </div>
+            {/if}
           {/if}
 
           <!-- MECHANICS TABS -->
@@ -2324,6 +2486,39 @@
   .pu-dot { display: inline-block; width: 7px; height: 7px; border-radius: 2px; margin-right: 5px; }
   .pu-dot-survived { background: var(--success); }
   .pu-dot-taken { background: var(--fail); }
+  /* Statues of Darkness stun overrides */
+  .eo-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; min-width: 0; }
+  /* One eye selected: let that column use the full width. */
+  .eo-cols.eo-single { grid-template-columns: minmax(0, 1fr); }
+  .eo-eye-chips { display: flex; gap: 6px; margin-left: auto; flex: none; }
+  /* An eye blinking away, interleaved with the CC timeline. */
+  .eo-tp {
+    grid-column: 2 / -1;
+    font-size: 11px; font-weight: 700; color: var(--warn);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .eo-tp-row { opacity: 1; }
+  .eo-col { min-width: 0; }
+  .eo-col-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 8px 4px; font-size: 9px; font-weight: 800; text-transform: uppercase;
+    letter-spacing: .07em; color: var(--text-muted);
+  }
+  .eo-col-head span:last-child { color: #fff; font-variant-numeric: tabular-nums; }
+  .eo-rows { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .eo-row {
+    display: grid; grid-template-columns: 18px 20px minmax(0, 1fr) 40px;
+    align-items: center; gap: 2px 8px; padding: 4px 8px; border-radius: 6px;
+    background: color-mix(in srgb, #fff 3%, transparent);
+  }
+  .eo-empty { padding: 6px 8px; font-size: 10px; color: var(--text-muted); }
+  .eo-cc { width: 14px; height: 14px; margin-left: 6px; vertical-align: -2px; }
+  .eo-skill { width: 14px; height: 14px; border-radius: 3px; object-fit: cover; flex: none; }
+  .eo-unknown { color: var(--text-muted); }
+  .eo-unknown i { font-size: 10px; }
+  /* Light orb stuns are the intended mechanic, so they sit back and let the
+     unwanted CC (daze / fear / knockdown) stand out. */
+  .eo-stun { opacity: 0.62; }
   .stats-modal-close {
     background: color-mix(in srgb,#fff 6%,transparent); border: 1px solid var(--border);
     color: var(--text-muted); width: 30px; height: 30px; border-radius: 8px; cursor: pointer; font-size: 13px;

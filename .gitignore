@@ -72,6 +72,8 @@ graphify-out/
 # Scripts (dev-only)
 scripts/
 !scripts/download_ei.cjs
+!scripts/refresh-cc-skills.py
+!scripts/refresh-cc-skills.py
 
 # Temp files
 src-tauri/tmp_*
