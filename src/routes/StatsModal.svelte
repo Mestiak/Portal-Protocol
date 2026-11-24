@@ -2317,7 +2317,7 @@
                   {#if item.kind === 'tp'}
                     <div class="feed-row eo-tp-row">
                       <span class="feed-time">{fmtTime(item.tp.time)}</span>
-                      <span class="eo-tp"><i class="fa-solid fa-bolt"></i> {item.tp.eyeName} teleports</span>
+                      <span class="eo-tp">{item.tp.eyeName} teleports</span>
                     </div>
                   {:else}
                   <div class="feed-row" class:eo-stun={item.cc.category === 'stun'}>
@@ -2491,8 +2491,9 @@
   .eo-eye-chips { display: flex; gap: 6px; margin-left: auto; flex: none; }
   /* An eye blinking away, interleaved with the CC timeline. */
   .eo-tp {
-    display: inline-flex; align-items: center; gap: 6px;
+    grid-column: 2 / -1;
     font-size: 11px; font-weight: 700; color: var(--warn);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .eo-tp-row { opacity: 1; }
   .eo-col { min-width: 0; }
