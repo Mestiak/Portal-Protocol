@@ -57,7 +57,8 @@
   // 15: skills the tooltip scan cannot classify (minion / mech commands).
   // 16: more of those (Artillery Slash).
   // 17: Ura reports gained the shard/bubble fields.
-  const STATS_CACHE_VERSION = 17;
+  // 18: each freed player carries their own float time.
+  const STATS_CACHE_VERSION = 18;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;
