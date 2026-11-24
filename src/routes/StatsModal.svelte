@@ -43,7 +43,10 @@
   //    before that and credit one player with a whole simultaneous dome.
   // 7: Deimos oil downs carry their own timestamp. Version 6 entries have the
   //    down but no time, which rendered as "NaN:NaN".
-  const STATS_CACHE_VERSION = 7;
+  // 8: Dhuum CM reports gained the Ender's Echo fields (echoPickups/Players/
+  //    Summary). Version 7 entries have no echo data at all, so the Pick Ups tab
+  //    never appeared and Dhuum CM fell back to Boon Uptime.
+  const STATS_CACHE_VERSION = 8;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;
