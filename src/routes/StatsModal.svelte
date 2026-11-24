@@ -46,7 +46,9 @@
   // 8: Dhuum CM reports gained the Ender's Echo fields (echoPickups/Players/
   //    Summary). Version 7 entries have no echo data at all, so the Pick Ups tab
   //    never appeared and Dhuum CM fell back to Boon Uptime.
-  const STATS_CACHE_VERSION = 8;
+  // 9: Deimos oils are now derived from damage bursts rather than `Oil T.` alone,
+  //    which changes the slick list itself — version 8 entries carry the old rows.
+  const STATS_CACHE_VERSION = 9;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;

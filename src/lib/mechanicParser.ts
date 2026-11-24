@@ -667,31 +667,34 @@ function extractValeGuardian(logData: Json): MechanicReport {
 // ─── Deimos ───────────────────────────────────────────────────────────────────
 // EI splits the oil into two mechanics. `Oil` is every tick of Rapid Decay on a
 // player (roughly once a second while they stand in it); `Oil T.` is
-// PlayerDstFirstHealthDamageMechanic, which keeps only the first hit per source
-// slick. Only the trigger counts as an oil being set off, so `Oil T.` is the
-// source of truth here — counting `Oil` would report a few hundred triggers for
-// three actual oils.
+// PlayerDstFirstHealthDamageHitMechanic, which keeps only the first hit per source
+// slick.
+//
+// Neither is a complete slick list. Counting `Oil` would call a few hundred ticks
+// "oils", but `Oil T.` under-reports: one log with four oils had three triggers,
+// because a slick whose source agent matches an earlier one never fires. So the
+// slicks come from the damage itself — one slick per burst of ticks — and each
+// burst is named after the nearest `Oil T.` event, falling back to the first
+// player it hit.
+const OIL_BURST_GAP_MS = 6000;
+// A burst this small with no trigger of its own is people wandering back into an
+// old slick, not a new one.
+const OIL_MIN_TICKS_NEW_SLICK = 5;
+const OIL_MIN_PLAYERS_NEW_SLICK = 3;
+const OIL_TRIGGER_WINDOW_MS = 2000;
 const OIL_DOWN_WINDOW_MS = 2000;
+
+interface OilSlick {
+  startMs: number;
+  endMs: number;
+  name: string;
+  account: string;
+  profession: string;
+  downs: { name: string; account: string; profession: string; time: number }[];
+}
 
 function extractDeimos(logData: Json): MechanicReport {
   const isLCM = /(legendary|lcm|\bcm\b)/i.test(String(logData.fightName || ""));
-
-  // EI already dedupes per slick; drop only exact duplicates, so two slicks
-  // hitting different players in the same millisecond still count separately.
-  const seenTrigger = new Set<string>();
-  const triggers: OilTrigger[] = [];
-  for (const e of collectMechanics(logData, "Oil T.")) {
-    const key = `${e.actor}\u0000${e.time}`;
-    if (seenTrigger.has(key)) continue;
-    seenTrigger.add(key);
-    triggers.push({
-      time: Math.round((e.time / 1000) * 10) / 10,
-      name: e.actor,
-      account: "",
-      profession: "",
-      downs: [],
-    });
-  }
 
   const identity = new Map<string, { account: string; profession: string }>();
   for (const p of Array.isArray(logData.players) ? logData.players : []) {
@@ -700,37 +703,94 @@ function extractDeimos(logData: Json): MechanicReport {
       profession: String(p?.profession ?? ""),
     });
   }
-  for (const t of triggers) {
-    const id = identity.get(t.name);
-    if (id) {
-      t.account = id.account;
-      t.profession = id.profession;
+  const named = (actor: string) => {
+    const id = identity.get(actor);
+    return { account: id?.account ?? "", profession: id?.profession ?? "" };
+  };
+
+  // Ticks are about a second apart while anyone stands in a slick. A run breaks
+  // where the damage pauses, and also at a trigger — but only when the run already
+  // belongs to an earlier trigger, because EI's first-hit label can land several
+  // seconds after the slick's real first tick.
+  const ticks = collectMechanics(logData, "Oil").sort((a, b) => a.time - b.time);
+  const triggers = collectMechanics(logData, "Oil T.").sort((a, b) => a.time - b.time);
+
+  /** The trigger EI attaches to a slick starting around `time`, if any. */
+  const labelNear = (time: number) =>
+    triggers.find((t) => time - OIL_TRIGGER_WINDOW_MS <= t.time && t.time <= time + 1000);
+
+  // A run breaks where the damage pauses, and also at a trigger — but only when
+  // the run already belongs to an earlier trigger, because EI's first-hit label
+  // can land several seconds after a slick's real first tick.
+  const runs: { ticks: MechEvent[]; label?: MechEvent }[] = [];
+  let prev: MechEvent | null = null;
+  for (const e of ticks) {
+    let cross: MechEvent | undefined;
+    if (prev) {
+      for (const t of triggers) {
+        if (prev.time < t.time && t.time <= e.time) { cross = t; break; }
+      }
     }
+    const cur = runs[runs.length - 1];
+    const lull = prev !== null && e.time - prev.time > OIL_BURST_GAP_MS;
+    const split = prev !== null && ((cross !== undefined && cur!.label !== undefined) || lull);
+    if (split) {
+      runs.push({ ticks: [e], label: cross ?? labelNear(e.time) });
+    } else {
+      if (!cur) runs.push({ ticks: [] });
+      const run = runs[runs.length - 1];
+      run.ticks.push(e);
+      if (run.label === undefined) run.label = cross ?? labelNear(run.ticks[0].time);
+    }
+    prev = e;
   }
+
+  // A pause that yields only a couple of ticks is people walking back into a slick
+  // nobody had labelled, not a fresh one.
+  const merged: { ticks: MechEvent[]; label?: MechEvent }[] = [];
+  for (const r of runs) {
+    const players = new Set(r.ticks.map((e) => e.actor));
+    const reentry = r.label === undefined && merged.length > 0
+      && (r.ticks.length < OIL_MIN_TICKS_NEW_SLICK || players.size < OIL_MIN_PLAYERS_NEW_SLICK);
+    if (reentry) merged[merged.length - 1].ticks.push(...r.ticks);
+    else merged.push(r);
+  }
+
+  const slicks: OilSlick[] = [];
+  const tickOwner = new Map<number, OilSlick>();
+  for (const r of merged) {
+    const who = r.label?.actor ?? r.ticks[0].actor;
+    const slick: OilSlick = { startMs: r.ticks[0].time, endMs: r.ticks[r.ticks.length - 1].time, name: who, ...named(who), downs: [] };
+    slicks.push(slick);
+    for (const e of r.ticks) tickOwner.set(e.time, slick);
+  }
+
+  // A trigger with no recorded damage at all is still an oil.
+  for (const t of triggers) {
+    const covered = slicks.some((s) => s.startMs - 1000 <= t.time && t.time <= s.endMs + OIL_TRIGGER_WINDOW_MS);
+    if (covered) continue;
+    slicks.push({ startMs: t.time, endMs: t.time, name: t.actor, ...named(t.actor), downs: [] });
+  }
+  slicks.sort((a, b) => a.startMs - b.startMs);
 
   // A down belongs to the oil when that player was taking Rapid Decay damage just
-  // beforehand.
-  const oilHits = collectMechanics(logData, "Oil");
-  const downsByPlayer = new Map<string, number>();
-  const orderedTriggers = [...triggers].sort((a, b) => a.time - b.time);
-  for (const d of collectMechanics(logData, "Downed")) {
-    const hit = oilHits.some((h) => h.actor === d.actor && d.time - OIL_DOWN_WINDOW_MS <= h.time && h.time <= d.time);
-    if (!hit) continue;
-    downsByPlayer.set(d.actor, (downsByPlayer.get(d.actor) ?? 0) + 1);
-
-    // Pin the down to the slick that was newest when it happened. The oil events
-    // carry no slick id, so the trigger time is the only handle available — a
-    // slick keeps ticking long after it goes off, and a down always follows a
-    // trigger rather than preceding one.
-    const id = identity.get(d.actor);
-    const at = Math.round((d.time / 1000) * 10) / 10;
-    let owner: OilTrigger | undefined;
-    for (const t of orderedTriggers) {
-      if (t.time <= at) owner = t;
-      else break;
-    }
-    owner?.downs.push({ name: d.actor, account: id?.account ?? "", profession: id?.profession ?? "", time: at });
+  // beforehand, and it goes to the slick that dealt that damage — not to whichever
+  // trigger happens to be newest, which can be a minute stale.
+  const ticksByActor = new Map<string, number[]>();
+  for (const e of ticks) {
+    const list = ticksByActor.get(e.actor) ?? [];
+    list.push(e.time);
+    ticksByActor.set(e.actor, list);
   }
+  const downsByPlayer = new Map<string, number>();
+  for (const d of collectMechanics(logData, "Downed")) {
+    const recent = (ticksByActor.get(d.actor) ?? []).filter((t) => d.time - OIL_DOWN_WINDOW_MS <= t && t <= d.time);
+    if (recent.length === 0) continue;
+    downsByPlayer.set(d.actor, (downsByPlayer.get(d.actor) ?? 0) + 1);
+    const slick = tickOwner.get(recent[recent.length - 1]);
+    slick?.downs.push({ name: d.actor, ...named(d.actor), time: Math.round((d.time / 1000) * 10) / 10 });
+  }
+
 
   const byPlayer = new Map<string, OilPlayer>();
   for (const name of identity.keys()) {
@@ -743,14 +803,14 @@ function extractDeimos(logData: Json): MechanicReport {
       downs: downsByPlayer.get(name) ?? 0,
     });
   }
-  for (const t of triggers) {
-    let row = byPlayer.get(t.name);
+  for (const s of slicks) {
+    let row = byPlayer.get(s.name);
     if (!row) {
-      row = { name: t.name, account: t.account, profession: t.profession, count: 0, events: [], downs: 0 };
-      byPlayer.set(t.name, row);
+      row = { name: s.name, account: s.account, profession: s.profession, count: 0, events: [], downs: 0 };
+      byPlayer.set(s.name, row);
     }
     row.count += 1;
-    row.events.push({ time: t.time });
+    row.events.push({ time: Math.round((s.startMs / 1000) * 10) / 10 });
   }
 
   const players = [...byPlayer.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
@@ -765,7 +825,13 @@ function extractDeimos(logData: Json): MechanicReport {
     timeline: [], boonStrippedPlayers: 0, totalEnvyStrips: 0,
     totalMaliceDamage: 0, malicePlayers: [], maliceTargetCount: 0, shadowPhases: [],
     orbLeaderboard: [], orbPhaseLeaders: [], phases: [], squadLedger: [], revealedBreakers: [],
-    oils: triggers.sort((a, b) => a.time - b.time),
+    oils: slicks.map((s) => ({
+      time: Math.round((s.startMs / 1000) * 10) / 10,
+      name: s.name,
+      account: s.account,
+      profession: s.profession,
+      downs: s.downs,
+    })),
     oilPlayers: players,
     oilSummary: {
       total,
