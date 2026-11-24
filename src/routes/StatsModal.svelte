@@ -48,7 +48,9 @@
   //    never appeared and Dhuum CM fell back to Boon Uptime.
   // 9: Deimos oils are now derived from damage bursts rather than `Oil T.` alone,
   //    which changes the slick list itself — version 8 entries carry the old rows.
-  const STATS_CACHE_VERSION = 9;
+  // 10: Statues of Darkness reports gained the eye override fields
+  //     (eyeOverrides/Players/Summary); version 9 entries have none.
+  const STATS_CACHE_VERSION = 10;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;
@@ -73,6 +75,7 @@
   const isDeimos = $derived(!!mechanics && mechanics.boss === "Deimos");
   // The echo fields exist only in CM, so their presence is the mode gate.
   const isDhuumCM = $derived(!!mechanics && mechanics.echoPickups !== undefined);
+  const isEyes = $derived(!!mechanics && mechanics.eyeOverrides !== undefined);
 
   // ── Dhuum CM echo holds ──
   // One lane per held player; each segment is one hold, laid out against the fight
@@ -147,7 +150,7 @@
   // Single source of truth for the active sub-view. STATS section: Statistics
   // (cards+chart, default) | Boon Uptime (table). MECHANICS section (Cerus
   // only): Shadows | Orbs | Empowered.
-  type Tab = "statistics" | "boon" | "defense" | "support" | "revealed" | "shadows" | "orbs" | "empowered" | "teleports" | "oils" | "pickups";
+  type Tab = "statistics" | "boon" | "defense" | "support" | "revealed" | "shadows" | "orbs" | "empowered" | "teleports" | "oils" | "pickups" | "overrides";
   let activeTab = $state<Tab>("statistics");
   // ── Phase breakdown ──
   // EI stores every per-phase metric as a positional array indexed by phase, so one
@@ -1260,7 +1263,8 @@
           : (isValeGuardian ? "teleports"
           : (isDeimos ? "oils"
           : (isDhuumCM ? "pickups"
-          : (isHT && revealFeatureReady && (mechanics?.revealedBreakers.length ?? 0) > 0 ? "revealed" : "boon"))));
+          : (isEyes ? "overrides"
+          : (isHT && revealFeatureReady && (mechanics?.revealedBreakers.length ?? 0) > 0 ? "revealed" : "boon")))));
       } catch (e: any) {
         error = typeof e === "string" ? e : (e?.message || "Failed to load stats");
       } finally {
@@ -1413,6 +1417,12 @@
             <span class="tabs-divider"></span>
             <button class="top-tab" class:active={activeTab === "pickups"} onclick={() => (activeTab = "pickups")}>
               <i class="fa-solid fa-hand-holding"></i> Pick Ups
+            </button>
+          {/if}
+          {#if isEyes}
+            <span class="tabs-divider"></span>
+            <button class="top-tab" class:active={activeTab === "overrides"} onclick={() => (activeTab = "overrides")}>
+              <i class="fa-solid fa-eye"></i> Stun Overrides
             </button>
           {/if}
         </nav>
@@ -2204,6 +2214,98 @@
                 </div>
               </div>
             {/if}
+
+          {:else if activeTab === "overrides" && isEyes}
+            <!-- STUN OVERRIDES (Statues of Darkness) -->
+            {@const ovSummary = mechanics?.eyeSummary}
+            {@const ovRows = mechanics?.eyeOverrides ?? []}
+            {@const ovPlayers = mechanics?.eyePlayers ?? []}
+            {@const ccIcon = (c: string) => `https://wiki.guildwars2.com/wiki/Special:FilePath/${{ daze: 'Daze', fear: 'Fear', knockdown: 'Knockdown' }[c] ?? 'Daze'}.png`}
+            <div class="ds-toolbar">
+              <span class="stats-hint">Daze, Fear and Knockdown applied to the eyes — CC that should have been left to the light orb's stun</span>
+            </div>
+            {#if ovSummary}
+              <div class="enc-summary">
+                <span><strong>{ovSummary.total}</strong> override{ovSummary.total !== 1 ? 's' : ''}</span>
+                <span><strong>{ovSummary.players}</strong> player{ovSummary.players !== 1 ? 's' : ''}</span>
+                <span><strong>{ovSummary.judgment}</strong> on Judgment</span>
+                <span><strong>{ovSummary.fate}</strong> on Fate</span>
+              </div>
+            {/if}
+            {#if ovRows.length === 0}
+              <div class="stat-note">No stun overrides recorded — nobody used Daze, Fear or Knockdown on either eye.</div>
+            {:else}
+              <div class="ds-block">
+                <div class="ds-block-title">Players <span class="ds-block-hint">{ovPlayers.filter((p) => p.total > 0).length} of {ovPlayers.length}</span></div>
+                <div class="eo-cols">
+                  <div class="eo-col">
+                    <div class="eo-col-head"><span>Eye of Judgment</span><span>{ovSummary?.judgment ?? 0}</span></div>
+                    <div class="eo-rows">
+                      {#each ovPlayers.filter((p) => p.judgment > 0) as p, i}
+                        <div class="eo-row">
+                          <span class="enc-rank">{i + 1}</span>
+                          <img class="enc-icon" src={profIcon(p.profession)} alt={p.profession}
+                               onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                          <span class="enc-name" title={p.account}>{p.name}</span>
+                          <span class="enc-num">{p.judgment}</span>
+                        </div>
+                      {:else}
+                        <div class="eo-empty">Nobody overrode this eye.</div>
+                      {/each}
+                    </div>
+                  </div>
+                  <div class="eo-col">
+                    <div class="eo-col-head"><span>Eye of Fate</span><span>{ovSummary?.fate ?? 0}</span></div>
+                    <div class="eo-rows">
+                      {#each ovPlayers.filter((p) => p.fate > 0) as p, i}
+                        <div class="eo-row">
+                          <span class="enc-rank">{i + 1}</span>
+                          <img class="enc-icon" src={profIcon(p.profession)} alt={p.profession}
+                               onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                          <span class="enc-name" title={p.account}>{p.name}</span>
+                          <span class="enc-num">{p.fate}</span>
+                        </div>
+                      {:else}
+                        <div class="eo-empty">Nobody overrode this eye.</div>
+                      {/each}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="ds-block">
+                <div class="ds-block-title">Overrides <span class="ds-block-hint">{ovRows.length} applications</span></div>
+                <div class="feed">
+                  {#each ovRows as o}
+                    <div class="feed-row">
+                      <span class="feed-time">{fmtTime(o.time)}</span>
+                      <img class="enc-icon" src={profIcon(o.profession)} alt={o.profession}
+                           onerror={(ev) => { (ev.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                      <span class="feed-name" title={o.account}>
+                        {o.name}
+                        {#each [o.category] as c}
+                          <img class="eo-cc" src={ccIcon(c)} alt={c} title={c}
+                               onerror={(ev) => { (ev.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
+                        {/each}
+                        <span class="enc-tag">{o.eye === 'fate' ? 'Fate' : 'Judgment'}</span>
+                      </span>
+                      {#if o.skills.length > 0}
+                        <span class="feed-downs">
+                          {#each o.skills as s}
+                            <span class="feed-down">
+                              <img class="eo-skill" src={s.icon} alt="" title={s.name}
+                                   onerror={(ev) => { (ev.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
+                              <span class="feed-down-txt">{s.name}</span>
+                              <b>{o.duration}s</b>
+                            </span>
+                          {/each}
+                        </span>
+                      {/if}
+                    </div>
+                  {/each}
+                </div>
+              </div>
+            {/if}
           {/if}
 
           <!-- MECHANICS TABS -->
@@ -2324,6 +2426,24 @@
   .pu-dot { display: inline-block; width: 7px; height: 7px; border-radius: 2px; margin-right: 5px; }
   .pu-dot-survived { background: var(--success); }
   .pu-dot-taken { background: var(--fail); }
+  /* Statues of Darkness stun overrides */
+  .eo-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; min-width: 0; }
+  .eo-col { min-width: 0; }
+  .eo-col-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 8px 4px; font-size: 9px; font-weight: 800; text-transform: uppercase;
+    letter-spacing: .07em; color: var(--text-muted);
+  }
+  .eo-col-head span:last-child { color: #fff; font-variant-numeric: tabular-nums; }
+  .eo-rows { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .eo-row {
+    display: grid; grid-template-columns: 18px 20px minmax(0, 1fr) 40px;
+    align-items: center; gap: 2px 8px; padding: 4px 8px; border-radius: 6px;
+    background: color-mix(in srgb, #fff 3%, transparent);
+  }
+  .eo-empty { padding: 6px 8px; font-size: 10px; color: var(--text-muted); }
+  .eo-cc { width: 14px; height: 14px; margin-left: 6px; vertical-align: -2px; }
+  .eo-skill { width: 14px; height: 14px; border-radius: 3px; object-fit: cover; flex: none; }
   .stats-modal-close {
     background: color-mix(in srgb,#fff 6%,transparent); border: 1px solid var(--border);
     color: var(--text-muted); width: 30px; height: 30px; border-radius: 8px; cursor: pointer; font-size: 13px;
