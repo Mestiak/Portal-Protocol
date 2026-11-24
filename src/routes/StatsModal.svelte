@@ -66,6 +66,51 @@
   const isCerus = $derived(!!mechanics && mechanics.boss === "Cerus");
   const isValeGuardian = $derived(!!mechanics && mechanics.boss === "Vale Guardian");
   const isDeimos = $derived(!!mechanics && mechanics.boss === "Deimos");
+  // The echo fields exist only in CM, so their presence is the mode gate.
+  const isDhuumCM = $derived(!!mechanics && mechanics.echoPickups !== undefined);
+
+  // ── Dhuum CM echo holds ──
+  // One lane per held player; each segment is one hold, laid out against the fight
+  // clock. HTML rather than SVG so the lane labels can carry a profession icon.
+  let echoHover = $state<{ name: string; time: number; end: number; died: boolean } | null>(null);
+  const echoChart = $derived.by(() => {
+    if (!isDhuumCM || !mechanics) return null;
+    const evs = mechanics.echoPickups ?? [];
+    if (evs.length === 0) return null;
+    const dur = Math.max(stats?.duration_sec ?? 0, ...evs.map((e) => e.end), 1);
+
+    const byPlayer = new Map<string, typeof evs>();
+    for (const e of evs) {
+      const list = byPlayer.get(e.name) ?? [];
+      list.push(e);
+      byPlayer.set(e.name, list);
+    }
+    const lanes = [...byPlayer.entries()]
+      .map(([name, list]) => ({
+        name,
+        first: Math.min(...list.map((e) => e.time)),
+        segs: list.map((e) => ({
+          time: e.time,
+          end: e.end,
+          died: e.diedAt !== null,
+          leftPct: (e.time / dur) * 100,
+          // Sub-second holds would be under a pixel wide; CSS enforces a visible
+          // minimum, anchored at the true start so position stays honest.
+          widthPct: ((e.end - e.time) / dur) * 100,
+        })),
+      }))
+      .sort((a, b) => a.first - b.first);
+
+    // Six-ish ticks on a round step (30s / 60s / 120s ...) so the axis stays readable.
+    const raw = dur / 6;
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const step = ([1, 2, 5, 10].map((m) => m * mag).find((s) => dur / s <= 9) ?? 10 * mag);
+    const ticks: { t: number; pct: number; label: string }[] = [];
+    for (let t = 0; t <= dur + 0.001; t += step) {
+      ticks.push({ t, pct: (t / dur) * 100, label: `${Math.floor(Math.round(t) / 60)}:${String(Math.round(t) % 60).padStart(2, "0")}` });
+    }
+    return { lanes, ticks, dur };
+  });
   const isHT = $derived(!!mechanics && /harvest temple/i.test(mechanics.boss));
   let targetsOpen = $state(false); // collapsed by default — fights like Cerus spawn 25+ adds
   // Shadows tab accordion state
@@ -97,7 +142,7 @@
   // Single source of truth for the active sub-view. STATS section: Statistics
   // (cards+chart, default) | Boon Uptime (table). MECHANICS section (Cerus
   // only): Shadows | Orbs | Empowered.
-  type Tab = "statistics" | "boon" | "defense" | "support" | "revealed" | "shadows" | "orbs" | "empowered" | "teleports" | "oils";
+  type Tab = "statistics" | "boon" | "defense" | "support" | "revealed" | "shadows" | "orbs" | "empowered" | "teleports" | "oils" | "pickups";
   let activeTab = $state<Tab>("statistics");
   // ── Phase breakdown ──
   // EI stores every per-phase metric as a positional array indexed by phase, so one
@@ -1209,7 +1254,8 @@
           ? "statistics"
           : (isValeGuardian ? "teleports"
           : (isDeimos ? "oils"
-          : (isHT && revealFeatureReady && (mechanics?.revealedBreakers.length ?? 0) > 0 ? "revealed" : "boon")));
+          : (isDhuumCM ? "pickups"
+          : (isHT && revealFeatureReady && (mechanics?.revealedBreakers.length ?? 0) > 0 ? "revealed" : "boon"))));
       } catch (e: any) {
         error = typeof e === "string" ? e : (e?.message || "Failed to load stats");
       } finally {
@@ -1356,6 +1402,12 @@
             <span class="tabs-divider"></span>
             <button class="top-tab" class:active={activeTab === "oils"} onclick={() => (activeTab = "oils")}>
               <i class="fa-solid fa-oil-can"></i> Oils
+            </button>
+          {/if}
+          {#if isDhuumCM}
+            <span class="tabs-divider"></span>
+            <button class="top-tab" class:active={activeTab === "pickups"} onclick={() => (activeTab = "pickups")}>
+              <i class="fa-solid fa-hand-holding"></i> Pick Ups
             </button>
           {/if}
         </nav>
@@ -2039,6 +2091,114 @@
                 </div>
               </div>
             {/if}
+          {:else if activeTab === "pickups" && isDhuumCM}
+            <!-- PICK UPS (Dhuum CM) -->
+            {@const puSummary = mechanics?.echoSummary}
+            {@const puRows = mechanics?.echoPlayers ?? []}
+            {@const puEvents = mechanics?.echoPickups ?? []}
+            {@const heldRows = puRows.filter((p) => p.count > 0)}
+            {@const maxCount = Math.max(...heldRows.map((p) => p.count), 1)}
+            <div class="ds-toolbar">
+              <span class="stats-hint">Ender's Echo holds in Dhuum CM — when each player was grabbed, for how long, and whether it took them</span>
+            </div>
+            {#if puSummary}
+              <div class="enc-summary">
+                <span><strong>{puSummary.total}</strong> pick up{puSummary.total !== 1 ? 's' : ''}</span>
+                <span><strong>{puSummary.players}</strong> player{puSummary.players !== 1 ? 's' : ''} held</span>
+                <span><strong>{puSummary.deaths}</strong> taken by the echo</span>
+              </div>
+            {/if}
+            {#if !puSummary || puSummary.total === 0}
+              <div class="stat-note">No Ender's Echo pick ups recorded for this log.</div>
+            {:else}
+              <div class="ds-block">
+                <div class="ds-block-title">Total pick ups <span class="ds-block-hint">{heldRows.length} of {puRows.length} players</span></div>
+                <div class="pu-grid">
+                  <span class="enc-cap">#</span>
+                  <span class="enc-cap"></span>
+                  <span class="enc-cap">Player</span>
+                  <span class="enc-cap"></span>
+                  <span class="enc-cap">Pick ups</span>
+                  <span class="enc-cap">Taken</span>
+                  {#each heldRows as p, i}
+                    <span class="enc-rank">{i + 1}</span>
+                    <img class="enc-icon" src={profIcon(p.profession)} alt={p.profession}
+                         onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                    <span class="enc-name" title={p.account}>{p.name}</span>
+                    <span class="pu-track"><span class="pu-fill" style={`width:${(p.count / maxCount) * 100}%`}></span></span>
+                    <span class="enc-num">{p.count}</span>
+                    <span class="enc-num pu-taken">{p.deaths || '–'}</span>
+                  {/each}
+                </div>
+              </div>
+
+              <div class="ds-block">
+                <div class="ds-block-title">Hold timeline <span class="ds-block-hint">length = time held · red = taken</span></div>
+                {#if echoChart}
+                  <div class="pu-chart">
+                    <div class="pu-lanes">
+                      {#each echoChart.lanes as lane}
+                        <div class="pu-lane">
+                          <span class="pu-lane-name" title={lane.name}>{lane.name}</span>
+                          <span class="pu-lane-track">
+                            {#each lane.segs as s}
+                              <span class="pu-seg" class:pu-seg-dead={s.died} role="img"
+                                    aria-label={`${lane.name} held ${fmtTime(s.time)} to ${fmtTime(s.end)}, ${s.died ? 'taken by the echo' : 'let go'}`}
+                                    style={`left:${s.leftPct}%;width:${s.widthPct}%`}
+                                    onmouseenter={() => (echoHover = { name: lane.name, time: s.time, end: s.end, died: s.died })}
+                                    onmouseleave={() => (echoHover = null)}></span>
+                            {/each}
+                          </span>
+                        </div>
+                      {/each}
+                    </div>
+                    <div class="pu-axis">
+                      <span></span>
+                      <span class="pu-axis-track">
+                        {#each echoChart.ticks as t}
+                          <span class="pu-tick" style={`left:${t.pct}%;transform:translateX(${t.pct <= 0 ? '0' : t.pct >= 100 ? '-100%' : '-50%'})`}>{t.label}</span>
+                        {/each}
+                      </span>
+                    </div>
+                    <div class="pu-detail">
+                      {echoHover
+                        ? `${fmtTime(echoHover.time)} – ${fmtTime(echoHover.end)} · ${echoHover.name} · held ${(echoHover.end - echoHover.time).toFixed(1)}s · ${echoHover.died ? 'taken by the echo' : 'let go'}`
+                        : 'Hover a hold for its details'}
+                    </div>
+                    <div class="pu-legend">
+                      <span><i class="pu-dot pu-dot-survived"></i> let go</span>
+                      <span><i class="pu-dot pu-dot-taken"></i> taken by the echo</span>
+                    </div>
+                  </div>
+                {:else}
+                  <div class="stat-note">No holds to chart.</div>
+                {/if}
+              </div>
+
+              <div class="ds-block">
+                <div class="ds-block-title">Pick Ups <span class="ds-block-hint">{puEvents.length} holds</span></div>
+                <div class="feed">
+                  {#each puEvents as e}
+                    <div class="feed-row">
+                      <span class="feed-time">{fmtTime(e.time)}</span>
+                      <img class="enc-icon" src={profIcon(e.profession)} alt={e.profession}
+                           onerror={(ev) => { (ev.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                      <span class="feed-name" title={e.account}>{e.name}<span class="enc-sub">held {(e.end - e.time).toFixed(1)}s</span></span>
+                      {#if e.diedAt !== null}
+                        <span class="feed-downs">
+                          <span class="feed-down">
+                            <span>-</span>
+                            <img class="feed-down-icon" src={profIcon(e.profession)} alt={e.profession}
+                                 onerror={(ev) => { (ev.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                            <span class="feed-down-txt"><b>{e.name}</b> was taken by the echo at <b>{fmtTime(e.diedAt)}</b></span>
+                          </span>
+                        </span>
+                      {/if}
+                    </div>
+                  {/each}
+                </div>
+              </div>
+            {/if}
           {/if}
 
           <!-- MECHANICS TABS -->
@@ -2118,6 +2278,47 @@
   .feed-down-txt { min-width: 0; }
   .feed-down b { color: var(--text); font-weight: 700; }
   .enc-tag { margin-left: 6px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); }
+  /* Dhuum CM Ender's Echo holds */
+  .pu-grid {
+    display: grid; grid-template-columns: 18px 20px minmax(0, 1fr) minmax(40px, 110px) 48px 40px;
+    align-items: center; gap: 2px 8px; padding-top: 6px;
+  }
+  .pu-track {
+    position: relative; height: 8px; border-radius: 4px; min-width: 0;
+    background: color-mix(in srgb, #fff 5%, transparent); overflow: hidden;
+  }
+  .pu-fill {
+    position: absolute; inset: 0 auto 0 0; border-radius: 4px;
+    background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 60%, transparent), var(--accent));
+  }
+  .pu-taken { color: var(--warn); font-size: 11px; }
+  .pu-chart { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .pu-lanes { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .pu-lane { display: grid; grid-template-columns: 128px minmax(0, 1fr); align-items: center; gap: 10px; min-width: 0; }
+  .pu-lane-name { font-size: 10px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pu-lane-track { position: relative; height: 16px; border-radius: 4px; background: color-mix(in srgb, #fff 3%, transparent); min-width: 0; }
+  .pu-seg {
+    position: absolute; top: 3px; bottom: 3px; border-radius: 3px; background: var(--success);
+    /* A 0.4s hold on a 6-minute fight is otherwise a fraction of a pixel. */
+    min-width: 6px;
+    transition: filter .12s var(--ease-smooth);
+  }
+  .pu-seg-dead { background: var(--fail); }
+  .pu-seg:hover { filter: brightness(1.35); }
+  .pu-axis { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 10px; margin-top: 4px; min-width: 0; }
+  .pu-axis-track { position: relative; height: 14px; border-top: 1px solid var(--border); min-width: 0; }
+  .pu-tick {
+    position: absolute; top: 3px; transform: translateX(-50%);
+    font-size: 9px; color: var(--text-muted); font-variant-numeric: tabular-nums;
+  }
+  .pu-detail { margin-top: 6px; font-size: 10px; font-weight: 600; color: var(--text-muted); min-height: 14px; font-variant-numeric: tabular-nums; }
+  .pu-legend {
+    display: flex; gap: 14px; margin-top: 4px;
+    font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted);
+  }
+  .pu-dot { display: inline-block; width: 7px; height: 7px; border-radius: 2px; margin-right: 5px; }
+  .pu-dot-survived { background: var(--success); }
+  .pu-dot-taken { background: var(--fail); }
   .stats-modal-close {
     background: color-mix(in srgb,#fff 6%,transparent); border: 1px solid var(--border);
     color: var(--text-muted); width: 30px; height: 30px; border-radius: 8px; cursor: pointer; font-size: 13px;
@@ -2421,7 +2622,7 @@
   @media (prefers-reduced-motion: reduce) {
     .stats-modal { animation: none !important; }
     .ax-hero-card, .ax-runner-card, .ax-panel, .ax-boon-row, .ds-block, .ax-row, .ax-death-row, .ax-downrecap-row,
-    .stats-scroll, .th-sort, .sg-collapse, .targets-chevron {
+    .stats-scroll, .th-sort, .sg-collapse, .targets-chevron, .pu-seg {
       transition: none !important;
       transform: none !important;
     }
