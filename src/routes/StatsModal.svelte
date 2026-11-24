@@ -55,7 +55,8 @@
   // 13: stun (872) is tracked too, with the encounter-granted Flare ids.
   // 14: eye teleports are read from the replay position track.
   // 15: skills the tooltip scan cannot classify (minion / mech commands).
-  const STATS_CACHE_VERSION = 15;
+  // 16: more of those (Artillery Slash).
+  const STATS_CACHE_VERSION = 16;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;

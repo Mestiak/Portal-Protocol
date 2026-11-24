@@ -577,6 +577,7 @@ const EYE_EXTRA_SKILL_IDS: Record<string, EyeOverride['category'][]> = {
   47074: ['stun'], // Flare (light orb)
   48755: ['stun'], // Flare (second eye)
   63121: ['daze'], // Jade Mortar (Jade Mech command)
+  62732: ['stun'], // Artillery Slash (Bladesworn)
 };
 
 /** Skill ids that apply a given control effect, from both sources. */
