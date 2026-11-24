@@ -469,7 +469,7 @@ export interface UraFeedRow {
   /** Crust drops: which geyser the Hardened Crust came off. */
   target: string | null;
   /** Bubble drops: everyone lifted in the wave that shard freed. */
-  freed: { name: string; profession: string }[];
+  freed: { name: string; profession: string; floatS: number }[];
   /** Longest time anyone in that wave spent floating, seconds. */
   floatS: number | null;
   /** Double drops: when the follow-up pick-up happened, seconds. */
@@ -552,12 +552,12 @@ function extractUra(logData: Json): MechanicReport {
       continue;
     }
     // The shard freed a bubble wave: pair the still-unclaimed lifts with this rescue.
-    const freed: { name: string; profession: string }[] = [];
+    const freed: { name: string; profession: string; floatS: number }[] = [];
     let floatS: number | null = null;
     lifts.forEach((l, i) => {
       if (liftUsed[i] || l.time > hit!.time || hit!.time - l.time > URA_FLOAT_PARTNER_MAX_MS) return;
       liftUsed[i] = true;
-      freed.push({ name: l.actor, profession: idOf(l.actor).profession });
+      freed.push({ name: l.actor, profession: idOf(l.actor).profession, floatS: round(hit!.time - l.time) });
       floatS = Math.max(floatS ?? 0, hit!.time - l.time);
     });
     freed.sort((a, b) => a.name.localeCompare(b.name));
