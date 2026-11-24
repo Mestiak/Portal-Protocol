@@ -51,7 +51,8 @@
   // 10: Statues of Darkness reports gained the eye override fields
   //     (eyeOverrides/Players/Summary); version 9 entries have none.
   // 11: overrides carry `unmatched`, saying why no skill could be attributed.
-  const STATS_CACHE_VERSION = 11;
+  // 12: they also carry `timed`, marking skills matched on exact timing alone.
+  const STATS_CACHE_VERSION = 12;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;
@@ -2293,10 +2294,10 @@
                       {#if o.skills.length > 0}
                         <span class="feed-downs">
                           {#each o.skills as s}
-                            <span class="feed-down">
+                            <span class="feed-down" class:eo-timed={o.timed}>
                               <img class="eo-skill" src={s.icon} alt="" title={s.name}
                                    onerror={(ev) => { (ev.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
-                              <span class="feed-down-txt">{s.name}</span>
+                              <span class="feed-down-txt">{o.timed ? `~ ${s.name}` : s.name}</span>
                               <b>{o.duration}s</b>
                             </span>
                           {/each}
@@ -2461,6 +2462,8 @@
   .eo-skill { width: 14px; height: 14px; border-radius: 3px; object-fit: cover; flex: none; }
   .eo-unknown { color: var(--text-muted); }
   .eo-unknown i { font-size: 10px; }
+  /* Matched on exact timing alone, so it may be coincidence. */
+  .eo-timed { color: var(--text-muted); }
   .stats-modal-close {
     background: color-mix(in srgb,#fff 6%,transparent); border: 1px solid var(--border);
     color: var(--text-muted); width: 30px; height: 30px; border-radius: 8px; cursor: pointer; font-size: 13px;

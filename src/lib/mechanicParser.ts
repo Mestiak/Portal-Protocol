@@ -155,6 +155,11 @@ export interface EyeOverride {
   profession: string;
   skills: EyeSkill[];    // empty when the source cannot be pinned to a cast
   /**
+   * Set when the skill was matched on exact timing alone rather than by name.
+   * Shown muted, because a lone timing hit can be coincidence.
+   */
+  timed?: boolean;
+  /**
    * Present when `skills` is empty, so the gap reads as missing data rather than
    * an oversight: `not-a-player-skill` means the player never cast a skill of this
    * CC type at all (so it came from a familiar, trait, relic or proc), while
@@ -549,6 +554,11 @@ function extractDhuum(logData: Json): MechanicReport {
 const EYE_JUDGMENT_IDS = [19651, 19684];
 const EYE_FATE_ID = 19844;
 const EYE_STUN_BUFF = 872;
+// A cast within this many milliseconds of the application is treated as its source.
+const EYE_EXACT_TIMING_MS = 25;
+// Named effects rather than weapon swings. These apply control without a keyword
+// of their own, and a single exact-time hit is believable for them.
+const EYE_EFFECT_MARKERS = ['relic', 'sigil', 'rune', 'glyph', 'well of', 'mantra', 'signet', 'nova', 'detonate'];
 
 const EYE_CC_BUFFS: { id: number; category: EyeOverride['category'] }[] = [
   { id: 833, category: 'daze' },
@@ -648,6 +658,7 @@ function extractStatueOfDarkness(logData: Json): MechanicReport {
   }
 
   const overrides: EyeOverride[] = [];
+  const exactTimed: { o: EyeOverride; skill: EyeSkill }[] = [];
   for (const eye of eyes) {
     const buffs = new Map<number, Json>();
     for (const b of Array.isArray(eye.target?.buffs) ? eye.target.buffs : []) {
@@ -672,16 +683,18 @@ function extractStatueOfDarkness(logData: Json): MechanicReport {
           const end = rawEnd || fightEnd || rawStart;
           const anchor = stunEnds.filter((e) => e <= rawStart).pop() ?? rawStart;
           const keywords = EYE_CC_KEYWORDS[category];
+          const windowCasts = (castsByPlayer.get(src) ?? []).filter(
+            (c) => c.time >= anchor - 8000 && c.time <= rawStart + 500,
+          );
           const seen = new Set<string>();
           const skills: EyeSkill[] = [];
-          for (const c of castsByPlayer.get(src) ?? []) {
-            if (c.time < anchor - 8000 || c.time > rawStart + 500) continue;
+          for (const c of windowCasts) {
             if (!keywords.some((k) => c.name.toLowerCase().includes(k))) continue;
             if (seen.has(c.name)) continue;
             seen.add(c.name);
             skills.push({ name: c.name, icon: c.icon });
           }
-          overrides.push({
+          const override: EyeOverride = {
             time: Math.round((rawStart / 1000) * 10) / 10,
             duration: Math.round(((end - rawStart) / 1000) * 10) / 10,
             eye: eye.side,
@@ -691,17 +704,49 @@ function extractStatueOfDarkness(logData: Json): MechanicReport {
             account: idn?.account ?? "",
             profession: idn?.profession ?? "",
             skills,
-            ...(skills.length === 0
-              ? {
-                  unmatched: ccAvailable.get(src)?.has(category)
-                    ? ('no-cast-at-moment' as const)
-                    : ('not-a-player-skill' as const),
-                }
-              : {}),
-          });
+          };
+          overrides.push(override);
+          if (skills.length === 0) {
+            // No cast names this CC type. A cast landing on the application's own
+            // millisecond is still evidence — it is how familiar and relic sources
+            // surface, since their names carry no CC keyword at all. Corroborated
+            // below: a lone coincidence is as likely to be weapon spam.
+            const timed = new Map<string, EyeSkill>();
+            for (const c of windowCasts) {
+              if (Math.abs(c.time - rawStart) > EYE_EXACT_TIMING_MS) continue;
+              if (!timed.has(c.name)) timed.set(c.name, { name: c.name, icon: c.icon });
+            }
+            for (const n of timed.values()) exactTimed.push({ o: override, skill: n });
+          }
         }
       }
     }
+  }
+
+  // Trust an exact-timing match only when the same player lands that same cast on
+  // more than one application — a source that explains several overrides is real,
+  // a single overlap is not.
+  const timedCounts = new Map<string, number>();
+  for (const t of exactTimed) {
+    const key = `${t.o.name} ${t.skill.name}`;
+    timedCounts.set(key, (timedCounts.get(key) ?? 0) + 1);
+  }
+  for (const o of overrides) {
+    if (o.skills.length > 0) continue;
+    const seen = new Map<string, EyeSkill>();
+    for (const t of exactTimed) {
+      if (t.o !== o || seen.has(t.skill.name)) continue;
+      seen.set(t.skill.name, t.skill);
+    }
+    if (seen.size === 0) {
+      o.unmatched = ccAvailable.get(o.name)?.has(o.category) ? 'no-cast-at-moment' : 'not-a-player-skill';
+      continue;
+    }
+    const corroborated = (s: EyeSkill) => (timedCounts.get(`${o.name} ${s.name}`) ?? 0) >= 2;
+    const namedEffect = (s: EyeSkill) => EYE_EFFECT_MARKERS.some((m) => s.name.toLowerCase().includes(m));
+    const confident = [...seen.values()].filter((s) => corroborated(s) || namedEffect(s));
+    o.skills = confident.length > 0 ? confident : [...seen.values()];
+    o.timed = confident.length === 0;
   }
   overrides.sort((a, b) => a.time - b.time);
 
