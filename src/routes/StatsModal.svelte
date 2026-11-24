@@ -56,7 +56,8 @@
   // 14: eye teleports are read from the replay position track.
   // 15: skills the tooltip scan cannot classify (minion / mech commands).
   // 16: more of those (Artillery Slash).
-  const STATS_CACHE_VERSION = 16;
+  // 17: Ura reports gained the shard/bubble fields.
+  const STATS_CACHE_VERSION = 17;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;
@@ -82,6 +83,7 @@
   // The echo fields exist only in CM, so their presence is the mode gate.
   const isDhuumCM = $derived(!!mechanics && mechanics.echoPickups !== undefined);
   const isEyes = $derived(!!mechanics && mechanics.eyeOverrides !== undefined);
+  const isUra = $derived(!!mechanics && mechanics.uraShards !== undefined);
 
   // ── Dhuum CM echo holds ──
   // One lane per held player; each segment is one hold, laid out against the fight
@@ -156,7 +158,7 @@
   // Single source of truth for the active sub-view. STATS section: Statistics
   // (cards+chart, default) | Boon Uptime (table). MECHANICS section (Cerus
   // only): Shadows | Orbs | Empowered.
-  type Tab = "statistics" | "boon" | "defense" | "support" | "revealed" | "shadows" | "orbs" | "empowered" | "teleports" | "oils" | "pickups" | "overrides";
+  type Tab = "statistics" | "boon" | "defense" | "support" | "revealed" | "shadows" | "orbs" | "empowered" | "teleports" | "oils" | "pickups" | "overrides" | "shards";
   let activeTab = $state<Tab>("statistics");
   // ── Phase breakdown ──
   // EI stores every per-phase metric as a positional array indexed by phase, so one
@@ -1274,7 +1276,7 @@
           : (isDeimos ? "oils"
           : (isDhuumCM ? "pickups"
           : (isEyes ? "overrides"
-          : (isHT && revealFeatureReady && (mechanics?.revealedBreakers.length ?? 0) > 0 ? "revealed" : "boon")))));
+          : (isUra ? "shards" : (isHT && revealFeatureReady && (mechanics?.revealedBreakers.length ?? 0) > 0 ? "revealed" : "boon"))))));
       } catch (e: any) {
         error = typeof e === "string" ? e : (e?.message || "Failed to load stats");
       } finally {
@@ -1433,6 +1435,12 @@
             <span class="tabs-divider"></span>
             <button class="top-tab" class:active={activeTab === "overrides"} onclick={() => (activeTab = "overrides")}>
               <i class="fa-solid fa-eye"></i> Stun Overrides
+            </button>
+          {/if}
+          {#if isUra}
+            <span class="tabs-divider"></span>
+            <button class="top-tab" class:active={activeTab === "shards"} onclick={() => (activeTab = "shards")}>
+              <i class="fa-solid fa-gem"></i> Shards
             </button>
           {/if}
         </nav>
@@ -2366,6 +2374,106 @@
               </div>
               </div>
             {/if}
+
+          {:else if activeTab === "shards" && isUra}
+            <!-- BLOODSTONE SHARDS (Ura, normal / CM / LCM) -->
+            {@const urSummary = mechanics?.uraSummary}
+            {@const urRows = mechanics?.uraShards ?? []}
+            {@const urPlayers = mechanics?.uraPlayers ?? []}
+            <div class="ds-toolbar">
+              <span class="stats-hint">Every Bloodstone shard pick-up and what it was used on. A use that missed its target means the player stood outside the shard's 180-unit radius.</span>
+            </div>
+            {#if urSummary}
+              <div class="enc-summary">
+                <span><strong>{urSummary.pickups}</strong> pick-up{urSummary.pickups !== 1 ? 's' : ''}</span>
+                <span><strong>{urSummary.drops}</strong> drop{urSummary.drops !== 1 ? 's' : ''}</span>
+                <span><strong>{urSummary.bubbles}</strong> bubble save{urSummary.bubbles !== 1 ? 's' : ''}</span>
+                <span><strong>{urSummary.saturated}</strong> while saturated</span>
+                <span><strong>{urSummary.doubles}</strong> out of range</span>
+                <span><strong>{urSummary.wasted}</strong> wasted</span>
+                <span>avg float <strong>{urSummary.avgFloatS === null ? '—' : `${urSummary.avgFloatS}s`}</strong></span>
+              </div>
+            {/if}
+
+            <div class="ds-block">
+              <div class="ds-block-title">Shard pick-ups <span class="ds-block-hint">{urPlayers.length} players</span></div>
+              <div class="enc-head">
+                <span class="enc-cap">#</span><span class="enc-cap"></span><span class="enc-cap">Player</span>
+                <span class="enc-cap">Pick-ups</span><span class="enc-cap">Drops</span>
+              </div>
+              <div class="enc-rows">
+                {#each urPlayers as p, i}
+                  <div class="enc-row">
+                    <span class="enc-rank">{i + 1}</span>
+                    <img class="enc-icon" src={profIcon(p.profession)} alt={p.profession}
+                         onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                    <span class="enc-name" title={p.account}>{p.name}</span>
+                    <span class="enc-num">{p.pickups}</span>
+                    <span class="enc-num enc-sub">{p.drops}</span>
+                  </div>
+                {:else}
+                  <div class="stat-note">Nobody picked up a Bloodstone shard.</div>
+                {/each}
+              </div>
+            </div>
+
+            <div class="ds-block">
+              <div class="ds-block-title">Timeline <span class="ds-block-hint">{urRows.length} events</span></div>
+              <div class="feed">
+                {#each urRows as r}
+                  <div class="feed-row">
+                    <span class="feed-time">{fmtTime(r.time)}</span>
+                    <img class="enc-icon" src={profIcon(r.profession)} alt={r.profession}
+                         onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                    <span class="feed-name" title={r.account}>
+                      {r.name}
+                      {#if r.kind === 'pickup'}
+                        <span class="ur-kind">picked up the shard</span>
+                      {:else}
+                        <span class="ur-kind">Dropped the shard</span>
+                      {/if}
+                      {#if r.tag === 'saturated'}
+                        <span class="enc-tag ur-tag ur-tag-saturated" title="Picked up while Bloodstone Saturation was active">saturated</span>
+                      {:else if r.tag === 'out of range'}
+                        <span class="enc-tag ur-tag ur-tag-warn">out of range</span>
+                      {:else if r.tag === 'wasted'}
+                        <span class="enc-tag ur-tag ur-tag-wasted">wasted</span>
+                      {/if}
+                    </span>
+                    {#if r.kind === 'crust-drop'}
+                      <span class="feed-downs">
+                        <span class="feed-down">
+                          <span class="feed-down-txt">Remove Hardened Crust</span>
+                          <b>{r.target}</b>
+                        </span>
+                      </span>
+                    {:else if r.kind === 'bubble-drop'}
+                      <span class="feed-downs">
+                        <span class="feed-down">
+                          {#each r.freed.slice(0, 4) as f}
+                            <img class="eo-skill" src={profIcon(f.profession)} alt={f.profession} title={f.profession} />
+                            <span class="feed-down-txt">{f.name}</span>
+                          {/each}
+                          {#if r.freed.length > 4}
+                            <span class="feed-down-txt">+{r.freed.length - 4} more</span>
+                          {/if}
+                          <span class="feed-down-txt">got freed from bubble</span>
+                          <b>{r.floatS === null ? '—' : `${r.floatS}s`}</b>
+                        </span>
+                      </span>
+                    {:else if r.kind === 'double-drop'}
+                      <span class="feed-downs">
+                        <span class="feed-down">
+                          <span class="feed-down-txt">picked up again at {fmtTime(r.againAt ?? 0)}</span>
+                        </span>
+                      </span>
+                    {/if}
+                  </div>
+                {:else}
+                  <div class="stat-note">No Bloodstone shard activity recorded.</div>
+                {/each}
+              </div>
+            </div>
           {/if}
 
           <!-- MECHANICS TABS -->
@@ -2498,6 +2606,11 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .eo-tp-row { opacity: 1; }
+  /* Ura Bloodstone shards */
+  .ur-kind { font-size: 10px; font-weight: 600; color: var(--text-muted); margin-left: 6px; }
+  .ur-tag { margin-left: 6px; }
+  .ur-tag-saturated, .ur-tag-warn { color: var(--warn); }
+  .ur-tag-wasted { color: var(--fail); }
   .eo-col { min-width: 0; }
   .eo-col-head {
     display: flex; align-items: center; justify-content: space-between;
