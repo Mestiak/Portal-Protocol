@@ -61,7 +61,8 @@
   // 19: rescues free the closest players, capped by the removal-event count.
   // 20: a shard use matches its own removal events, never somebody else's.
   // 21: downed carriers drop their shard.
-  const STATS_CACHE_VERSION = 21;
+  // 22: early drops, and late bubble rescues flagged on the row.
+  const STATS_CACHE_VERSION = 22;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;
@@ -2395,7 +2396,9 @@
                 <span><strong>{urSummary.saturated}</strong> while saturated</span>
                 <span><strong>{urSummary.doubles}</strong> out of range</span>
                 <span><strong>{urSummary.wasted}</strong> wasted</span>
+                <span><strong>{urSummary.early}</strong> early</span>
                 <span><strong>{urSummary.lostDown}</strong> lost on a down</span>
+                <span><strong>{urSummary.lateDrops}</strong> late</span>
                 <span>avg float <strong>{urSummary.avgFloatS === null ? '—' : `${urSummary.avgFloatS}s`}</strong></span>
               </div>
             {/if}
@@ -2453,6 +2456,12 @@
                         <span class="enc-tag ur-tag ur-tag-warn">out of range</span>
                       {:else if r.tag === 'wasted'}
                         <span class="enc-tag ur-tag ur-tag-wasted">wasted</span>
+                      {/if}
+                      {#if r.kind === 'early-drop'}
+                        <span class="enc-tag ur-tag ur-tag-warn">early drop</span>
+                      {/if}
+                      {#if r.lateDrop}
+                        <span class="enc-tag ur-tag ur-tag-warn">late shard drop</span>
                       {/if}
                     </span>
                     {#if r.kind === 'crust-drop'}

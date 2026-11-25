@@ -288,8 +288,8 @@ export interface MechanicReport {
   uraShards?: UraFeedRow[];
   uraPlayers?: UraPlayerRow[];
   uraSummary?: {
-    pickups: number; drops: number; doubles: number; wasted: number; lostDown: number;
-    saturated: number; bubbles: number; avgFloatS: number | null;
+    pickups: number; drops: number; doubles: number; wasted: number; early: number; lostDown: number;
+    saturated: number; bubbles: number; lateDrops: number; avgFloatS: number | null;
   };
   eyeSummary?: { total: number; judgment: number; fate: number; players: number };
   rawMechanicsCount?: number;
@@ -453,6 +453,12 @@ const URA_SATURATION_WINDOW_MS = 10000;
 const URA_FLOAT_PARTNER_MAX_MS = 15000;
 // Removal events by the same player this close together are one multi-bubble rescue.
 const URA_RESCUE_CLUSTER_MS = 100;
+// A spent shard that lands just before its target appears was early, not wasted:
+// bubbles float up, geysers erupt and gain their crust moments later.
+const URA_EARLY_DROP_MS = 5000;
+const URA_EARLY_SIGNALS = ["Pres.Blast.Up", "ToxGeyser.H", "SulfErup.H", "ErupVent.H", "UraJump.H", "SulfGey.T"];
+// Anyone still floating after this long was freed by a late shard drop.
+const URA_LATE_DROP_S = 1.5;
 
 const URA_CRUST_MECHANICS: { name: string; label: string }[] = [
   { name: 'Dispel.Sulf', label: 'Sulfuric Geyser' },
@@ -466,9 +472,11 @@ export interface UraFeedRow {
   name: string;
   account: string;
   profession: string;
-  kind: 'pickup' | 'bubble-drop' | 'crust-drop' | 'double-drop' | 'wasted-drop' | 'down-drop';
+  kind: 'pickup' | 'bubble-drop' | 'crust-drop' | 'double-drop' | 'wasted-drop' | 'early-drop' | 'down-drop';
   /** `saturated` = picked up while Bloodstone Saturation was active. */
   tag: 'saturated' | 'out of range' | 'wasted' | null;
+  /** True when a bubble drop freed players who had been floating too long. */
+  lateDrop?: boolean;
   /** Crust drops: which geyser the Hardened Crust came off. */
   target: string | null;
   /** Bubble drops: everyone lifted in the wave that shard freed. */
@@ -565,6 +573,11 @@ function extractUra(logData: Json): MechanicReport {
     dispelTimes.set(d.actor, list);
   }
 
+  // Everything that can appear just after a shard was spent too soon.
+  const earlyTimes = URA_EARLY_SIGNALS
+    .flatMap((nm) => collectMechanics(logData, nm).map((e) => e.time))
+    .sort((a, b) => a - b);
+
   const rows: UraFeedRow[] = [];
   for (const d of dispels) {
     const idn = idOf(d.actor);
@@ -585,12 +598,15 @@ function extractUra(logData: Json): MechanicReport {
       }
     }
     if (!hit) {
-      // Nothing landed — out of range, unless the log simply ended first.
+      // Nothing landed. Re-picking up within a few seconds is the classic out of
+      // range miss; otherwise the shard may simply have come before its target.
       const again = picks.find((p) => d.time < p.time && p.time - d.time <= URA_DOUBLE_DROP_MS);
+      const nextSignal = earlyTimes.find((t) => t > d.time);
+      const early = !again && nextSignal !== undefined && nextSignal - d.time <= URA_EARLY_DROP_MS;
       rows.push({
         time: round(d.time), name: d.actor, account: idn.account, profession: idn.profession,
-        kind: again ? 'double-drop' : 'wasted-drop',
-        tag: again ? 'out of range' : 'wasted',
+        kind: again ? 'double-drop' : early ? 'early-drop' : 'wasted-drop',
+        tag: again ? 'out of range' : early ? null : 'wasted',
         target: null, freed: [], floatS: null, againAt: again ? round(again.time) : null,
       });
       continue;
@@ -633,7 +649,7 @@ function extractUra(logData: Json): MechanicReport {
     rows.push({
       time: round(d.time), name: d.actor, account: idn.account, profession: idn.profession,
       kind: 'bubble-drop', tag: null, target: null, freed,
-      floatS, againAt: null,
+      floatS, againAt: null, lateDrop: floatS >= URA_LATE_DROP_S,
     });
   }
 
@@ -704,7 +720,9 @@ function extractUra(logData: Json): MechanicReport {
       drops: dispels.length + rows.filter((r) => r.kind === 'down-drop').length,
       doubles: rows.filter((r) => r.kind === 'double-drop').length,
       wasted: rows.filter((r) => r.kind === 'wasted-drop').length,
+      early: rows.filter((r) => r.kind === 'early-drop').length,
       lostDown: rows.filter((r) => r.kind === 'down-drop').length,
+      lateDrops: rows.filter((r) => r.lateDrop).length,
       saturated: rows.filter((r) => r.tag === 'saturated').length,
       bubbles: rows.filter((r) => r.kind === 'bubble-drop').length,
       avgFloatS: floats.length ? Math.round((floats.reduce((a, b) => a + b, 0) / floats.length) * 10) / 10 : null,
