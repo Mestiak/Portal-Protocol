@@ -64,7 +64,8 @@
   // 22: early drops, and late bubble rescues flagged on the row.
   // 23: wasted drops explain when another player's shard got there first.
   // 24: that explanation is limited to a one-second window.
-  const STATS_CACHE_VERSION = 24;
+  // 25: a double drop requires the same player to pick up again.
+  const STATS_CACHE_VERSION = 25;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;

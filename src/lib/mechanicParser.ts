@@ -597,7 +597,9 @@ function extractUra(logData: Json): MechanicReport {
     if (!hit) {
       // Nothing landed. Re-picking up within a few seconds is the classic out of
       // range miss; otherwise the shard may simply have come before its target.
-      const again = picks.find((p) => d.time < p.time && p.time - d.time <= URA_DOUBLE_DROP_MS);
+      // A double drop needs the SAME player to pick up again. Somebody else taking
+      // the shard seconds later is just the next person in the rotation.
+      const again = picks.find((p) => p.actor === d.actor && d.time < p.time && p.time - d.time <= URA_DOUBLE_DROP_MS);
       const nextSignal = earlyTimes.find((t) => t > d.time);
       const early = !again && nextSignal !== undefined && nextSignal - d.time <= URA_EARLY_DROP_MS;
       rows.push({
