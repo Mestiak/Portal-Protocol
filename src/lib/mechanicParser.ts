@@ -456,13 +456,17 @@ const URA_RESCUE_CLUSTER_MS = 100;
 // A spent shard with no removal was early only if its target appeared moments
 // later. A bubble lift is too slow to prove that on its own — 4-5 s after a shard
 // is just normal fight timing — so only a close lift counts.
-const URA_EARLY_GEYSER_MS = 5000;
+const URA_EARLY_GEYSER_MS = 2000;
 const URA_EARLY_BUBBLE_MS = 2000;
-const URA_EARLY_GEYSER_SIGNALS = ["ToxGeyser.H", "SulfErup.H", "ErupVent.H", "UraJump.H", "SulfGey.T"];
+// Damage ticks (ToxGeyser.H) fire every second during a geyser phase, so they
+// cannot prove a shard was early — only a spawn/eruption/targeting event can.
+const URA_EARLY_GEYSER_SIGNALS = ["SulfErup.H", "ErupVent.H", "UraJump.H", "SulfGey.T"];
 // Anyone still floating after this long was freed by a late shard drop.
 const URA_LATE_DROP_S = 1.5;
-// A wasted drop that came just after somebody else cleared the same thing.
-const URA_SCOOPED_MAX_S = 1;
+// A crate/geyser clear is only evidence for that exact geyser, but a bubble wave
+// can be cleared a beat before the next player throws their shard at it.
+const URA_SCOOPED_CRUST_MAX_S = 1;
+const URA_SCOOPED_BUBBLE_MAX_S = 2;
 
 const URA_CRUST_MECHANICS: { name: string; label: string }[] = [
   { name: 'Dispel.Sulf', label: 'Sulfuric Geyser' },
@@ -704,7 +708,8 @@ function extractUra(logData: Json): MechanicReport {
   for (const r of rows) {
     if (r.kind !== 'wasted-drop' && r.kind !== 'double-drop' && r.kind !== 'early-drop') continue;
     const other = cleared
-      .filter((s) => s.name !== r.name && s.time <= r.time && r.time - s.time <= URA_SCOOPED_MAX_S)
+      .filter((s) => s.name !== r.name && s.time <= r.time
+        && r.time - s.time <= (s.kind === 'bubble-drop' ? URA_SCOOPED_BUBBLE_MAX_S : URA_SCOOPED_CRUST_MAX_S))
       .sort((a, b) => b.time - a.time)[0];
     if (!other) continue;
     // Being beaten to the target is a better explanation than "early": a geyser

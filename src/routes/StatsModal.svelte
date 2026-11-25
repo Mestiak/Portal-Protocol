@@ -67,7 +67,8 @@
   // 25: a double drop requires the same player to pick up again.
   // 26: early drops need a geyser activation, or a very close bubble lift.
   // 27: another player's clear beats an early-drop inference.
-  const STATS_CACHE_VERSION = 27;
+  // 28: tighter geyser early window; bubbles can be scooped up to 2 s later.
+  const STATS_CACHE_VERSION = 28;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;
