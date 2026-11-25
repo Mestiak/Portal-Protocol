@@ -68,7 +68,8 @@
   // 26: early drops need a geyser activation, or a very close bubble lift.
   // 27: another player's clear beats an early-drop inference.
   // 28: tighter geyser early window; bubbles can be scooped up to 2 s later.
-  const STATS_CACHE_VERSION = 28;
+  // 29: early drops name what they were early for.
+  const STATS_CACHE_VERSION = 29;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;
@@ -2464,7 +2465,7 @@
                         <span class="enc-tag ur-tag ur-tag-wasted">wasted</span>
                       {/if}
                       {#if r.kind === 'early-drop'}
-                        <span class="enc-tag ur-tag ur-tag-warn">early drop</span>
+                        <span class="enc-tag ur-tag ur-tag-warn">early drop on {r.earlyOn ?? 'target'}</span>
                       {/if}
                       {#if r.lateDrop}
                         <span class="enc-tag ur-tag ur-tag-warn">late shard drop</span>

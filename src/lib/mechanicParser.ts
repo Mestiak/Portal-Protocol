@@ -460,7 +460,12 @@ const URA_EARLY_GEYSER_MS = 2000;
 const URA_EARLY_BUBBLE_MS = 2000;
 // Damage ticks (ToxGeyser.H) fire every second during a geyser phase, so they
 // cannot prove a shard was early — only a spawn/eruption/targeting event can.
-const URA_EARLY_GEYSER_SIGNALS = ["SulfErup.H", "ErupVent.H", "UraJump.H", "SulfGey.T"];
+const URA_EARLY_GEYSER_SIGNALS: { name: string; label: string }[] = [
+  { name: 'SulfErup.H', label: 'Sulfuric Geyser' },
+  { name: 'ErupVent.H', label: 'Sulfuric Geyser' },
+  { name: 'SulfGey.T', label: 'Sulfuric Geyser' },
+  { name: 'UraJump.H', label: 'Titanspawn Geyser' },
+];
 // Anyone still floating after this long was freed by a late shard drop.
 const URA_LATE_DROP_S = 1.5;
 // A crate/geyser clear is only evidence for that exact geyser, but a bubble wave
@@ -485,6 +490,8 @@ export interface UraFeedRow {
   tag: 'saturated' | 'out of range' | 'wasted' | null;
   /** True when a bubble drop freed players who had been floating too long. */
   lateDrop?: boolean;
+  /** What the shard was early for: bubbles or a named geyser. */
+  earlyOn?: string | null;
   /** Set when somebody else's shard cleared this wave or crust moments before. */
   scooped?: { kind: 'bubbles' | 'crust'; target: string | null };
   /** Crust drops: which geyser the Hardened Crust came off. */
@@ -586,8 +593,8 @@ function extractUra(logData: Json): MechanicReport {
   // Things that appear just after a shard was spent too soon. A geyser activation
   // says the crust came late; a bubble lift only counts when it is really close.
   const earlyTimes = URA_EARLY_GEYSER_SIGNALS
-    .flatMap((nm) => collectMechanics(logData, nm).map((e) => e.time))
-    .sort((a, b) => a - b);
+    .flatMap(({ name, label }) => collectMechanics(logData, name).map((e) => ({ time: e.time, label })))
+    .sort((a, b) => a.time - b.time);
   const liftTimes = collectMechanics(logData, "Pres.Blast.Up").map((e) => e.time).sort((a, b) => a - b);
 
   const rows: UraFeedRow[] = [];
@@ -608,16 +615,22 @@ function extractUra(logData: Json): MechanicReport {
       // A double drop needs the SAME player to pick up again. Somebody else taking
       // the shard seconds later is just the next person in the rotation.
       const again = picks.find((p) => p.actor === d.actor && d.time < p.time && p.time - d.time <= URA_DOUBLE_DROP_MS);
-      const nextSignal = earlyTimes.find((t) => t > d.time);
+      const nextSignal = earlyTimes.find((t) => t.time > d.time);
       const nextLift = liftTimes.find((t) => t > d.time);
-      const early = !again && (
-        (nextSignal !== undefined && nextSignal - d.time <= URA_EARLY_GEYSER_MS)
-        || (nextLift !== undefined && nextLift - d.time <= URA_EARLY_BUBBLE_MS)
-      );
+      const geyserGap = nextSignal && nextSignal.time - d.time <= URA_EARLY_GEYSER_MS
+        ? nextSignal.time - d.time : null;
+      const bubbleGap = nextLift !== undefined && nextLift - d.time <= URA_EARLY_BUBBLE_MS
+        ? nextLift - d.time : null;
+      const early = !again && (geyserGap !== null || bubbleGap !== null);
+      // Name the thing the shard came too early for, preferring whichever is closer.
+      const earlyOn = geyserGap !== null && (bubbleGap === null || geyserGap <= bubbleGap)
+        ? nextSignal!.label
+        : bubbleGap !== null ? 'bubbles' : null;
       rows.push({
         time: round(d.time), name: d.actor, account: idn.account, profession: idn.profession,
         kind: again ? 'double-drop' : early ? 'early-drop' : 'wasted-drop',
         tag: again ? 'out of range' : early ? null : 'wasted',
+        earlyOn: early ? earlyOn : null,
         target: null, freed: [], floatS: null, againAt: again ? round(again.time) : null,
       });
       continue;
