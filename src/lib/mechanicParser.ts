@@ -284,6 +284,13 @@ export interface MechanicReport {
   eyeOverrides?: EyeOverride[];
   eyePlayers?: EyePlayerRow[];
   eyeTeleports?: EyeTeleport[];
+  // Ura Bloodstone shards (absent on every other boss).
+  uraShards?: UraFeedRow[];
+  uraPlayers?: UraPlayerRow[];
+  uraSummary?: {
+    pickups: number; drops: number; doubles: number; wasted: number; early: number; lostDown: number;
+    saturated: number; bubbles: number; lateDrops: number; avgFloatS: number | null;
+  };
   eyeSummary?: { total: number; judgment: number; fate: number; players: number };
   rawMechanicsCount?: number;
   debugMechanicNames?: { mechanics: string[]; buffs: string[] };
@@ -430,12 +437,340 @@ function combatSummary(logData: Json): { totalDps: number; durationSec: number; 
   };
 }
 
-// ─── Ura / Dhuum (placeholder, graceful) ─────────────────────────────────────
+// ─── Ura (Bloodstone shards) ─────────────────────────────────────────────────
+// Shards are trash mobs, so EI never exports them. What it does export is the
+// player side: picking a shard up applies `Deterrence` (`Pick-up Shard`), using one
+// is a Dispel (SAK), and whether that use landed shows up as a nearby Hardened Crust
+// removal or bubble rescue. A use with no result within a second means the player
+// stood outside the shard's 180-unit radius.
+const URA_DROP_LINK_MS = 1000;
+// A missed use followed this closely by another pick-up is the "couldn't reach it,
+// grabbed another shard and broke it straight away" case.
+const URA_DOUBLE_DROP_MS = 5000;
+// Bloodstone Saturation lingers this long after a shard is used.
+const URA_SATURATION_WINDOW_MS = 10000;
+// A bubble lasts until it is dispelled, so a rescue can land well after the lift.
+const URA_FLOAT_PARTNER_MAX_MS = 15000;
+// Removal events by the same player this close together are one multi-bubble rescue.
+const URA_RESCUE_CLUSTER_MS = 100;
+// A spent shard with no removal was early only if its target appeared moments
+// later. A bubble lift is too slow to prove that on its own — 4-5 s after a shard
+// is just normal fight timing — so only a close lift counts.
+const URA_EARLY_GEYSER_MS = 2000;
+const URA_EARLY_BUBBLE_MS = 2000;
+// Damage ticks (ToxGeyser.H) fire every second during a geyser phase, so they
+// cannot prove a shard was early — only a spawn/eruption/targeting event can.
+const URA_EARLY_GEYSER_SIGNALS: { name: string; label: string }[] = [
+  { name: 'SulfErup.H', label: 'Sulfuric Geyser' },
+  { name: 'ErupVent.H', label: 'Sulfuric Geyser' },
+  { name: 'SulfGey.T', label: 'Sulfuric Geyser' },
+  { name: 'UraJump.H', label: 'Titanspawn Geyser' },
+];
+// Anyone still floating after this long was freed by a late shard drop.
+const URA_LATE_DROP_S = 1.5;
+// A crate/geyser clear is only evidence for that exact geyser, but a bubble wave
+// can be cleared a beat before the next player throws their shard at it.
+const URA_SCOOPED_CRUST_MAX_S = 1;
+const URA_SCOOPED_BUBBLE_MAX_S = 2;
+
+const URA_CRUST_MECHANICS: { name: string; label: string }[] = [
+  { name: 'Dispel.Sulf', label: 'Sulfuric Geyser' },
+  { name: 'Dispel.Toxc', label: 'Toxic Geyser' },
+  { name: 'Dispel.Titn', label: 'Titanspawn Geyser' },
+];
+
+/** One row of the Shards timeline. */
+export interface UraFeedRow {
+  time: number;                       // seconds, 1 dp
+  name: string;
+  account: string;
+  profession: string;
+  kind: 'pickup' | 'bubble-drop' | 'crust-drop' | 'double-drop' | 'wasted-drop' | 'early-drop' | 'down-drop';
+  /** `saturated` = picked up while Bloodstone Saturation was active. */
+  tag: 'saturated' | 'out of range' | 'wasted' | null;
+  /** True when a bubble drop freed players who had been floating too long. */
+  lateDrop?: boolean;
+  /** What the shard was early for: bubbles or a named geyser. */
+  earlyOn?: string | null;
+  /** Set when somebody else's shard cleared this wave or crust moments before. */
+  scooped?: { kind: 'bubbles' | 'crust'; target: string | null };
+  /** Crust drops: which geyser the Hardened Crust came off. */
+  target: string | null;
+  /** Bubble drops: everyone lifted in the wave that shard freed. */
+  freed: { name: string; profession: string; floatS: number }[];
+  /** Longest time anyone in that wave spent floating, seconds. */
+  floatS: number | null;
+  /** Double drops: when the follow-up pick-up happened, seconds. */
+  againAt: number | null;
+}
+
+export interface UraPlayerRow {
+  name: string;
+  account: string;
+  profession: string;
+  pickups: number;
+  drops: number;
+  doubleDrops: number;
+  wasted: number;
+  saturatedPickups: number;
+  /** Drops caused by the carrier going down. */
+  lostDown: number;
+}
+
 function extractUra(logData: Json): MechanicReport {
-  return { boss: "Ura", isLCM: /(legendary|lcm)/i.test(logData.fightName || ""), summary: combatSummary(logData),
+  const base: MechanicReport = { boss: "Ura", isLCM: /(legendary|lcm)/i.test(logData.fightName || ""), summary: combatSummary(logData),
     orbEfficiency: 0, totalOrbs: 0, totalOrbsLeaked: 0, totalOrbsSpawned: 0, shadowsReached: 0, shadowsLeaked: 0,
     empoweredGained: 0, rageHits: 0, bestPull: 0, timeline: [], boonStrippedPlayers: 0, totalEnvyStrips: 0,
     totalMaliceDamage: 0, malicePlayers: [], maliceTargetCount: 0, shadowPhases: [], orbLeaderboard: [], orbPhaseLeaders: [], phases: [], squadLedger: [], revealedBreakers: [] };
+
+  const identity = new Map<string, { account: string; profession: string }>();
+  for (const p of Array.isArray(logData.players) ? logData.players : []) {
+    identity.set(String(p?.name ?? ""), {
+      account: String(p?.account ?? ""),
+      profession: String(p?.profession ?? ""),
+    });
+  }
+  const idOf = (name: string) => identity.get(name) ?? { account: "", profession: "" };
+
+  const picks = collectMechanics(logData, "Pick-up Shard").sort((a, b) => a.time - b.time);
+  const dispels = collectMechanics(logData, "Dispel").sort((a, b) => a.time - b.time);
+  const lifts = collectMechanics(logData, "Pres.Blast.Up").sort((a, b) => a.time - b.time);
+  const liftUsed = new Array<boolean>(lifts.length).fill(false);
+
+  // Everything a shard use can land on, in one timeline. Consecutive removals by
+  // the same player are one rescue that freed several bubbles.
+  type UraResult = { time: number; actor: string; kind: 'crust' | 'bubble'; label: string | null; count: number };
+  const results: UraResult[] = [];
+  for (const { name, label } of URA_CRUST_MECHANICS) {
+    for (const e of collectMechanics(logData, name)) {
+      results.push({ time: e.time, actor: e.actor, kind: 'crust', label, count: 1 });
+    }
+  }
+  for (const e of collectMechanics(logData, "Dispel.P").sort((a, b) => a.time - b.time)) {
+    const last = results[results.length - 1];
+    if (last && last.kind === 'bubble' && last.actor === e.actor && e.time - last.time <= URA_RESCUE_CLUSTER_MS) {
+      last.count++;
+    } else {
+      results.push({ time: e.time, actor: e.actor, kind: 'bubble', label: null, count: 1 });
+    }
+  }
+  results.sort((a, b) => a.time - b.time);
+
+  // Replay positions, so a rescue can pick the players actually inside the shard's
+  // radius instead of whoever happened to be lifted in the same second.
+  const posTracks = new Map<string, { start: number; end: number; pos: number[][] }>();
+  for (const p of Array.isArray(logData.players) ? logData.players : []) {
+    const cr = p?.combatReplayData;
+    if (Array.isArray(cr?.positions) && (cr.positions as unknown[]).length > 1) {
+      posTracks.set(String(p?.name ?? ""), {
+        start: Number(cr.start ?? 0),
+        end: Number(cr.end ?? 0),
+        pos: cr.positions as number[][],
+      });
+    }
+  }
+  const posAt = (name: string, t: number): [number, number] | null => {
+    const tr = posTracks.get(name);
+    if (!tr || !tr.pos.length || tr.end <= tr.start) return null;
+    const i = Math.max(0, Math.min(tr.pos.length - 1, Math.floor(((t - tr.start) / (tr.end - tr.start)) * tr.pos.length)));
+    const p = tr.pos[i];
+    return Array.isArray(p) ? [Number(p[0]), Number(p[1])] : null;
+  };
+  const distAt = (a: string, b: string, t: number): number | null => {
+    const pa = posAt(a, t);
+    const pb = posAt(b, t);
+    return pa && pb ? Math.hypot(pa[0] - pb[0], pa[1] - pb[1]) : null;
+  };
+
+  const round = (ms: number) => Math.round((ms / 1000) * 10) / 10;
+  const dispelTimes = new Map<string, number[]>();
+  for (const d of dispels) {
+    const list = dispelTimes.get(d.actor) ?? [];
+    list.push(d.time);
+    dispelTimes.set(d.actor, list);
+  }
+
+  // Things that appear just after a shard was spent too soon. A geyser activation
+  // says the crust came late; a bubble lift only counts when it is really close.
+  const earlyTimes = URA_EARLY_GEYSER_SIGNALS
+    .flatMap(({ name, label }) => collectMechanics(logData, name).map((e) => ({ time: e.time, label })))
+    .sort((a, b) => a.time - b.time);
+  const liftTimes = collectMechanics(logData, "Pres.Blast.Up").map((e) => e.time).sort((a, b) => a - b);
+
+  const rows: UraFeedRow[] = [];
+  for (const d of dispels) {
+    const idn = idOf(d.actor);
+    // A removal is always made by the player who spent the shard, so only their
+    // own events count — a shard cannot clear a wave somebody else already took.
+    let best = URA_DROP_LINK_MS;
+    let hit: UraResult | null = null;
+    for (const own of results) {
+      if (own.actor !== d.actor) continue;
+      const gap = Math.abs(own.time - d.time);
+      if (gap <= best) { best = gap; hit = own; }
+    }
+    if (!hit) {
+      // Nothing landed. Re-picking up within a few seconds is the classic out of
+      // range miss; otherwise the shard may simply have come before its target.
+      // A double drop needs the SAME player to pick up again. Somebody else taking
+      // the shard seconds later is just the next person in the rotation.
+      const again = picks.find((p) => p.actor === d.actor && d.time < p.time && p.time - d.time <= URA_DOUBLE_DROP_MS);
+      const nextSignal = earlyTimes.find((t) => t.time > d.time);
+      const nextLift = liftTimes.find((t) => t > d.time);
+      const geyserGap = nextSignal && nextSignal.time - d.time <= URA_EARLY_GEYSER_MS
+        ? nextSignal.time - d.time : null;
+      const bubbleGap = nextLift !== undefined && nextLift - d.time <= URA_EARLY_BUBBLE_MS
+        ? nextLift - d.time : null;
+      const early = !again && (geyserGap !== null || bubbleGap !== null);
+      // A bubble lift is a discrete, rare event; geyser eruptions happen constantly.
+      // When both qualify, the shard was aimed at the bubbles.
+      const earlyOn = bubbleGap !== null ? 'bubbles' : geyserGap !== null ? nextSignal!.label : null;
+      rows.push({
+        time: round(d.time), name: d.actor, account: idn.account, profession: idn.profession,
+        kind: again ? 'double-drop' : early ? 'early-drop' : 'wasted-drop',
+        tag: again ? 'out of range' : early ? null : 'wasted',
+        earlyOn: early ? earlyOn : null,
+        target: null, freed: [], floatS: null, againAt: again ? round(again.time) : null,
+      });
+      continue;
+    }
+    if (hit.kind === 'crust') {
+      rows.push({
+        time: round(d.time), name: d.actor, account: idn.account, profession: idn.profession,
+        kind: 'crust-drop', tag: null, target: hit.label, freed: [], floatS: null, againAt: null,
+      });
+      continue;
+    }
+    // The shard freed bubbles: claim as many lifted players as there were removal
+    // events, closest first — the shard only reaches 180 units.
+    const claimed: { i: number; name: string; floatS: number }[] = [];
+    const options: { d: number; i: number; name: string; floatS: number }[] = [];
+    lifts.forEach((l, i) => {
+      if (liftUsed[i] || l.time > hit.time || hit.time - l.time > URA_FLOAT_PARTNER_MAX_MS) return;
+      options.push({
+        d: distAt(d.actor, l.actor, hit.time) ?? Number.POSITIVE_INFINITY,
+        i, name: l.actor, floatS: hit.time - l.time,
+      });
+    });
+    options.sort((a, b) => a.d - b.d);
+    for (const o of options.slice(0, Math.max(1, hit.count))) {
+      liftUsed[o.i] = true;
+      claimed.push({ i: o.i, name: o.name, floatS: round(o.floatS) });
+    }
+    if (claimed.length === 0) {
+      // The wave had already been cleared by someone else's shard.
+      rows.push({
+        time: round(d.time), name: d.actor, account: idn.account, profession: idn.profession,
+        kind: 'wasted-drop', tag: 'wasted', target: null, freed: [], floatS: null, againAt: null,
+      });
+      continue;
+    }
+    const freed = claimed
+      .map((c) => ({ name: c.name, profession: idOf(c.name).profession, floatS: c.floatS }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const floatS = Math.max(...claimed.map((c) => c.floatS));
+    rows.push({
+      time: round(d.time), name: d.actor, account: idn.account, profession: idn.profession,
+      kind: 'bubble-drop', tag: null, target: null, freed,
+      floatS, againAt: null, lateDrop: floatS >= URA_LATE_DROP_S,
+    });
+  }
+
+  // Who is carrying a shard, so a down can report the drop. A hold ends when the
+  // shard is used, or when its carrier goes down or dies — either way it lands on
+  // the ground.
+  type HoldEvent = { time: number; actor: string; type: 'pickup' | 'use' | 'down' | 'death' };
+  const holds: HoldEvent[] = [
+    ...picks.map((e) => ({ time: e.time, actor: e.actor, type: 'pickup' as const })),
+    ...dispels.map((e) => ({ time: e.time, actor: e.actor, type: 'use' as const })),
+    ...collectMechanics(logData, "Downed").map((e) => ({ time: e.time, actor: e.actor, type: 'down' as const })),
+    ...collectMechanics(logData, "Dead").map((e) => ({ time: e.time, actor: e.actor, type: 'death' as const })),
+  ].sort((a, b) => a.time - b.time || a.actor.localeCompare(b.actor));
+  const carrying = new Map<string, number>();
+  for (const h of holds) {
+    if (h.type === 'pickup') carrying.set(h.actor, h.time);
+    else if (h.type === 'use') carrying.delete(h.actor);
+    else {
+      if (h.type === 'down' && carrying.has(h.actor)) {
+        const idn = idOf(h.actor);
+        rows.push({
+          time: round(h.time), name: h.actor, account: idn.account, profession: idn.profession,
+          kind: 'down-drop', tag: null, target: null, freed: [], floatS: null, againAt: null,
+        });
+      }
+      carrying.delete(h.actor);
+    }
+  }
+
+  for (const p of picks) {
+    const idn = idOf(p.actor);
+    const saturated = (dispelTimes.get(p.actor) ?? []).some((t) => 0 < p.time - t && p.time - t <= URA_SATURATION_WINDOW_MS);
+    rows.push({
+      time: round(p.time), name: p.actor, account: idn.account, profession: idn.profession,
+      kind: 'pickup', tag: saturated ? 'saturated' : null,
+      target: null, freed: [], floatS: null, againAt: null,
+    });
+  }
+  rows.sort((a, b) => a.time - b.time || a.name.localeCompare(b.name));
+
+  // Two players often spend shards on the same wave within a fraction of a second.
+  // The one who comes second found nothing left, so say why instead of calling it
+  // an unexplained waste.
+  const cleared = rows.filter((r) => r.kind === 'bubble-drop' || r.kind === 'crust-drop');
+  for (const r of rows) {
+    if (r.kind !== 'wasted-drop' && r.kind !== 'double-drop' && r.kind !== 'early-drop') continue;
+    const other = cleared
+      .filter((s) => s.name !== r.name && s.time <= r.time
+        && r.time - s.time <= (s.kind === 'bubble-drop' ? URA_SCOOPED_BUBBLE_MAX_S : URA_SCOOPED_CRUST_MAX_S))
+      .sort((a, b) => b.time - a.time)[0];
+    if (!other) continue;
+    // Being beaten to the target is a better explanation than "early": a geyser
+    // erupting moments later is normal fight timing, not the cause of this miss.
+    if (r.kind === 'early-drop') { r.kind = 'wasted-drop'; r.tag = 'wasted'; }
+    r.scooped = {
+      kind: other.kind === 'bubble-drop' ? 'bubbles' : 'crust',
+      target: other.kind === 'crust-drop' ? other.target : null,
+    };
+  }
+
+  const players = new Map<string, UraPlayerRow>();
+  const rowOf = (r: UraFeedRow) => {
+    const cur = players.get(r.name) ?? {
+      name: r.name, account: r.account, profession: r.profession,
+      pickups: 0, drops: 0, doubleDrops: 0, wasted: 0, saturatedPickups: 0, lostDown: 0,
+    };
+    if (r.kind === 'pickup') cur.pickups++;
+    else cur.drops++;
+    if (r.kind === 'double-drop') cur.doubleDrops++;
+    if (r.kind === 'wasted-drop') cur.wasted++;
+    if (r.kind === 'down-drop') cur.lostDown++;
+    if (r.tag === 'saturated') cur.saturatedPickups++;
+    players.set(r.name, cur);
+  };
+  rows.forEach(rowOf);
+  const playerRows = [...players.values()].sort(
+    (a, b) => b.pickups - a.pickups || b.drops - a.drops || a.name.localeCompare(b.name),
+  );
+
+  const floats = rows.filter((r) => r.floatS !== null).map((r) => r.floatS as number);
+  return {
+    ...base,
+    uraShards: rows,
+    uraPlayers: playerRows,
+    uraSummary: {
+      pickups: picks.length,
+      // Every way a shard left a player: used, missed, or dropped on a down.
+      drops: dispels.length + rows.filter((r) => r.kind === 'down-drop').length,
+      doubles: rows.filter((r) => r.kind === 'double-drop').length,
+      wasted: rows.filter((r) => r.kind === 'wasted-drop').length,
+      early: rows.filter((r) => r.kind === 'early-drop').length,
+      lostDown: rows.filter((r) => r.kind === 'down-drop').length,
+      lateDrops: rows.filter((r) => r.lateDrop).length,
+      saturated: rows.filter((r) => r.tag === 'saturated').length,
+      bubbles: rows.filter((r) => r.kind === 'bubble-drop').length,
+      avgFloatS: floats.length ? Math.round((floats.reduce((a, b) => a + b, 0) / floats.length) * 10) / 10 : null,
+    },
+  };
 }
 // ─── Dhuum CM (Ender's Echo pick ups) ─────────────────────────────────────────
 // EI applies EchosPickup through PlayerDstBuffApplyMechanic, which re-fires about
