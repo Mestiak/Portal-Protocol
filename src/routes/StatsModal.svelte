@@ -63,7 +63,8 @@
   // 21: downed carriers drop their shard.
   // 22: early drops, and late bubble rescues flagged on the row.
   // 23: wasted drops explain when another player's shard got there first.
-  const STATS_CACHE_VERSION = 23;
+  // 24: that explanation is limited to a one-second window.
+  const STATS_CACHE_VERSION = 24;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;
