@@ -65,7 +65,8 @@
   // 23: wasted drops explain when another player's shard got there first.
   // 24: that explanation is limited to a one-second window.
   // 25: a double drop requires the same player to pick up again.
-  const STATS_CACHE_VERSION = 25;
+  // 26: early drops need a geyser activation, or a very close bubble lift.
+  const STATS_CACHE_VERSION = 26;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;

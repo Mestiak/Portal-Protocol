@@ -453,10 +453,12 @@ const URA_SATURATION_WINDOW_MS = 10000;
 const URA_FLOAT_PARTNER_MAX_MS = 15000;
 // Removal events by the same player this close together are one multi-bubble rescue.
 const URA_RESCUE_CLUSTER_MS = 100;
-// A spent shard that lands just before its target appears was early, not wasted:
-// bubbles float up, geysers erupt and gain their crust moments later.
-const URA_EARLY_DROP_MS = 5000;
-const URA_EARLY_SIGNALS = ["Pres.Blast.Up", "ToxGeyser.H", "SulfErup.H", "ErupVent.H", "UraJump.H", "SulfGey.T"];
+// A spent shard with no removal was early only if its target appeared moments
+// later. A bubble lift is too slow to prove that on its own — 4-5 s after a shard
+// is just normal fight timing — so only a close lift counts.
+const URA_EARLY_GEYSER_MS = 5000;
+const URA_EARLY_BUBBLE_MS = 2000;
+const URA_EARLY_GEYSER_SIGNALS = ["ToxGeyser.H", "SulfErup.H", "ErupVent.H", "UraJump.H", "SulfGey.T"];
 // Anyone still floating after this long was freed by a late shard drop.
 const URA_LATE_DROP_S = 1.5;
 // A wasted drop that came just after somebody else cleared the same thing.
@@ -577,10 +579,12 @@ function extractUra(logData: Json): MechanicReport {
     dispelTimes.set(d.actor, list);
   }
 
-  // Everything that can appear just after a shard was spent too soon.
-  const earlyTimes = URA_EARLY_SIGNALS
+  // Things that appear just after a shard was spent too soon. A geyser activation
+  // says the crust came late; a bubble lift only counts when it is really close.
+  const earlyTimes = URA_EARLY_GEYSER_SIGNALS
     .flatMap((nm) => collectMechanics(logData, nm).map((e) => e.time))
     .sort((a, b) => a - b);
+  const liftTimes = collectMechanics(logData, "Pres.Blast.Up").map((e) => e.time).sort((a, b) => a - b);
 
   const rows: UraFeedRow[] = [];
   for (const d of dispels) {
@@ -601,7 +605,11 @@ function extractUra(logData: Json): MechanicReport {
       // the shard seconds later is just the next person in the rotation.
       const again = picks.find((p) => p.actor === d.actor && d.time < p.time && p.time - d.time <= URA_DOUBLE_DROP_MS);
       const nextSignal = earlyTimes.find((t) => t > d.time);
-      const early = !again && nextSignal !== undefined && nextSignal - d.time <= URA_EARLY_DROP_MS;
+      const nextLift = liftTimes.find((t) => t > d.time);
+      const early = !again && (
+        (nextSignal !== undefined && nextSignal - d.time <= URA_EARLY_GEYSER_MS)
+        || (nextLift !== undefined && nextLift - d.time <= URA_EARLY_BUBBLE_MS)
+      );
       rows.push({
         time: round(d.time), name: d.actor, account: idn.account, profession: idn.profession,
         kind: again ? 'double-drop' : early ? 'early-drop' : 'wasted-drop',
