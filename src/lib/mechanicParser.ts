@@ -702,11 +702,14 @@ function extractUra(logData: Json): MechanicReport {
   // an unexplained waste.
   const cleared = rows.filter((r) => r.kind === 'bubble-drop' || r.kind === 'crust-drop');
   for (const r of rows) {
-    if (r.kind !== 'wasted-drop' && r.kind !== 'double-drop') continue;
+    if (r.kind !== 'wasted-drop' && r.kind !== 'double-drop' && r.kind !== 'early-drop') continue;
     const other = cleared
       .filter((s) => s.name !== r.name && s.time <= r.time && r.time - s.time <= URA_SCOOPED_MAX_S)
       .sort((a, b) => b.time - a.time)[0];
     if (!other) continue;
+    // Being beaten to the target is a better explanation than "early": a geyser
+    // erupting moments later is normal fight timing, not the cause of this miss.
+    if (r.kind === 'early-drop') { r.kind = 'wasted-drop'; r.tag = 'wasted'; }
     r.scooped = {
       kind: other.kind === 'bubble-drop' ? 'bubbles' : 'crust',
       target: other.kind === 'crust-drop' ? other.target : null,
