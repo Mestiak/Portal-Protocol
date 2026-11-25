@@ -459,6 +459,8 @@ const URA_EARLY_DROP_MS = 5000;
 const URA_EARLY_SIGNALS = ["Pres.Blast.Up", "ToxGeyser.H", "SulfErup.H", "ErupVent.H", "UraJump.H", "SulfGey.T"];
 // Anyone still floating after this long was freed by a late shard drop.
 const URA_LATE_DROP_S = 1.5;
+// A wasted drop that came just after somebody else cleared the same thing.
+const URA_SCOOPED_MAX_MS = 1000;
 
 const URA_CRUST_MECHANICS: { name: string; label: string }[] = [
   { name: 'Dispel.Sulf', label: 'Sulfuric Geyser' },
@@ -477,6 +479,8 @@ export interface UraFeedRow {
   tag: 'saturated' | 'out of range' | 'wasted' | null;
   /** True when a bubble drop freed players who had been floating too long. */
   lateDrop?: boolean;
+  /** Set when somebody else's shard cleared this wave or crust moments before. */
+  scooped?: { kind: 'bubbles' | 'crust'; target: string | null };
   /** Crust drops: which geyser the Hardened Crust came off. */
   target: string | null;
   /** Bubble drops: everyone lifted in the wave that shard freed. */
@@ -581,21 +585,14 @@ function extractUra(logData: Json): MechanicReport {
   const rows: UraFeedRow[] = [];
   for (const d of dispels) {
     const idn = idOf(d.actor);
-    // A removal is always made by the same player who used the shard, so prefer
-    // their own events; a wave can have a bubble rescue and a crust removal by
-    // different players at the very same millisecond.
+    // A removal is always made by the player who spent the shard, so only their
+    // own events count — a shard cannot clear a wave somebody else already took.
     let best = URA_DROP_LINK_MS;
     let hit: UraResult | null = null;
     for (const own of results) {
       if (own.actor !== d.actor) continue;
       const gap = Math.abs(own.time - d.time);
       if (gap <= best) { best = gap; hit = own; }
-    }
-    if (!hit) {
-      for (const any of results) {
-        const gap = Math.abs(any.time - d.time);
-        if (gap <= best) { best = gap; hit = any; }
-      }
     }
     if (!hit) {
       // Nothing landed. Re-picking up within a few seconds is the classic out of
@@ -689,6 +686,22 @@ function extractUra(logData: Json): MechanicReport {
     });
   }
   rows.sort((a, b) => a.time - b.time || a.name.localeCompare(b.name));
+
+  // Two players often spend shards on the same wave within a fraction of a second.
+  // The one who comes second found nothing left, so say why instead of calling it
+  // an unexplained waste.
+  const cleared = rows.filter((r) => r.kind === 'bubble-drop' || r.kind === 'crust-drop');
+  for (const r of rows) {
+    if (r.kind !== 'wasted-drop' && r.kind !== 'double-drop') continue;
+    const other = cleared
+      .filter((s) => s.name !== r.name && s.time <= r.time && r.time - s.time <= URA_SCOOPED_MAX_MS)
+      .sort((a, b) => b.time - a.time)[0];
+    if (!other) continue;
+    r.scooped = {
+      kind: other.kind === 'bubble-drop' ? 'bubbles' : 'crust',
+      target: other.kind === 'crust-drop' ? other.target : null,
+    };
+  }
 
   const players = new Map<string, UraPlayerRow>();
   const rowOf = (r: UraFeedRow) => {

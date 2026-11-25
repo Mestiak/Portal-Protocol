@@ -62,7 +62,8 @@
   // 20: a shard use matches its own removal events, never somebody else's.
   // 21: downed carriers drop their shard.
   // 22: early drops, and late bubble rescues flagged on the row.
-  const STATS_CACHE_VERSION = 22;
+  // 23: wasted drops explain when another player's shard got there first.
+  const STATS_CACHE_VERSION = 23;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;
@@ -2494,13 +2495,26 @@
                           </span>
                         {/if}
                       </span>
-                    {:else if r.kind === 'double-drop'}
+                    {:else if r.kind === 'double-drop' || r.kind === 'wasted-drop'}
                       <span class="feed-downs">
-                        <span class="feed-down">
-                          <img class="ur-icon" src="/mechanics/bloodstone_icon.png" alt="" title="Bloodstone shard"
-                               onerror={(e) => { (e.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
-                          <span class="feed-down-txt">picked up again at {fmtTime(r.againAt ?? 0)}</span>
-                        </span>
+                        {#if r.kind === 'double-drop'}
+                          <span class="feed-down">
+                            <img class="ur-icon" src="/mechanics/bloodstone_icon.png" alt="" title="Bloodstone shard"
+                                 onerror={(e) => { (e.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
+                            <span class="feed-down-txt">picked up again at {fmtTime(r.againAt ?? 0)}</span>
+                          </span>
+                        {/if}
+                        {#if r.scooped || r.kind === 'wasted-drop'}
+                          <span class="feed-down">
+                            <img class="ur-icon" src="/mechanics/bloodstone_icon.png" alt="" title="Bloodstone shard"
+                                 onerror={(e) => { (e.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
+                            {#if r.scooped}
+                              <span class="feed-down-txt">Another player dropped the shard on {r.scooped.kind === 'crust' ? `the ${r.scooped.target}` : 'bubbles'} first.</span>
+                            {:else}
+                              <span class="feed-down-txt">Nobody broken afterwards</span>
+                            {/if}
+                          </span>
+                        {/if}
                       </span>
                     {/if}
                   </div>
