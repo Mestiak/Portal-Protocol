@@ -622,10 +622,9 @@ function extractUra(logData: Json): MechanicReport {
       const bubbleGap = nextLift !== undefined && nextLift - d.time <= URA_EARLY_BUBBLE_MS
         ? nextLift - d.time : null;
       const early = !again && (geyserGap !== null || bubbleGap !== null);
-      // Name the thing the shard came too early for, preferring whichever is closer.
-      const earlyOn = geyserGap !== null && (bubbleGap === null || geyserGap <= bubbleGap)
-        ? nextSignal!.label
-        : bubbleGap !== null ? 'bubbles' : null;
+      // A bubble lift is a discrete, rare event; geyser eruptions happen constantly.
+      // When both qualify, the shard was aimed at the bubbles.
+      const earlyOn = bubbleGap !== null ? 'bubbles' : geyserGap !== null ? nextSignal!.label : null;
       rows.push({
         time: round(d.time), name: d.actor, account: idn.account, profession: idn.profession,
         kind: again ? 'double-drop' : early ? 'early-drop' : 'wasted-drop',

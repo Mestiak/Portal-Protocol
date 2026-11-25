@@ -69,7 +69,8 @@
   // 27: another player's clear beats an early-drop inference.
   // 28: tighter geyser early window; bubbles can be scooped up to 2 s later.
   // 29: early drops name what they were early for.
-  const STATS_CACHE_VERSION = 29;
+  // 30: a qualifying bubble lift outranks an ambient geyser eruption.
+  const STATS_CACHE_VERSION = 30;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;
