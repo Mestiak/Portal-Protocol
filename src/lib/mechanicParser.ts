@@ -449,7 +449,10 @@ const URA_DROP_LINK_MS = 1000;
 const URA_DOUBLE_DROP_MS = 5000;
 // Bloodstone Saturation lingers this long after a shard is used.
 const URA_SATURATION_WINDOW_MS = 10000;
-const URA_FLOAT_PARTNER_MAX_MS = 5000;
+// A bubble lasts until it is dispelled, so a rescue can land well after the lift.
+const URA_FLOAT_PARTNER_MAX_MS = 15000;
+// Removal events by the same player this close together are one multi-bubble rescue.
+const URA_RESCUE_CLUSTER_MS = 100;
 
 const URA_CRUST_MECHANICS: { name: string; label: string }[] = [
   { name: 'Dispel.Sulf', label: 'Sulfuric Geyser' },
@@ -507,14 +510,50 @@ function extractUra(logData: Json): MechanicReport {
   const lifts = collectMechanics(logData, "Pres.Blast.Up").sort((a, b) => a.time - b.time);
   const liftUsed = new Array<boolean>(lifts.length).fill(false);
 
-  // Everything a shard use can land on, in one timeline.
-  type UraResult = { time: number; actor: string; kind: 'crust' | 'bubble'; label: string | null };
+  // Everything a shard use can land on, in one timeline. Consecutive removals by
+  // the same player are one rescue that freed several bubbles.
+  type UraResult = { time: number; actor: string; kind: 'crust' | 'bubble'; label: string | null; count: number };
   const results: UraResult[] = [];
   for (const { name, label } of URA_CRUST_MECHANICS) {
-    for (const e of collectMechanics(logData, name)) results.push({ time: e.time, actor: e.actor, kind: 'crust', label });
+    for (const e of collectMechanics(logData, name)) {
+      results.push({ time: e.time, actor: e.actor, kind: 'crust', label, count: 1 });
+    }
   }
-  for (const e of collectMechanics(logData, "Dispel.P")) results.push({ time: e.time, actor: e.actor, kind: 'bubble', label: null });
+  for (const e of collectMechanics(logData, "Dispel.P").sort((a, b) => a.time - b.time)) {
+    const last = results[results.length - 1];
+    if (last && last.kind === 'bubble' && last.actor === e.actor && e.time - last.time <= URA_RESCUE_CLUSTER_MS) {
+      last.count++;
+    } else {
+      results.push({ time: e.time, actor: e.actor, kind: 'bubble', label: null, count: 1 });
+    }
+  }
   results.sort((a, b) => a.time - b.time);
+
+  // Replay positions, so a rescue can pick the players actually inside the shard's
+  // radius instead of whoever happened to be lifted in the same second.
+  const posTracks = new Map<string, { start: number; end: number; pos: number[][] }>();
+  for (const p of Array.isArray(logData.players) ? logData.players : []) {
+    const cr = p?.combatReplayData;
+    if (Array.isArray(cr?.positions) && (cr.positions as unknown[]).length > 1) {
+      posTracks.set(String(p?.name ?? ""), {
+        start: Number(cr.start ?? 0),
+        end: Number(cr.end ?? 0),
+        pos: cr.positions as number[][],
+      });
+    }
+  }
+  const posAt = (name: string, t: number): [number, number] | null => {
+    const tr = posTracks.get(name);
+    if (!tr || !tr.pos.length || tr.end <= tr.start) return null;
+    const i = Math.max(0, Math.min(tr.pos.length - 1, Math.floor(((t - tr.start) / (tr.end - tr.start)) * tr.pos.length)));
+    const p = tr.pos[i];
+    return Array.isArray(p) ? [Number(p[0]), Number(p[1])] : null;
+  };
+  const distAt = (a: string, b: string, t: number): number | null => {
+    const pa = posAt(a, t);
+    const pb = posAt(b, t);
+    return pa && pb ? Math.hypot(pa[0] - pb[0], pa[1] - pb[1]) : null;
+  };
 
   const round = (ms: number) => Math.round((ms / 1000) * 10) / 10;
   const dispelTimes = new Map<string, number[]>();
@@ -551,20 +590,38 @@ function extractUra(logData: Json): MechanicReport {
       });
       continue;
     }
-    // The shard freed a bubble wave: pair the still-unclaimed lifts with this rescue.
-    const freed: { name: string; profession: string; floatS: number }[] = [];
-    let floatS: number | null = null;
+    // The shard freed bubbles: claim as many lifted players as there were removal
+    // events, closest first — the shard only reaches 180 units.
+    const claimed: { i: number; name: string; floatS: number }[] = [];
+    const options: { d: number; i: number; name: string; floatS: number }[] = [];
     lifts.forEach((l, i) => {
-      if (liftUsed[i] || l.time > hit!.time || hit!.time - l.time > URA_FLOAT_PARTNER_MAX_MS) return;
-      liftUsed[i] = true;
-      freed.push({ name: l.actor, profession: idOf(l.actor).profession, floatS: round(hit!.time - l.time) });
-      floatS = Math.max(floatS ?? 0, hit!.time - l.time);
+      if (liftUsed[i] || l.time > hit.time || hit.time - l.time > URA_FLOAT_PARTNER_MAX_MS) return;
+      options.push({
+        d: distAt(d.actor, l.actor, hit.time) ?? Number.POSITIVE_INFINITY,
+        i, name: l.actor, floatS: hit.time - l.time,
+      });
     });
-    freed.sort((a, b) => a.name.localeCompare(b.name));
+    options.sort((a, b) => a.d - b.d);
+    for (const o of options.slice(0, Math.max(1, hit.count))) {
+      liftUsed[o.i] = true;
+      claimed.push({ i: o.i, name: o.name, floatS: round(o.floatS) });
+    }
+    if (claimed.length === 0) {
+      // The wave had already been cleared by someone else's shard.
+      rows.push({
+        time: round(d.time), name: d.actor, account: idn.account, profession: idn.profession,
+        kind: 'wasted-drop', tag: 'wasted', target: null, freed: [], floatS: null, againAt: null,
+      });
+      continue;
+    }
+    const freed = claimed
+      .map((c) => ({ name: c.name, profession: idOf(c.name).profession, floatS: c.floatS }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const floatS = Math.max(...claimed.map((c) => c.floatS));
     rows.push({
       time: round(d.time), name: d.actor, account: idn.account, profession: idn.profession,
       kind: 'bubble-drop', tag: null, target: null, freed,
-      floatS: floatS === null ? null : round(floatS), againAt: null,
+      floatS, againAt: null,
     });
   }
 

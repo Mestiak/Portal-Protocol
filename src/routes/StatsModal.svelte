@@ -58,7 +58,8 @@
   // 16: more of those (Artillery Slash).
   // 17: Ura reports gained the shard/bubble fields.
   // 18: each freed player carries their own float time.
-  const STATS_CACHE_VERSION = 18;
+  // 19: rescues free the closest players, capped by the removal-event count.
+  const STATS_CACHE_VERSION = 19;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;
