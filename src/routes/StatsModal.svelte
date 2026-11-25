@@ -2462,8 +2462,8 @@
                       </span>
                     {:else if r.kind === 'bubble-drop'}
                       <span class="feed-downs">
-                        <span class="feed-down">
-                          {#each r.freed.slice(0, 4) as f}
+                        {#each r.freed.slice(0, 4) as f}
+                          <span class="feed-down ur-freed">
                             <img class="enc-icon ur-sub-icon" src={profIcon(f.profession)} alt={f.profession}
                                  onerror={(e) => { (e.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
                             <span class="feed-down-txt">{f.name} got freed from bubble</span>
@@ -2471,11 +2471,13 @@
                                  onerror={(e) => { (e.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
                             <span class="feed-down-txt">and floated for</span>
                             <b>{f.floatS}s</b>
-                          {/each}
-                          {#if r.freed.length > 4}
+                          </span>
+                        {/each}
+                        {#if r.freed.length > 4}
+                          <span class="feed-down ur-freed">
                             <span class="feed-down-txt">+{r.freed.length - 4} more</span>
-                          {/if}
-                        </span>
+                          </span>
+                        {/if}
                       </span>
                     {:else if r.kind === 'double-drop'}
                       <span class="feed-downs">
