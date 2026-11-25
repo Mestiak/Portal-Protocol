@@ -460,7 +460,7 @@ const URA_EARLY_SIGNALS = ["Pres.Blast.Up", "ToxGeyser.H", "SulfErup.H", "ErupVe
 // Anyone still floating after this long was freed by a late shard drop.
 const URA_LATE_DROP_S = 1.5;
 // A wasted drop that came just after somebody else cleared the same thing.
-const URA_SCOOPED_MAX_MS = 1000;
+const URA_SCOOPED_MAX_S = 1;
 
 const URA_CRUST_MECHANICS: { name: string; label: string }[] = [
   { name: 'Dispel.Sulf', label: 'Sulfuric Geyser' },
@@ -694,7 +694,7 @@ function extractUra(logData: Json): MechanicReport {
   for (const r of rows) {
     if (r.kind !== 'wasted-drop' && r.kind !== 'double-drop') continue;
     const other = cleared
-      .filter((s) => s.name !== r.name && s.time <= r.time && r.time - s.time <= URA_SCOOPED_MAX_MS)
+      .filter((s) => s.name !== r.name && s.time <= r.time && r.time - s.time <= URA_SCOOPED_MAX_S)
       .sort((a, b) => b.time - a.time)[0];
     if (!other) continue;
     r.scooped = {
