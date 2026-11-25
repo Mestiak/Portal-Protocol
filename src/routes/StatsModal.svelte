@@ -2455,7 +2455,7 @@
                         <span class="feed-down">
                           <img class="enc-icon ur-sub-icon" src={profIcon(r.profession)} alt={r.profession}
                                onerror={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden'; }} />
-                          <span class="feed-down-txt">{r.name} Remove Hardened Crust · {r.target}</span>
+                          <span class="feed-down-txt"><span class="ur-sub-name">{r.name}</span> Remove Hardened Crust · {r.target}</span>
                           <img class="ur-icon" src="/mechanics/geyser_icon.png" alt="" title={r.target ?? ''}
                                onerror={(e) => { (e.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
                         </span>
@@ -2466,7 +2466,7 @@
                           <span class="feed-down ur-freed">
                             <img class="enc-icon ur-sub-icon" src={profIcon(f.profession)} alt={f.profession}
                                  onerror={(e) => { (e.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
-                            <span class="feed-down-txt">{f.name} got freed from bubble</span>
+                            <span class="feed-down-txt"><span class="ur-sub-name">{f.name}</span> got freed from bubble</span>
                             <img class="ur-icon" src="/mechanics/bubble_icon.png" alt="" title="Pressure Blast bubble"
                                  onerror={(e) => { (e.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
                             <span class="feed-down-txt">and floated for</span>
@@ -2634,6 +2634,8 @@
     vertical-align: -2px; flex: none; margin-left: 5px;
   }
   .ur-sub-icon { width: 14px; height: 14px; margin-left: 0; }
+  /* Names inside the sub-lines match the white, bold name on the main row. */
+  .ur-sub-name { color: #fff; font-weight: 700; }
   .ur-tag { margin-left: 6px; }
   .ur-tag-saturated, .ur-tag-warn { color: var(--warn); }
   .ur-tag-wasted { color: var(--fail); }
