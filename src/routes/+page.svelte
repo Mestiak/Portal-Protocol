@@ -672,7 +672,9 @@
             { title: "Filter by Eye", desc: "Show both eyes together, or just Eye of Judgment or Eye of Fate — the player rankings, counts and feed all follow." },
             { title: "Eye Teleports", desc: "Each eye blinking to a new spot is marked on the same timeline, so a missed stun is easy to explain." },
             { title: "Skill Names You Can Trust", desc: "Skills are named from a table of crowd-control skills built from official GW2 data, so far more rows name the real skill — including mech and minion commands like Jade Mortar and Artillery Slash." },
-            { title: "Deimos — Oils, Reworked", desc: "Oils are counted from the slick's own damage instead of its trigger, so no pool goes missing, and every down is credited to the slick that dealt it." }
+            { title: "Deimos — Oils, Reworked", desc: "Oils are counted from the slick's own damage instead of its trigger, so no pool goes missing, and every down is credited to the slick that dealt it." },
+            { title: "Ura — Bloodstone Shards", desc: "A Shards tab for every mode of Ura: every pick-up, geyser crust removal and bubble rescue, who went down holding a shard, and how long people floated before being freed." },
+            { title: "Shard Mistakes, Explained", desc: "Wasted, out-of-range and early drops say what went wrong, including when another player cleared the same wave or geyser first." }
           ]
         }
       ]

@@ -15,3 +15,7 @@ and Deimos' oils are counted properly.
 **Skill Names You Can Trust** — skills are named from a table of crowd-control skills built from official GW2 data, so far more rows name the real skill — including mech and minion commands like Jade Mortar and Artillery Slash.
 
 **Deimos — Oils, Reworked** — oils are counted from the slick's own damage rather than its trigger, so no pool goes missing, and every down is credited to the slick that dealt it.
+
+**Ura — Bloodstone Shards** — a Shards tab for every mode of Ura: every pick-up, geyser crust removal and bubble rescue, who went down holding a shard, and how long people floated before being freed.
+
+**Shard Mistakes, Explained** — wasted, out-of-range and early drops say what went wrong, including when another player cleared the same wave or geyser first.
