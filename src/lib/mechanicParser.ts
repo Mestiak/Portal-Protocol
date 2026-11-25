@@ -288,7 +288,7 @@ export interface MechanicReport {
   uraShards?: UraFeedRow[];
   uraPlayers?: UraPlayerRow[];
   uraSummary?: {
-    pickups: number; drops: number; doubles: number; wasted: number;
+    pickups: number; drops: number; doubles: number; wasted: number; lostDown: number;
     saturated: number; bubbles: number; avgFloatS: number | null;
   };
   eyeSummary?: { total: number; judgment: number; fate: number; players: number };
@@ -466,7 +466,7 @@ export interface UraFeedRow {
   name: string;
   account: string;
   profession: string;
-  kind: 'pickup' | 'bubble-drop' | 'crust-drop' | 'double-drop' | 'wasted-drop';
+  kind: 'pickup' | 'bubble-drop' | 'crust-drop' | 'double-drop' | 'wasted-drop' | 'down-drop';
   /** `saturated` = picked up while Bloodstone Saturation was active. */
   tag: 'saturated' | 'out of range' | 'wasted' | null;
   /** Crust drops: which geyser the Hardened Crust came off. */
@@ -488,6 +488,8 @@ export interface UraPlayerRow {
   doubleDrops: number;
   wasted: number;
   saturatedPickups: number;
+  /** Drops caused by the carrier going down. */
+  lostDown: number;
 }
 
 function extractUra(logData: Json): MechanicReport {
@@ -635,6 +637,32 @@ function extractUra(logData: Json): MechanicReport {
     });
   }
 
+  // Who is carrying a shard, so a down can report the drop. A hold ends when the
+  // shard is used, or when its carrier goes down or dies — either way it lands on
+  // the ground.
+  type HoldEvent = { time: number; actor: string; type: 'pickup' | 'use' | 'down' | 'death' };
+  const holds: HoldEvent[] = [
+    ...picks.map((e) => ({ time: e.time, actor: e.actor, type: 'pickup' as const })),
+    ...dispels.map((e) => ({ time: e.time, actor: e.actor, type: 'use' as const })),
+    ...collectMechanics(logData, "Downed").map((e) => ({ time: e.time, actor: e.actor, type: 'down' as const })),
+    ...collectMechanics(logData, "Dead").map((e) => ({ time: e.time, actor: e.actor, type: 'death' as const })),
+  ].sort((a, b) => a.time - b.time || a.actor.localeCompare(b.actor));
+  const carrying = new Map<string, number>();
+  for (const h of holds) {
+    if (h.type === 'pickup') carrying.set(h.actor, h.time);
+    else if (h.type === 'use') carrying.delete(h.actor);
+    else {
+      if (h.type === 'down' && carrying.has(h.actor)) {
+        const idn = idOf(h.actor);
+        rows.push({
+          time: round(h.time), name: h.actor, account: idn.account, profession: idn.profession,
+          kind: 'down-drop', tag: null, target: null, freed: [], floatS: null, againAt: null,
+        });
+      }
+      carrying.delete(h.actor);
+    }
+  }
+
   for (const p of picks) {
     const idn = idOf(p.actor);
     const saturated = (dispelTimes.get(p.actor) ?? []).some((t) => 0 < p.time - t && p.time - t <= URA_SATURATION_WINDOW_MS);
@@ -650,12 +678,13 @@ function extractUra(logData: Json): MechanicReport {
   const rowOf = (r: UraFeedRow) => {
     const cur = players.get(r.name) ?? {
       name: r.name, account: r.account, profession: r.profession,
-      pickups: 0, drops: 0, doubleDrops: 0, wasted: 0, saturatedPickups: 0,
+      pickups: 0, drops: 0, doubleDrops: 0, wasted: 0, saturatedPickups: 0, lostDown: 0,
     };
     if (r.kind === 'pickup') cur.pickups++;
     else cur.drops++;
     if (r.kind === 'double-drop') cur.doubleDrops++;
     if (r.kind === 'wasted-drop') cur.wasted++;
+    if (r.kind === 'down-drop') cur.lostDown++;
     if (r.tag === 'saturated') cur.saturatedPickups++;
     players.set(r.name, cur);
   };
@@ -671,9 +700,11 @@ function extractUra(logData: Json): MechanicReport {
     uraPlayers: playerRows,
     uraSummary: {
       pickups: picks.length,
-      drops: dispels.length,
+      // Every way a shard left a player: used, missed, or dropped on a down.
+      drops: dispels.length + rows.filter((r) => r.kind === 'down-drop').length,
       doubles: rows.filter((r) => r.kind === 'double-drop').length,
       wasted: rows.filter((r) => r.kind === 'wasted-drop').length,
+      lostDown: rows.filter((r) => r.kind === 'down-drop').length,
       saturated: rows.filter((r) => r.tag === 'saturated').length,
       bubbles: rows.filter((r) => r.kind === 'bubble-drop').length,
       avgFloatS: floats.length ? Math.round((floats.reduce((a, b) => a + b, 0) / floats.length) * 10) / 10 : null,

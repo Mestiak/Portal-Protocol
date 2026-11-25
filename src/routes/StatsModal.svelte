@@ -60,7 +60,8 @@
   // 18: each freed player carries their own float time.
   // 19: rescues free the closest players, capped by the removal-event count.
   // 20: a shard use matches its own removal events, never somebody else's.
-  const STATS_CACHE_VERSION = 20;
+  // 21: downed carriers drop their shard.
+  const STATS_CACHE_VERSION = 21;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;
@@ -2394,6 +2395,7 @@
                 <span><strong>{urSummary.saturated}</strong> while saturated</span>
                 <span><strong>{urSummary.doubles}</strong> out of range</span>
                 <span><strong>{urSummary.wasted}</strong> wasted</span>
+                <span><strong>{urSummary.lostDown}</strong> lost on a down</span>
                 <span>avg float <strong>{urSummary.avgFloatS === null ? '—' : `${urSummary.avgFloatS}s`}</strong></span>
               </div>
             {/if}
@@ -2434,6 +2436,7 @@
                         {#if r.kind === 'pickup'}picked up the shard
                         {:else if r.kind === 'crust-drop'}Dropped the shard in a {r.target}
                         {:else if r.kind === 'bubble-drop'}Dropped the shard in bubbles
+                        {:else if r.kind === 'down-drop'}got downed and dropped the shard
                         {:else}Dropped the shard
                         {/if}
                       </span>
