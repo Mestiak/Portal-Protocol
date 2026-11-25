@@ -2440,8 +2440,13 @@
                         {:else}Dropped the shard
                         {/if}
                       </span>
-                      <img class="ur-icon" src="/mechanics/bloodstone_icon.png" alt="" title="Bloodstone shard"
-                           onerror={(e) => { (e.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
+                      {#if r.kind === 'crust-drop'}
+                        <img class="ur-icon" src="/mechanics/geyser_icon.png" alt="" title={r.target ?? ''}
+                             onerror={(e) => { (e.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
+                      {:else}
+                        <img class="ur-icon" src="/mechanics/bloodstone_icon.png" alt="" title="Bloodstone shard"
+                             onerror={(e) => { (e.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
+                      {/if}
                       {#if r.tag === 'saturated'}
                         <span class="enc-tag ur-tag ur-tag-saturated" title="Picked up while Bloodstone Saturation was active">saturated</span>
                       {:else if r.tag === 'out of range'}
