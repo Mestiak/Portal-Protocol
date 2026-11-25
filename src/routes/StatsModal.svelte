@@ -59,7 +59,8 @@
   // 17: Ura reports gained the shard/bubble fields.
   // 18: each freed player carries their own float time.
   // 19: rescues free the closest players, capped by the removal-event count.
-  const STATS_CACHE_VERSION = 19;
+  // 20: a shard use matches its own removal events, never somebody else's.
+  const STATS_CACHE_VERSION = 20;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;

@@ -566,11 +566,21 @@ function extractUra(logData: Json): MechanicReport {
   const rows: UraFeedRow[] = [];
   for (const d of dispels) {
     const idn = idOf(d.actor);
-    let hit: UraResult | null = null;
+    // A removal is always made by the same player who used the shard, so prefer
+    // their own events; a wave can have a bubble rescue and a crust removal by
+    // different players at the very same millisecond.
     let best = URA_DROP_LINK_MS;
-    for (const r of results) {
-      const gap = Math.abs(r.time - d.time);
-      if (gap <= best) { best = gap; hit = r; }
+    let hit: UraResult | null = null;
+    for (const own of results) {
+      if (own.actor !== d.actor) continue;
+      const gap = Math.abs(own.time - d.time);
+      if (gap <= best) { best = gap; hit = own; }
+    }
+    if (!hit) {
+      for (const any of results) {
+        const gap = Math.abs(any.time - d.time);
+        if (gap <= best) { best = gap; hit = any; }
+      }
     }
     if (!hit) {
       // Nothing landed — out of range, unless the log simply ended first.
