@@ -2455,9 +2455,10 @@
                         <span class="feed-down">
                           <img class="enc-icon ur-sub-icon" src={profIcon(r.profession)} alt={r.profession}
                                onerror={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden'; }} />
-                          <span class="feed-down-txt"><span class="ur-sub-name">{r.name}</span> Remove Hardened Crust · {r.target}</span>
-                          <img class="ur-icon" src="/mechanics/geyser_icon.png" alt="" title={r.target ?? ''}
+                          <span class="feed-down-txt"><span class="ur-sub-name">{r.name}</span> removed a Hardened Crust</span>
+                          <img class="ur-icon" src="/mechanics/hardened_crust.png" alt="" title="Hardened Crust"
                                onerror={(e) => { (e.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
+                          <span class="feed-down-txt">from a {r.target}.</span>
                         </span>
                       </span>
                     {:else if r.kind === 'bubble-drop'}
