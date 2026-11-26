@@ -70,7 +70,8 @@
   // 28: tighter geyser early window; bubbles can be scooped up to 2 s later.
   // 29: early drops name what they were early for.
   // 30: a qualifying bubble lift outranks an ambient geyser eruption.
-  const STATS_CACHE_VERSION = 30;
+  // 31: Aetherblade Hideout CM Exposed applications and downs.
+  const STATS_CACHE_VERSION = 31;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;
@@ -97,6 +98,7 @@
   const isDhuumCM = $derived(!!mechanics && mechanics.echoPickups !== undefined);
   const isEyes = $derived(!!mechanics && mechanics.eyeOverrides !== undefined);
   const isUra = $derived(!!mechanics && mechanics.uraShards !== undefined);
+  const isAhCm = $derived(!!mechanics && mechanics.ahExposed !== undefined);
 
   // ── Dhuum CM echo holds ──
   // One lane per held player; each segment is one hold, laid out against the fight
@@ -171,7 +173,7 @@
   // Single source of truth for the active sub-view. STATS section: Statistics
   // (cards+chart, default) | Boon Uptime (table). MECHANICS section (Cerus
   // only): Shadows | Orbs | Empowered.
-  type Tab = "statistics" | "boon" | "defense" | "support" | "revealed" | "shadows" | "orbs" | "empowered" | "teleports" | "oils" | "pickups" | "overrides" | "shards";
+  type Tab = "statistics" | "boon" | "defense" | "support" | "revealed" | "shadows" | "orbs" | "empowered" | "teleports" | "oils" | "pickups" | "overrides" | "shards" | "exposed";
   let activeTab = $state<Tab>("statistics");
   // ── Phase breakdown ──
   // EI stores every per-phase metric as a positional array indexed by phase, so one
@@ -1289,7 +1291,9 @@
           : (isDeimos ? "oils"
           : (isDhuumCM ? "pickups"
           : (isEyes ? "overrides"
-          : (isUra ? "shards" : (isHT && revealFeatureReady && (mechanics?.revealedBreakers.length ?? 0) > 0 ? "revealed" : "boon"))))));
+          : (isUra ? "shards"
+          : (isAhCm ? "exposed"
+          : (isHT && revealFeatureReady && (mechanics?.revealedBreakers.length ?? 0) > 0 ? "revealed" : "boon")))))));
       } catch (e: any) {
         error = typeof e === "string" ? e : (e?.message || "Failed to load stats");
       } finally {
@@ -1454,6 +1458,12 @@
             <span class="tabs-divider"></span>
             <button class="top-tab" class:active={activeTab === "shards"} onclick={() => (activeTab = "shards")}>
               <i class="fa-solid fa-gem"></i> Shards
+            </button>
+          {/if}
+          {#if isAhCm}
+            <span class="tabs-divider"></span>
+            <button class="top-tab" class:active={activeTab === "exposed"} onclick={() => (activeTab = "exposed")}>
+              <i class="fa-solid fa-radiation"></i> Exposed
             </button>
           {/if}
         </nav>
@@ -2530,6 +2540,73 @@
                 {/each}
               </div>
             </div>
+          {:else if activeTab === "exposed" && isAhCm}
+            <!-- EXPOSED (Aetherblade Hideout CM) -->
+            {@const ahSummary = mechanics?.ahSummary}
+            {@const ahRows = mechanics?.ahExposed ?? []}
+            {@const ahPlayers = mechanics?.ahPlayers ?? []}
+            <div class="ds-toolbar">
+              <span class="stats-hint">Each Exposed stack raises incoming strike and condition damage by 25% for 60 seconds. The attacking skill is named when the application came from a recorded hit.</span>
+            </div>
+            {#if ahSummary}
+              <div class="enc-summary">
+                <span><strong>{ahSummary.applications}</strong> applications</span>
+                <span><strong>{ahSummary.players}</strong> players affected</span>
+                <span><strong>{ahSummary.downs}</strong> downs</span>
+              </div>
+            {/if}
+
+            <div class="ds-block">
+              <div class="ds-block-title">Exposed stacks <span class="ds-block-hint">{ahPlayers.length} players</span></div>
+              <div class="enc-head">
+                <span class="enc-cap">#</span><span class="enc-cap"></span><span class="enc-cap">Player</span>
+                <span class="enc-cap">Exposed</span><span class="enc-cap">Downs</span>
+              </div>
+              <div class="enc-rows">
+                {#each ahPlayers as p, i}
+                  <div class="enc-row">
+                    <span class="enc-rank">{i + 1}</span>
+                    <img class="enc-icon" src={profIcon(p.profession)} alt={p.profession}
+                         onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                    <span class="enc-name" title={p.account}>{p.name}</span>
+                    <span class="enc-num">{p.applications}</span>
+                    <span class="enc-num enc-sub">{p.downs}</span>
+                  </div>
+                {:else}
+                  <div class="stat-note">Nobody got Exposed in this fight.</div>
+                {/each}
+              </div>
+            </div>
+
+            <div class="ds-block">
+              <div class="ds-block-title">Timeline <span class="ds-block-hint">{ahRows.length} events</span></div>
+              <div class="feed">
+                {#each ahRows as r}
+                  <div class="feed-row ah-row">
+                    <span class="feed-time">{fmtTime(r.time)}</span>
+                    <img class="enc-icon" src={profIcon(r.profession)} alt={r.profession}
+                         onerror={(e) => { (e.currentTarget as HTMLImageElement).src = "/professions/guardian.png"; }} />
+                    <span class="feed-name ah-name">
+                      <span class="ah-actor">{r.name}</span>
+                      {#if r.kind === "exposed"}
+                        <span class="ah-kind">got Exposed</span>
+                        <img class="ah-icon" src="/mechanics/exposed.png" alt="Exposed" title="Exposed"
+                             onerror={(e) => { (e.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
+                      {:else}
+                        <span class="ah-kind">got downed while having {r.stacks} Exposed stack{r.stacks === 1 ? '' : 's'}</span>
+                      {/if}
+                    </span>
+                    {#if r.kind === "exposed" && r.source}
+                      <span class="feed-downs">
+                        <span class="feed-down ah-source"><span class="feed-down-txt">{r.source}</span></span>
+                      </span>
+                    {/if}
+                  </div>
+                {:else}
+                  <div class="stat-note">No Exposed activity recorded.</div>
+                {/each}
+              </div>
+            </div>
           {/if}
 
           <!-- MECHANICS TABS -->
@@ -2673,6 +2750,14 @@
   /* Names inside the sub-lines match the white, bold name on the main row. */
   .ur-sub-name { color: #fff; font-weight: 700; }
   .ur-tag { margin-left: 6px; }
+  /* Aetherblade Hideout Exposed */
+  .ah-actor { color: #fff; font-weight: 700; }
+  .ah-kind { font-size: 10px; font-weight: 600; color: var(--text-muted); margin-left: 5px; }
+  .ah-icon {
+    width: 14px; height: 14px; border-radius: 3px; object-fit: cover;
+    vertical-align: -2px; flex: none; margin-left: 5px;
+  }
+  .ah-source { color: var(--text-muted); }
   .ur-tag-saturated, .ur-tag-warn { color: var(--warn); }
   .ur-tag-wasted { color: var(--fail); }
   .eo-col { min-width: 0; }
