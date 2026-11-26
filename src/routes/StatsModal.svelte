@@ -74,11 +74,13 @@
   // 32: Exposed rows carry the stack count before and after each application.
   const STATS_CACHE_VERSION = 32;
 
-  let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
+  let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, external, onClose }: {
     permalink: string;
     bossName?: string;
     bossIcon?: string;
     localPath?: string;
+    /** Set when the modal was opened from the External tab; skips get_log_full. */
+    external?: { id: string; source: string; url: string };
     onClose: () => void;
   } = $props();
 
@@ -1148,8 +1150,8 @@
   // (30MB+) responses can saturate the link and drop the connection.
   let inflight: Promise<unknown> | null = null;
   $effect(() => {
-    if (!permalink && !localPath) return;
-    const cacheKey = localPath || permalink;
+    if (!permalink && !localPath && !external) return;
+    const cacheKey = external ? `external:${external.id}` : (localPath || permalink);
     // Opening a different log resets the phase selection.
     selectedPhase = 0;
     const cachedMem = statsCache.get(cacheKey);
@@ -1189,7 +1191,9 @@
       }
       try {
         let res: LogFull;
-        if (localPath) {
+        if (external) {
+          res = await invoke("get_external_log_full", { id: external.id }) as LogFull;
+        } else if (localPath) {
           try {
             res = await invoke("get_local_log_full", { filePath: localPath }) as LogFull;
           } catch (e) {

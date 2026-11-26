@@ -110,7 +110,28 @@ pub fn init_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
         CREATE INDEX IF NOT EXISTS idx_history_boss      ON history(boss_name);
         CREATE INDEX IF NOT EXISTS idx_history_status    ON history(status);
         CREATE INDEX IF NOT EXISTS idx_history_cm        ON history(is_cm);
-        CREATE INDEX IF NOT EXISTS idx_history_favorite  ON history(is_favorite);",
+        CREATE INDEX IF NOT EXISTS idx_history_favorite  ON history(is_favorite);
+
+        CREATE TABLE IF NOT EXISTS external_logs (
+            id            TEXT PRIMARY KEY,
+            source        TEXT NOT NULL,
+            link_id       TEXT NOT NULL,
+            url           TEXT NOT NULL,
+            boss_name     TEXT,
+            success       INTEGER,
+            is_cm         INTEGER,
+            is_lcm        INTEGER,
+            duration_sec  REAL,
+            group_dps     REAL,
+            hp_left       REAL,
+            num_players   INTEGER,
+            players       TEXT,
+            notes         TEXT,
+            created_at    TEXT NOT NULL,
+            last_checked  TEXT,
+            UNIQUE(source, link_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_external_created ON external_logs(created_at DESC);",
     )?;
     Ok(())
 }

@@ -14,6 +14,7 @@
   import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
   import FilterBar from "./FilterBar.svelte";
   import StatsModal from "./StatsModal.svelte";
+  import ExternalTab from "./ExternalTab.svelte";
   import AnalyticsDashboard from "./AnalyticsDashboard.svelte";
   import ApiTracker from "./ApiTracker.svelte";
   import SquadPlannerModal from "./SquadPlannerModal.svelte";
@@ -1580,7 +1581,7 @@
     vlModal = { log, encounter: enc };
   }
   // Stats modal (per-player damage + boon breakdown from dps.report)
-  let statsModal = $state<{ permalink: string; bossName: string; bossIcon: string; localPath?: string } | null>(null);
+  let statsModal = $state<{ permalink: string; bossName: string; bossIcon: string; localPath?: string; external?: { id: string; source: string; url: string } } | null>(null);
   function openStats(log: UploadRecord) {
     if (!log.url && !log.local_fallback) return;
     statsModal = {
@@ -1588,6 +1589,15 @@
       bossName: log.boss_name ?? "",
       bossIcon: resolveBossIconSrc(log),
       localPath: log.file_path || undefined,
+    };
+  }
+
+  function openExternalStats(log: { id: string; source: string; url: string; bossName: string; numPlayers: number }) {
+    statsModal = {
+      permalink: "",
+      bossName: log.bossName ?? "",
+      bossIcon: getBossIcon(log.bossName, log.numPlayers),
+      external: { id: log.id, source: log.source, url: log.url },
     };
   }
   function vlRanksOf(log: UploadRecord | undefined): string[] {
@@ -7222,6 +7232,9 @@ async function testWebhook(wh: any) {
       <button class="tb-tab {activeTab === 'history' ? 'active' : ''}" onclick={() => { activeTab = 'history'; historyPage = 0; loadFullHistory(); }}>
         <i class="fa-solid fa-clock-rotate-left"></i><span>History</span>
       </button>
+      <button class="tb-tab {activeTab === 'external' ? 'active' : ''}" onclick={() => activeTab = 'external'}>
+        <i class="fa-solid fa-link"></i><span>External</span>
+      </button>
       {#if SHOW_SQUAD_PLANNER}
       <button class="tb-tab {activeTab === 'squad' ? 'active' : ''}" onclick={() => activeTab = 'squad'}>
         <i class="fa-solid fa-users"></i><span>Planner</span>
@@ -7339,6 +7352,9 @@ async function testWebhook(wh: any) {
       </button>
       <button class="nav-btn {activeTab === 'history' ? 'active' : ''}" onclick={() => { activeTab = "history"; historyPage = 0; loadFullHistory(); }}>
         <span class="nav-icon"><i class="fa-solid fa-clock-rotate-left"></i></span> History Log
+      </button>
+      <button class="nav-btn {activeTab === 'external' ? 'active' : ''}" onclick={() => activeTab = "external"}>
+        <span class="nav-icon"><i class="fa-solid fa-link"></i></span> External Logs
       </button>
       {#if SHOW_SQUAD_PLANNER}
       <button class="nav-btn {activeTab === 'squad' ? 'active' : ''}" onclick={() => activeTab = "squad"}>
@@ -7784,6 +7800,10 @@ async function testWebhook(wh: any) {
     {:else if activeTab === "analytics"}
       <div style="display: flex; flex-direction: column; gap: inherit; height: 100%; overflow-y: auto;" in:fly={{ y: 6, duration: prefersReducedMotion ? 0 : 200 }} out:fade={{ duration: prefersReducedMotion ? 0 : 150 }}>
         <AnalyticsDashboard logs={allHistory} onRefreshHistory={loadFullHistory} isLoading={isHistoryLoading} />
+      </div>
+    {:else if activeTab === "external"}
+      <div style="display: flex; flex-direction: column; gap: inherit; height: 100%; overflow-y: auto;" in:fly={{ y: 6, duration: prefersReducedMotion ? 0 : 200 }} out:fade={{ duration: prefersReducedMotion ? 0 : 150 }}>
+        <ExternalTab onCheckStats={openExternalStats} bossIcon={getBossIcon} />
       </div>
     {:else if activeTab === "tracker"}
       <div style="display: flex; flex-direction: column; gap: inherit; height: 100%; overflow-y: auto;" in:fly={{ y: 6, duration: prefersReducedMotion ? 0 : 200 }} out:fade={{ duration: prefersReducedMotion ? 0 : 150 }}>
@@ -9619,6 +9639,7 @@ async function testWebhook(wh: any) {
 {#if statsModal}
   <StatsModal
     permalink={statsModal.permalink}
+    external={statsModal.external}
     bossName={statsModal.bossName}
     bossIcon={statsModal.bossIcon}
     localPath={statsModal.localPath}

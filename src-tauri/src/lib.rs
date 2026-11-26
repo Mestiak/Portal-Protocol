@@ -4,6 +4,7 @@
 
 mod config;
 mod db;
+mod external;
 mod history_filter;
 mod ei_ids;
 mod ei_runner;
@@ -1538,6 +1539,15 @@ pub fn run() {
             parse_local_revealed_sources,
             load_stats_cache,
             store_stats_cache,
+            external::add_external_log,
+            external::list_external_logs,
+            external::refresh_external_log,
+            external::delete_external_log,
+            external::get_external_log_full,
+            external::add_external_note,
+            external::delete_external_note,
+            external::external_service_status,
+            external::check_external_services,
             run_local_ei_parse,
             crate::uploader::get_log_full,
             crate::uploader::get_local_log_full,

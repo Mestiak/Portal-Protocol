@@ -5679,12 +5679,12 @@ pub struct PlayerStat {
 
 #[derive(Debug, Serialize, Clone)]
 pub struct LogStats {
-    boss_name: String,
-    duration_sec: f64,
-    players: Vec<PlayerStat>,
-    targets: Vec<TargetStat>,
+    pub boss_name: String,
+    pub duration_sec: f64,
+    pub players: Vec<PlayerStat>,
+    pub targets: Vec<TargetStat>,
     /// Total group DPS (all players, all targets).
-    total_dps: f64,
+    pub total_dps: f64,
 }
 
 /// One-shot payload for the Stats modal: the Rust-shaped combat stats AND the
@@ -5692,9 +5692,9 @@ pub struct LogStats {
 /// from a single network fetch.
 #[derive(Debug, Serialize, Clone)]
 pub struct LogFull {
-    stats: LogStats,
+    pub stats: LogStats,
     /// Raw dps.report getJson. Dropped by the frontend when the modal closes.
-    raw: Value,
+    pub raw: Value,
 }
 
 /// Bounded LRU of the RAW dps.report getJson, keyed by permalink. `get_log_full`
