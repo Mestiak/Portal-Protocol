@@ -146,6 +146,22 @@ fn client() -> &'static Client {
     })
 }
 
+/// Full EI JSON can be tens of megabytes and take 30–40 seconds to stream.
+/// The shared 30-second client timeout cuts the body off mid-download, which
+/// reqwest surfaces as "error decoding response body". This client keeps a
+/// short connect timeout but allows long downloads to finish.
+fn download_client() -> &'static Client {
+    static CLIENT: OnceLock<Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        Client::builder()
+            .connect_timeout(Duration::from_secs(30))
+            .timeout(Duration::from_secs(300))
+            .pool_max_idle_per_host(4)
+            .build()
+            .expect("external download client build")
+    })
+}
+
 fn valid_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 120
@@ -196,7 +212,7 @@ fn normalize_link(input: &str) -> Result<(Service, String, String), String> {
 }
 
 async fn fetch_json(url: &str, service: Service) -> Result<Value, String> {
-    let resp = client()
+    let resp = download_client()
         .get(url)
         .send()
         .await
@@ -217,7 +233,11 @@ async fn fetch_json(url: &str, service: Service) -> Result<Value, String> {
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| {
             mark_fail(service);
-            format!("{} download failed ({e}).", service.label())
+            if e.is_timeout() {
+                format!("{} download timed out while reading the response. Try again in a moment.", service.label())
+            } else {
+                format!("{} download failed ({e}).", service.label())
+            }
         })?;
         buf.extend_from_slice(&chunk);
         if buf.len() as u64 > MAX_JSON_BYTES {
@@ -658,5 +678,16 @@ mod tests {
         assert_eq!(rec.duration_sec, 310.503);
         assert_eq!(rec.num_players, 1);
         assert_eq!(rec.players[0].profession, "Mechanist");
+    }
+
+    #[test]
+    #[ignore]
+    fn probe_wingman_full_json_download() {
+        let Ok(id) = std::env::var("PROBE_WINGMAN_LOG") else { return; };
+        let url = format!("{WINGMAN_BASE}/api/getFullJson/{id}");
+        match tokio::runtime::Runtime::new().unwrap().block_on(fetch_json(&url, Service::Wingman)) {
+            Ok(v) => println!("PROBE ok: {} bytes of JSON", v.to_string().len()),
+            Err(e) => panic!("PROBE failed: {e}"),
+        }
     }
 }
