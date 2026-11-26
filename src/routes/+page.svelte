@@ -666,15 +666,21 @@
       date: "November 2026",
       notes: [
         {
+          category: "🧭 Raids & Strikes — Part 2 of 3",
+          items: [
+            { title: "The encounter-tab rollout continues", desc: "This is part 2 of 3 in the raids and strikes mechanics pass. Part 1 brought Vale Guardian teleports, Deimos oils and Dhuum CM pick ups to the Stats modal. This part covers Statues of Darkness and Ura, and makes Deimos oils count every slick. More encounters are coming in part 3." }
+          ]
+        },
+        {
           category: "⚔️ Encounter Tabs",
           items: [
-            { title: "Statues of Darkness — Stun Overrides", desc: "A Stun Overrides tab for Statues of Darkness: every Daze, Fear or Knockdown on either eye — who did it, which skill, and how long the eye was held. The light orb's own Flare stuns are listed too, so you can see who threw an orb and when one overrode the planned stun." },
-            { title: "Filter by Eye", desc: "Show both eyes together, or just Eye of Judgment or Eye of Fate — the player rankings, counts and feed all follow." },
-            { title: "Eye Teleports", desc: "Each eye blinking to a new spot is marked on the same timeline, so a missed stun is easy to explain." },
-            { title: "Skill Names You Can Trust", desc: "Skills are named from a table of crowd-control skills built from official GW2 data, so far more rows name the real skill — including mech and minion commands like Jade Mortar and Artillery Slash." },
-            { title: "Deimos — Oils, Reworked", desc: "Oils are counted from the slick's own damage instead of its trigger, so no pool goes missing, and every down is credited to the slick that dealt it." },
-            { title: "Ura — Bloodstone Shards", desc: "A Shards tab for every mode of Ura: every pick-up, geyser crust removal and bubble rescue, who went down holding a shard, and how long people floated before being freed." },
-            { title: "Shard Mistakes, Explained", desc: "Wasted, out-of-range and early drops say what went wrong, including when another player cleared the same wave or geyser first." }
+            { title: "Statues of Darkness — Stun Overrides", desc: "See every Daze, Fear or Knockdown applied to either eye — who did it, which skill did it, and how long the eye stayed incapacitated. The light orb's own Flare stuns appear alongside them, so you can tell a planned stun from an accidental override." },
+            { title: "Filter by Eye", desc: "Switch between Both eyes, Eye of Judgment only and Eye of Fate only. Rankings, counts and the feed all follow the selection, which makes it easy to spot someone using the wrong control on the wrong side." },
+            { title: "Eye Teleports", desc: "When an eye blinks to a new spot, that moment is marked on the same timeline in orange. A missed stun now has an explanation instead of a mystery gap." },
+            { title: "Skill Names You Can Trust", desc: "Skills are named from a generated table of crowd-control skills built from official GW2 data, so far more rows name the real skill — including mech and minion commands such as Jade Mortar and Artillery Slash that used to read as unknown." },
+            { title: "Deimos — Oils, Reworked", desc: "Oils are counted from each slick's own damage instead of its first-hit trigger, so no pool goes missing. Every down is credited to the slick that actually dealt the damage." },
+            { title: "Ura — Bloodstone Shards", desc: "A Shards tab for every mode of Ura: every pick-up, which geyser lost its Hardened Crust, who was freed from the Pressure Blast bubbles and how long each person floated. Shards lost when the carrier went down are reported too." },
+            { title: "Shard Mistakes, Explained", desc: "When a shard did nothing, the tab says why — out of range, early, wasted, or beaten by another player who cleared that wave or geyser first. Those labels are inferred from the log, so the combat replay is still the final word." }
           ]
         }
       ]
