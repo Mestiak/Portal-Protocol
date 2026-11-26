@@ -292,6 +292,10 @@ export interface MechanicReport {
     saturated: number; bubbles: number; lateDrops: number; avgFloatS: number | null;
   };
   eyeSummary?: { total: number; judgment: number; fate: number; players: number };
+  // Aetherblade Hideout CM Exposed stacks (absent on every other boss).
+  ahExposed?: AhExposedRow[];
+  ahPlayers?: AhPlayerRow[];
+  ahSummary?: { applications: number; players: number; downs: number };
   rawMechanicsCount?: number;
   debugMechanicNames?: { mechanics: string[]; buffs: string[] };
 }
@@ -397,6 +401,7 @@ export function extractMechanics(logData: Json, bossName: string, localRevealedS
   if (key.includes("harvest") || key.includes("temple")) return extractHarvestTemple(logData, localRevealedSources);
   if (key.includes("vale") || key.includes("spirit vale")) return extractValeGuardian(logData);
   if (key.includes("deimos")) return extractDeimos(logData);
+  if ((key.includes("aetherblade") || key.includes("mai trin")) && logData.isCM === true) return extractAetherbladeHideoutCm(logData);
   if (key.includes("statue") || key.includes("darkness")) return extractStatueOfDarkness(logData);
   // Unknown / non-mechanic boss → only the Combat + generic summary apply.
   return null;
@@ -515,6 +520,31 @@ export interface UraPlayerRow {
   saturatedPickups: number;
   /** Drops caused by the carrier going down. */
   lostDown: number;
+}
+
+// Aetherblade Hideout (CM) Exposed tracking.
+export type AhExposedSource = 'Nightmare Fusillade (Cone Attack)' | 'Nightmare Fusillade (long) (Cone Attack)' | 'Tormenting Wave';
+
+export interface AhExposedRow {
+  time: number; // seconds, 1 dp
+  name: string;
+  account: string;
+  profession: string;
+  kind: 'exposed' | 'down';
+  /** Named attack for an Exposed row; null when no tracked hit matches. */
+  source: AhExposedSource | null;
+  /** Active Exposed stacks just before this application; null on down rows. */
+  stacksBefore: number | null;
+  /** Active Exposed stacks after this application, or at a down. */
+  stacks: number | null;
+}
+
+export interface AhPlayerRow {
+  name: string;
+  account: string;
+  profession: string;
+  applications: number;
+  downs: number;
 }
 
 function extractUra(logData: Json): MechanicReport {
@@ -772,6 +802,81 @@ function extractUra(logData: Json): MechanicReport {
     },
   };
 }
+// ─── Aetherblade Hideout (CM) ─────────────────────────────────────────────────
+// Each Exposed application adds one 60-second stack. EI exports the hits that
+// apply it as Cone / Cone.S / Shck.Wv, so a same-player hit within the window
+// names the attacking skill; applications from other sources stay unnamed.
+const AH_STACK_MS = 60000;
+const AH_SOURCE_MATCH_MS = 100;
+
+function extractAetherbladeHideoutCm(logData: Json): MechanicReport {
+  const base: MechanicReport = { boss: "Aetherblade Hideout", isLCM: false, summary: combatSummary(logData),
+    orbEfficiency: 0, totalOrbs: 0, totalOrbsLeaked: 0, totalOrbsSpawned: 0, shadowsReached: 0, shadowsLeaked: 0,
+    empoweredGained: 0, rageHits: 0, bestPull: 0, timeline: [], boonStrippedPlayers: 0, totalEnvyStrips: 0,
+    totalMaliceDamage: 0, malicePlayers: [], maliceTargetCount: 0, shadowPhases: [], orbLeaderboard: [], orbPhaseLeaders: [], phases: [], squadLedger: [], revealedBreakers: [] };
+
+  const identity = new Map<string, { account: string; profession: string }>();
+  for (const p of Array.isArray(logData.players) ? logData.players : []) {
+    identity.set(String(p?.name ?? ""), {
+      account: String(p?.account ?? ""),
+      profession: String(p?.profession ?? ""),
+    });
+  }
+  const idOf = (name: string) => identity.get(name) ?? { account: "", profession: "" };
+
+  const applies = collectMechanics(logData, "Exposed").sort((a, b) => a.time - b.time);
+  const fusillade = collectMechanics(logData, "Cone");
+  const longFusillade = collectMechanics(logData, "Cone.S");
+  const wave = collectMechanics(logData, "Shck.Wv");
+  const downs = collectMechanics(logData, "Downed");
+
+  const sourceOf = (e: MechEvent): AhExposedSource | null => {
+    const hasHit = (hits: MechEvent[]) =>
+      hits.some((h) => h.actor === e.actor && Math.abs(h.time - e.time) <= AH_SOURCE_MATCH_MS);
+    if (hasHit(fusillade)) return "Nightmare Fusillade (Cone Attack)";
+    if (hasHit(longFusillade)) return "Nightmare Fusillade (long) (Cone Attack)";
+    if (hasHit(wave)) return "Tormenting Wave";
+    return null;
+  };
+  const stacksAt = (actor: string, time: number) =>
+    Math.min(10, applies.filter((a) => a.actor === actor && a.time <= time && time - a.time <= AH_STACK_MS).length);
+
+  const rows: AhExposedRow[] = [];
+  for (const [i, a] of applies.entries()) {
+    const who = idOf(a.actor);
+    const before = Math.min(10, applies.filter((x, j) => j < i && x.actor === a.actor && a.time - x.time <= AH_STACK_MS).length);
+    rows.push({ time: Math.round(a.time / 100) / 10, name: a.actor, account: who.account,
+      profession: who.profession, kind: "exposed", source: sourceOf(a),
+      stacksBefore: before, stacks: Math.min(10, before + 1) });
+  }
+  for (const d of downs) {
+    const who = idOf(d.actor);
+    rows.push({ time: Math.round(d.time / 100) / 10, name: d.actor, account: who.account,
+      profession: who.profession, kind: "down", source: null, stacksBefore: null, stacks: stacksAt(d.actor, d.time) });
+  }
+  rows.sort((a, b) => a.time - b.time);
+
+  const perName = new Map<string, AhPlayerRow>();
+  const touch = (name: string) => {
+    let row = perName.get(name);
+    if (!row) {
+      const who = idOf(name);
+      row = { name, account: who.account, profession: who.profession, applications: 0, downs: 0 };
+      perName.set(name, row);
+    }
+    return row;
+  };
+  for (const a of applies) touch(a.actor).applications++;
+  for (const d of downs) touch(d.actor).downs++;
+  const players = [...perName.values()].sort((a, b) => b.applications - a.applications || a.name.localeCompare(b.name));
+
+  return { ...base,
+    ahExposed: rows,
+    ahPlayers: players,
+    ahSummary: { applications: applies.length, players: players.filter((p) => p.applications > 0).length, downs: downs.length },
+  };
+}
+
 // ─── Dhuum CM (Ender's Echo pick ups) ─────────────────────────────────────────
 // EI applies EchosPickup through PlayerDstBuffApplyMechanic, which re-fires about
 // every 120 ms for as long as the player is held — so `Echo PU` is a per-tick
