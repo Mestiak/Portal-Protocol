@@ -24,3 +24,28 @@ every slick. More encounters are coming in part 3.
 **Ura — Bloodstone Shards** — a Shards tab for every mode of Ura: every pick-up, which geyser lost its Hardened Crust, who was freed from the Pressure Blast bubbles and how long each person floated. Shards lost when the carrier went down are reported too.
 
 **Shard Mistakes, Explained** — when a shard did nothing, the tab says why — out of range, early, wasted, or beaten by another player who cleared that wave or geyser first. Those labels are inferred from the log, so the combat replay is still the final word.
+
+---
+
+## 📍 Where to Find Them
+
+All of these boss mechanics live in the **Stats** modal. Open any log card, press
+**Stats**, and pick the encounter-specific tab at the top of the window — nothing
+to set up first.
+
+| Encounter | Tab |
+|-----------|-----|
+| Vale Guardian | Teleports |
+| Deimos | Oils |
+| Dhuum CM | Pick Ups |
+| Statues of Darkness | Stun Overrides |
+| Ura | Shards |
+| Cerus | Shadows / Orbs / Empowered |
+| Harvest Temple | Revealed |
+
+---
+
+## 💬 Feedback & Requests
+
+Something look wrong, or is there a mechanic you'd like added? DM me on Discord
+— **Mestiak**. Bug reports and requests are both welcome.

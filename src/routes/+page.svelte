@@ -682,6 +682,19 @@
             { title: "Ura — Bloodstone Shards", desc: "A Shards tab for every mode of Ura: every pick-up, which geyser lost its Hardened Crust, who was freed from the Pressure Blast bubbles and how long each person floated. Shards lost when the carrier went down are reported too." },
             { title: "Shard Mistakes, Explained", desc: "When a shard did nothing, the tab says why — out of range, early, wasted, or beaten by another player who cleared that wave or geyser first. Those labels are inferred from the log, so the combat replay is still the final word." }
           ]
+        },
+        {
+          category: "📍 Where to Find Them",
+          items: [
+            { title: "Click Stats on any log card", desc: "All of these boss mechanics live in the Stats modal. Open a log card, press Stats, and pick the encounter-specific tab at the top of the window — nothing to set up first." },
+            { title: "Encounters With Their Own Tabs", desc: "Vale Guardian — Teleports · Deimos — Oils · Dhuum CM — Pick Ups · Statues of Darkness — Stun Overrides · Ura — Shards · Cerus — Shadows / Orbs / Empowered · Harvest Temple — Revealed." }
+          ]
+        },
+        {
+          category: "💬 Feedback & Requests",
+          items: [
+            { title: "Get in Touch", desc: "Something look wrong, or is there a mechanic you'd like added? DM me on Discord — Mestiak. Bug reports and requests are both welcome." }
+          ]
         }
       ]
     },
