@@ -1069,12 +1069,9 @@ pub fn enrich_record_from_ei(record: &mut crate::uploader::UploadRecord, ei: &Va
         .unwrap_or_else(|| std::iter::once(0usize).collect());
     let mut best_hp_left: Option<f64> = None;
     if let Some(targets) = ei.get("targets").and_then(|t| t.as_array()) {
-        // EI always lists the encounter's main boss at targets[0], but
-        // phases[0].targets also includes its summoned minions — Adina's Hands
-        // and Qadim's Hydra are in there. Taking the least-damaged of that whole
-        // list reports a minion's HP (12% on Adina when the boss was at 7%).
-        // Use the main boss target first; the multi-target overrides below still
-        // replace this where more than one HP bar is needed.
+        // EI lists the encounter's main boss at targets[0], while phases[0].targets
+        // also contains minions spawned during the fight. Use the main boss
+        // directly so a less-damaged minion cannot replace its HP.
         let primary = if boss_target_idxs.contains(&0) {
             Some(0usize)
         } else {
@@ -2000,39 +1997,37 @@ mod tests {
 
     #[test]
     fn boss_hp_uses_main_boss_not_summoned_minions() {
-        // Adina PshH: boss 92.95% burned (7.05% left), Hand of Eruption 87.38%
-        // burned (12.62% left). phases[0].targets lists both, so taking the max
-        // HP-left across that list reported 12% instead of 7%.
+        // A minion in the phase target list has taken less damage than the boss;
+        // the card must show the boss's remaining HP.
         let ei = json!({
-            "bossName": "Cardinal Adina",
+            "bossName": "Main Boss",
             "success": false,
             "phases": [{"targets": [0, 1]}],
             "targets": [
-                {"name": "Cardinal Adina", "id": 22006, "healthPercentBurned": 92.95},
-                {"name": "Hand of Eruption NE 1", "id": -3, "healthPercentBurned": 87.38}
+                {"name": "Main Boss", "id": 22006, "healthPercentBurned": 92.95},
+                {"name": "Summoned Minion", "id": -3, "healthPercentBurned": 87.38}
             ]
         });
         let mut record = crate::uploader::UploadRecord::default();
-        record.boss_name = Some("Cardinal Adina".to_string());
+        record.boss_name = Some("Main Boss".to_string());
         enrich_record_from_ei(&mut record, &ei);
         assert!((record.boss_hp_left.unwrap() - 7.05).abs() < 0.01);
     }
 
     #[test]
     fn boss_hp_untouched_boss_is_100_even_when_an_add_was_damaged() {
-        // Qadim: boss never damaged, Ancient Invoked Hydra at 78.8% left.
-        // The card must show the boss at 100%, not the hydra.
+        // An untouched boss stays at 100% even when a minion took damage.
         let ei = json!({
-            "bossName": "Qadim",
+            "bossName": "Main Boss",
             "success": false,
             "phases": [{"targets": [0, 1]}],
             "targets": [
-                {"name": "Qadim", "id": 20934, "healthPercentBurned": 0.0},
-                {"name": "Ancient Invoked Hydra", "id": 21285, "healthPercentBurned": 21.2}
+                {"name": "Main Boss", "id": 20934, "healthPercentBurned": 0.0},
+                {"name": "Summoned Minion", "id": 21285, "healthPercentBurned": 21.2}
             ]
         });
         let mut record = crate::uploader::UploadRecord::default();
-        record.boss_name = Some("Qadim".to_string());
+        record.boss_name = Some("Main Boss".to_string());
         enrich_record_from_ei(&mut record, &ei);
         assert_eq!(record.boss_hp_left, Some(100.0));
     }
