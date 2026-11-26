@@ -1069,14 +1069,37 @@ pub fn enrich_record_from_ei(record: &mut crate::uploader::UploadRecord, ei: &Va
         .unwrap_or_else(|| std::iter::once(0usize).collect());
     let mut best_hp_left: Option<f64> = None;
     if let Some(targets) = ei.get("targets").and_then(|t| t.as_array()) {
-        for (idx, t) in targets.iter().enumerate() {
-            if !boss_target_idxs.contains(&idx) {
-                continue; // skip adds/trash/pets
+        // EI always lists the encounter's main boss at targets[0], but
+        // phases[0].targets also includes its summoned minions — Adina's Hands
+        // and Qadim's Hydra are in there. Taking the least-damaged of that whole
+        // list reports a minion's HP (12% on Adina when the boss was at 7%).
+        // Use the main boss target first; the multi-target overrides below still
+        // replace this where more than one HP bar is needed.
+        let primary = if boss_target_idxs.contains(&0) {
+            Some(0usize)
+        } else {
+            boss_target_idxs.iter().min().copied()
+        };
+        if let Some(idx) = primary {
+            if let Some(burned) = targets
+                .get(idx)
+                .and_then(|t| t.get("healthPercentBurned"))
+                .and_then(|v| v.as_f64())
+            {
+                best_hp_left = Some((100.0 - burned).max(0.0));
             }
-            if let Some(burned) = t.get("healthPercentBurned").and_then(|v| v.as_f64()) {
-                if burned > 0.0 {
-                    let hp_left = (100.0 - burned).max(0.0);
-                    best_hp_left = Some(best_hp_left.map_or(hp_left, |b| b.max(hp_left)));
+        }
+        // Fallback when the main boss target has no healthPercentBurned field.
+        if best_hp_left.is_none() {
+            for (idx, t) in targets.iter().enumerate() {
+                if !boss_target_idxs.contains(&idx) {
+                    continue; // skip adds/trash/pets
+                }
+                if let Some(burned) = t.get("healthPercentBurned").and_then(|v| v.as_f64()) {
+                    if burned > 0.0 {
+                        let hp_left = (100.0 - burned).max(0.0);
+                        best_hp_left = Some(best_hp_left.map_or(hp_left, |b| b.max(hp_left)));
+                    }
                 }
             }
         }
@@ -1974,6 +1997,45 @@ pub async fn prune_ei_html_cache(app: AppHandle) -> Result<(), String> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn boss_hp_uses_main_boss_not_summoned_minions() {
+        // Adina PshH: boss 92.95% burned (7.05% left), Hand of Eruption 87.38%
+        // burned (12.62% left). phases[0].targets lists both, so taking the max
+        // HP-left across that list reported 12% instead of 7%.
+        let ei = json!({
+            "bossName": "Cardinal Adina",
+            "success": false,
+            "phases": [{"targets": [0, 1]}],
+            "targets": [
+                {"name": "Cardinal Adina", "id": 22006, "healthPercentBurned": 92.95},
+                {"name": "Hand of Eruption NE 1", "id": -3, "healthPercentBurned": 87.38}
+            ]
+        });
+        let mut record = crate::uploader::UploadRecord::default();
+        record.boss_name = Some("Cardinal Adina".to_string());
+        enrich_record_from_ei(&mut record, &ei);
+        assert!((record.boss_hp_left.unwrap() - 7.05).abs() < 0.01);
+    }
+
+    #[test]
+    fn boss_hp_untouched_boss_is_100_even_when_an_add_was_damaged() {
+        // Qadim: boss never damaged, Ancient Invoked Hydra at 78.8% left.
+        // The card must show the boss at 100%, not the hydra.
+        let ei = json!({
+            "bossName": "Qadim",
+            "success": false,
+            "phases": [{"targets": [0, 1]}],
+            "targets": [
+                {"name": "Qadim", "id": 20934, "healthPercentBurned": 0.0},
+                {"name": "Ancient Invoked Hydra", "id": 21285, "healthPercentBurned": 21.2}
+            ]
+        });
+        let mut record = crate::uploader::UploadRecord::default();
+        record.boss_name = Some("Qadim".to_string());
+        enrich_record_from_ei(&mut record, &ei);
+        assert_eq!(record.boss_hp_left, Some(100.0));
+    }
 
     #[test]
     fn ei_phases_populate_kaineng_phases() {
