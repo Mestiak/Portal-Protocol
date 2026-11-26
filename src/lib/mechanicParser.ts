@@ -523,7 +523,7 @@ export interface UraPlayerRow {
 }
 
 // Aetherblade Hideout (CM) Exposed tracking.
-export type AhExposedSource = 'Nightmare Fusillade' | 'Nightmare Fusillade (long)' | 'Tormenting Wave';
+export type AhExposedSource = 'Nightmare Fusillade (Cone Attack)' | 'Nightmare Fusillade (long) (Cone Attack)' | 'Tormenting Wave';
 
 export interface AhExposedRow {
   time: number; // seconds, 1 dp
@@ -533,7 +533,9 @@ export interface AhExposedRow {
   kind: 'exposed' | 'down';
   /** Named attack for an Exposed row; null when no tracked hit matches. */
   source: AhExposedSource | null;
-  /** Number of active stacks at a down; null on Exposed rows. */
+  /** Active Exposed stacks just before this application; null on down rows. */
+  stacksBefore: number | null;
+  /** Active Exposed stacks after this application, or at a down. */
   stacks: number | null;
 }
 
@@ -831,8 +833,8 @@ function extractAetherbladeHideoutCm(logData: Json): MechanicReport {
   const sourceOf = (e: MechEvent): AhExposedSource | null => {
     const hasHit = (hits: MechEvent[]) =>
       hits.some((h) => h.actor === e.actor && Math.abs(h.time - e.time) <= AH_SOURCE_MATCH_MS);
-    if (hasHit(fusillade)) return "Nightmare Fusillade";
-    if (hasHit(longFusillade)) return "Nightmare Fusillade (long)";
+    if (hasHit(fusillade)) return "Nightmare Fusillade (Cone Attack)";
+    if (hasHit(longFusillade)) return "Nightmare Fusillade (long) (Cone Attack)";
     if (hasHit(wave)) return "Tormenting Wave";
     return null;
   };
@@ -840,15 +842,17 @@ function extractAetherbladeHideoutCm(logData: Json): MechanicReport {
     Math.min(10, applies.filter((a) => a.actor === actor && a.time <= time && time - a.time <= AH_STACK_MS).length);
 
   const rows: AhExposedRow[] = [];
-  for (const a of applies) {
+  for (const [i, a] of applies.entries()) {
     const who = idOf(a.actor);
+    const before = Math.min(10, applies.filter((x, j) => j < i && x.actor === a.actor && a.time - x.time <= AH_STACK_MS).length);
     rows.push({ time: Math.round(a.time / 100) / 10, name: a.actor, account: who.account,
-      profession: who.profession, kind: "exposed", source: sourceOf(a), stacks: null });
+      profession: who.profession, kind: "exposed", source: sourceOf(a),
+      stacksBefore: before, stacks: Math.min(10, before + 1) });
   }
   for (const d of downs) {
     const who = idOf(d.actor);
     rows.push({ time: Math.round(d.time / 100) / 10, name: d.actor, account: who.account,
-      profession: who.profession, kind: "down", source: null, stacks: stacksAt(d.actor, d.time) });
+      profession: who.profession, kind: "down", source: null, stacksBefore: null, stacks: stacksAt(d.actor, d.time) });
   }
   rows.sort((a, b) => a.time - b.time);
 

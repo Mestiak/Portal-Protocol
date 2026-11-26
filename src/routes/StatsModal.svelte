@@ -71,7 +71,8 @@
   // 29: early drops name what they were early for.
   // 30: a qualifying bubble lift outranks an ambient geyser eruption.
   // 31: Aetherblade Hideout CM Exposed applications and downs.
-  const STATS_CACHE_VERSION = 31;
+  // 32: Exposed rows carry the stack count before and after each application.
+  const STATS_CACHE_VERSION = 32;
 
   let { permalink, bossName = "", bossIcon = "/bosses/unknown.png", localPath, onClose }: {
     permalink: string;
@@ -2592,13 +2593,14 @@
                         <span class="ah-kind">got Exposed</span>
                         <img class="ah-icon" src="/mechanics/exposed.png" alt="Exposed" title="Exposed"
                              onerror={(e) => { (e.currentTarget as HTMLElement).style.visibility = 'hidden'; }} />
+                        <span class="ah-stacks">{r.stacksBefore} <span class="ah-arrow">→</span> {r.stacks}</span>
                       {:else}
                         <span class="ah-kind">got downed while having {r.stacks} Exposed stack{r.stacks === 1 ? '' : 's'}</span>
                       {/if}
                     </span>
                     {#if r.kind === "exposed" && r.source}
                       <span class="feed-downs">
-                        <span class="feed-down ah-source"><span class="feed-down-txt">{r.source}</span></span>
+                        <span class="feed-down ah-source"><span class="feed-down-txt">- {r.source}</span></span>
                       </span>
                     {/if}
                   </div>
@@ -2757,7 +2759,9 @@
     width: 14px; height: 14px; border-radius: 3px; object-fit: cover;
     vertical-align: -2px; flex: none; margin-left: 5px;
   }
-  .ah-source { color: var(--text-muted); }
+  .ah-source { color: var(--warn); }
+  .ah-stacks { margin-left: 7px; font-size: 10px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+  .ah-arrow { color: var(--accent); margin: 0 2px; }
   .ur-tag-saturated, .ur-tag-warn { color: var(--warn); }
   .ur-tag-wasted { color: var(--fail); }
   .eo-col { min-width: 0; }
