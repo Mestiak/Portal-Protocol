@@ -1115,7 +1115,12 @@ fn set_wingman_status(app: &AppHandle, file_path: &str, status: &str) {
     });
     // Rotating audit log (D1): append terminal outcomes.
     if status == "failed" || status == "imported" || status == "done" {
-        let _ = append_audit_log(app, &format!(r#"{{"file_path":"{}","status":"{}","ts":{}}}"#, file_path, status, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)));
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let line = serde_json::json!({ "file_path": file_path, "status": status, "ts": ts });
+        let _ = append_audit_log(app, &line.to_string());
     }
 }
 

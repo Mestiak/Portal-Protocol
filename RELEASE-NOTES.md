@@ -45,6 +45,21 @@ Wingman boss IDs are covered, including two IDs above 65,535 that used to be
 truncated. Regular uploads were unaffected because they take names from the
 EVTC file and dps.report's API.
 
+## ⚡ Performance & Reliability
+
+- **One upload, not two:** the app no longer sends the same log to dps.report
+  twice. A leftover background POST was discarded while a second POST built the
+  record; both are now a single request.
+- **Hung Elite Insights processes are reaped:** timed-out parses kill and wait
+  on the actual child instead of leaving a .NET process and blocked thread
+  behind. Upload-time EI parses also share the global parse limit and per-file
+  lock.
+- **Less GPU work:** the stepper's live-dot pulse animates opacity and transform
+  instead of repainting a box shadow every frame, and the settings stack no
+  longer keeps a permanent compositor layer.
+- **Cleaner shutdown:** pending timers, animation frames, and Tauri listeners
+  are released when views unmount.
+
 ## 🐞 Bug Fixes
 
 - **Boss HP Shows the Boss** — on fights with summoned adds, the remaining-HP

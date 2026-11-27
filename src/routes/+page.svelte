@@ -249,7 +249,7 @@
   // half-hydrated config.
   let configLoaded = $state(false);
   let settingsDirty = $state(false);
-  let suppressDirtyToast = $state(false);
+  let suppressDirtyToast = false;
   let suppressDirty = false;
   // Debounce timer for the global settings autosave (persistConfig) so a burst
   // of setting changes (e.g. typing a numeric field) only writes disk once.
@@ -275,7 +275,10 @@
   // Re-measure whenever the active tab (or sidebar layout) changes.
   $effect(() => { activeTab; queueMicrotask(updateTabIndicator); });
   // Re-measure once on mount (fonts/layout settle).
-  onMount(() => requestAnimationFrame(updateTabIndicator));
+  onMount(() => {
+    const id = requestAnimationFrame(updateTabIndicator);
+    return () => cancelAnimationFrame(id);
+  });
 
   // ── Subfolder sliding underline indicator (mirrors nav-tab-indicator motion) ──
   let subfolderTabsEl = $state<HTMLElement | null>(null);
@@ -299,7 +302,10 @@
     };
   }
   $effect(() => { subFolderId; queueMicrotask(updateSubfolderIndicator); });
-  onMount(() => requestAnimationFrame(updateSubfolderIndicator));
+  onMount(() => {
+    const id = requestAnimationFrame(updateSubfolderIndicator);
+    return () => cancelAnimationFrame(id);
+  });
 
   let isSaving = $state(false);
   let saveMessage = $state("");
@@ -4525,7 +4531,6 @@
         isClosing = true;
         closeBackupDone = false;
         showCloseBackupModal = true;
-        console.log("[close] handler started");
         try {
           await Promise.race([
             invoke("auto_backup_if_stale", { days: 1, keep: 7 }),
@@ -4533,7 +4538,6 @@
           ]);
         } catch (e) { console.error("[close] auto backup failed/timed out", e); }
         closeBackupDone = true;
-        console.log("[close] backup done, waiting for user");
       });
     } catch (e) { console.error("close handler failed", e); }
       // Show migration toast if a history.json → SQLite migration ran this launch.
@@ -4586,6 +4590,7 @@
     // unlistenRepair removed - repair badge feature deprecated
     let unlistenQueue: (() => void) | null = null;
     let unlistenVloxx: (() => void) | null = null;
+    let disposed = false;
 
     // Live progress for the launch-time CM/LCM Mode-flag self-heal. Shows a banner
     // above the History feed while dps.report is re-checked, then auto-hides.
@@ -4813,9 +4818,17 @@
         vloxxLcmNotice = true;
       });
 
+      if (disposed) {
+        unlistenUpload?.();
+        unlistenDrag?.();
+        unlistenQueue?.();
+        unlistenVloxx?.();
+      }
+
       })();
 
       return () => {
+        disposed = true;
         window.removeEventListener("dragover", preventDragDefault);
         window.removeEventListener("drop", preventDragDefault);
         window.removeEventListener("online", handleOnline);
@@ -4831,6 +4844,9 @@
         if (toastTimer) clearTimeout(toastTimer);
         if (feedSaveTimer) clearTimeout(feedSaveTimer);
         if (configSaveTimer) clearTimeout(configSaveTimer);
+        if (queuePulseTimer) clearTimeout(queuePulseTimer);
+        if (queueToastTimer) clearTimeout(queueToastTimer);
+        if (accentRaf !== null) cancelAnimationFrame(accentRaf);
       };
     });
 

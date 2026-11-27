@@ -1,6 +1,6 @@
 <!-- External logs: paste a supported log link, analyze it, keep notes. -->
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
 
   interface ExtPlayer { name: string; account: string; profession: string; }
@@ -46,6 +46,8 @@
   let status = $state<ServiceStatus>({ dpsReport: "unknown", wingman: "unknown" });
   let confirmDelete = $state<string | null>(null);
   let deletingIds = $state<Set<string>>(new Set());
+  let pendingDeleteIds = $state<Set<string>>(new Set());
+  let deleteTimers = new Map<string, ReturnType<typeof setTimeout>>();
   let prefersReducedMotion = $state(false);
   let notesOpen = $state<Record<string, boolean>>({});
   let noteDraft = $state<Record<string, string>>({});
@@ -58,6 +60,11 @@
     prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     void loadLogs();
     void loadStatus(false);
+  });
+
+  onDestroy(() => {
+    for (const timer of deleteTimers.values()) clearTimeout(timer);
+    deleteTimers.clear();
   });
 
   async function loadLogs() {
@@ -310,15 +317,20 @@
   }
 
   function startDelete(log: ExtLog) {
-    if (deletingIds.has(log.id)) return;
-    const card = document.querySelector(`[data-ext-card-id="${CSS.escape(log.id)}"]`) as HTMLElement | null;
-    if (card) card.style.setProperty("--delete-height", `${card.offsetHeight}px`);
-    deletingIds = new Set(deletingIds).add(log.id);
+    if (pendingDeleteIds.has(log.id) || deletingIds.has(log.id)) return;
+    pendingDeleteIds = new Set(pendingDeleteIds).add(log.id);
     confirmDelete = null;
     void removeLog(log);
   }
 
+  function clearDeleteTimer(id: string) {
+    const timer = deleteTimers.get(id);
+    if (timer) clearTimeout(timer);
+    deleteTimers.delete(id);
+  }
+
   function finishDelete(log: ExtLog) {
+    clearDeleteTimer(log.id);
     if (!deletingIds.has(log.id)) return;
     logs = logs.filter((l) => l.id !== log.id);
     const next = new Set(deletingIds);
@@ -330,15 +342,21 @@
   async function removeLog(log: ExtLog) {
     try {
       await invoke("delete_external_log", { id: log.id });
+      const pending = new Set(pendingDeleteIds);
+      pending.delete(log.id);
+      pendingDeleteIds = pending;
+      const card = document.querySelector(`[data-ext-card-id="${CSS.escape(log.id)}"]`) as HTMLElement | null;
+      if (card) card.style.setProperty("--delete-height", `${card.offsetHeight}px`);
+      deletingIds = new Set(deletingIds).add(log.id);
       if (prefersReducedMotion) {
         finishDelete(log);
       } else {
-        setTimeout(() => finishDelete(log), 420);
+        deleteTimers.set(log.id, setTimeout(() => finishDelete(log), 420));
       }
     } catch (e) {
-      const next = new Set(deletingIds);
-      next.delete(log.id);
-      deletingIds = next;
+      const pending = new Set(pendingDeleteIds);
+      pending.delete(log.id);
+      pendingDeleteIds = pending;
       error = String(e);
       onToast(`Could not remove: ${String(e)}`, "default");
     }
@@ -467,7 +485,7 @@
       {#each logs as log (log.id)}
         {@const councilChips = log.multiBoss ? councilRows(log) : []}
         {@const targetRows = log.multiBoss ? (targetsByLog[log.id]?.rows ?? []) : []}
-        <div class="log-card card ext-card" data-ext-card-id={log.id} class:ext-deleting={deletingIds.has(log.id)} inert={deletingIds.has(log.id)} onanimationend={() => finishDelete(log)}>
+        <div class="log-card card ext-card" data-ext-card-id={log.id} class:ext-deleting={deletingIds.has(log.id)} inert={pendingDeleteIds.has(log.id) || deletingIds.has(log.id)} onanimationend={(e) => { if (e.target === e.currentTarget) finishDelete(log); }}>
           <div class="ext-head">
             <img class="ext-icon" src={bossIcon(log.bossName, log.numPlayers)} alt={log.bossName} />
             <div class="ext-body">

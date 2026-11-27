@@ -646,7 +646,7 @@ pub fn load_history(app: &AppHandle) -> Vec<crate::uploader::UploadRecord> {
                 });
                 if let Ok(mapped) = rows {
                     let out: Vec<_> = mapped.filter_map(|r| r.ok()).collect();
-                    if !out.is_empty() || true {
+                    if !out.is_empty() {
                         return out;
                     }
                 }

@@ -6832,7 +6832,6 @@ html.reduce-motion .session-pill {
   flex-direction: column;
   gap: 14px;
   contain: layout;
-  will-change: transform;
 }
 
 .settings-card {
@@ -6931,7 +6930,7 @@ html.reduce-motion .nav-tab-indicator,
 html.reduce-motion .sp-uploading,
 html.reduce-motion .sp-uploading::after,
 html.reduce-motion .stage-active::after,
-html.reduce-motion .stage-dot,
+html.reduce-motion .stage-dot::after,
 html.reduce-motion .skipped-badge,
 html.reduce-motion .app-status-toast::after {
   animation: none !important;
@@ -7178,15 +7177,6 @@ html {
   background: color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
-.stage-active {
-  animation: stage-pulse 1.6s ease-in-out infinite;
-}
-
-@keyframes stage-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent); }
-  50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
-}
-
 .stepper-duration {
   margin-left: 8px;
   font-size: 10px;
@@ -7227,26 +7217,24 @@ html {
 
 /* Soft pulse-ring on the live (purple) step to anchor the eye */
 .stage-dot {
+  position: relative;
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.stage-dot::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border: 1px solid var(--accent);
+  border-radius: 50%;
   animation: stage-pulse 1.6s ease-out infinite;
 }
 
 @keyframes stage-pulse {
-  0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent);
-  }
-
-  70% {
-    box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 0%, transparent);
-  }
-
-  100% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent);
-  }
+  0% { transform: scale(.7); opacity: .75; }
+  100% { transform: scale(1.8); opacity: 0; }
 }
 
 /* Result chip (kill / wipe) — replaces the misleading bare "0.0% HP left" line */

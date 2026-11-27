@@ -1083,6 +1083,12 @@ pub fn delete_external_log(app: AppHandle, id: String) -> Result<(), String> {
         if let Ok(path) = cache_path(&app, service, link_id) {
             let _ = std::fs::remove_file(path);
         }
+        if let Ok(path) = council_cache_path(&app, service, link_id) {
+            let _ = std::fs::remove_file(path);
+        }
+        if let Ok(path) = targets_cache_path(&app, service, link_id) {
+            let _ = std::fs::remove_file(path);
+        }
     }
     Ok(())
 }

@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -12,6 +12,30 @@ use std::os::windows::process::CommandExt;
 use crate::uploader::is_legendary_cm;
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
+
+/// Wait for an EI child process without detaching a watcher thread. On timeout
+/// the child is killed and reaped here, so a hung parse cannot leave a .NET
+/// process or a blocked thread behind.
+fn wait_child_with_timeout(mut child: Child, timeout: Duration) -> Result<std::process::ExitStatus, String> {
+    let started = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(status),
+            Ok(None) => {}
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("failed to wait for Elite Insights: {}", e));
+            }
+        }
+        if started.elapsed() >= timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("Elite Insights timed out after 120s (killed).".to_string());
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+}
 
 /// Keep the on-disk EI cache bounded so `ei_cache/` can't accumulate forever.
 fn ei_cache_dir(app: &AppHandle) -> PathBuf {
@@ -378,10 +402,8 @@ pub fn run_ei(app: &AppHandle, input: &Path) -> Result<Value, String> {
     cmd.creation_flags(0x08000000);
     // Spawn (don't .status()) so we can bound the parse. EI is normally quick,
     // but a hung/misbehaving dotnet process must not pin a blocking-pool thread
-    // and leave a zombied process forever — so race the wait against a timeout
-    // and kill the child if it overruns. (std has no stable `wait_timeout`, so we
-    // run `child.wait()` on a short-lived watch thread and bound it with a
-    // channel `recv_timeout`.) The only caller (uploader.rs:1968) wraps this in
+    // and leave a zombied process forever — poll `try_wait()` on a 25ms cadence
+    // and kill/reap the child if it overruns. The caller wraps this in
     // spawn_blocking and treats any Err as best-effort (falls back to dps.report),
     // so returning Err here is safe and breaks nothing.
     const EI_TIMEOUT: Duration = Duration::from_secs(120);
@@ -389,55 +411,7 @@ pub fn run_ei(app: &AppHandle, input: &Path) -> Result<Value, String> {
         .spawn()
         .map_err(|e| format!("failed to spawn Elite Insights: {}", e))?;
 
-    // `child` is shared so the main (timeout) path can kill it while the watch
-    // thread waits on it. The watch thread takes ownership to `.wait()`; the main
-    // thread locks, takes it back, and `.kill()`s on timeout/error.
-    let child = std::sync::Arc::new(std::sync::Mutex::new(Some(child)));
-    let child_wait = child.clone();
-    let (tx, rx) = std::sync::mpsc::channel::<Option<std::process::ExitStatus>>();
-    let watch = std::thread::spawn(move || {
-        let st = child_wait
-            .lock()
-            .ok()
-            .and_then(|mut g| g.take())
-            .and_then(|mut c| c.wait().ok());
-        let _ = tx.send(st);
-    });
-
-    let status = match rx.recv_timeout(EI_TIMEOUT) {
-        Ok(Some(s)) => s,
-        Ok(None) => {
-            // The child exited but its status couldn't be read — treat as a failure.
-            if let Ok(mut g) = child.lock() {
-                if let Some(mut c) = g.take() {
-                    let _ = c.kill();
-                }
-            }
-            return Err("Elite Insights wait failed. Falling back to dps.report.".to_string());
-        }
-        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-            // Timed out: reap the runaway child so it can't leak/accumulate.
-            if let Ok(mut g) = child.lock() {
-                if let Some(mut c) = g.take() {
-                    let _ = c.kill();
-                }
-            }
-            return Err(
-                "Elite Insights timed out after 120s (killed). Falling back to dps.report."
-                    .to_string(),
-            );
-        }
-        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-            if let Ok(mut g) = child.lock() {
-                if let Some(mut c) = g.take() {
-                    let _ = c.kill();
-                }
-            }
-            return Err("Elite Insights wait thread died. Falling back to dps.report.".to_string());
-        }
-    };
-    // Reap the now-exited watch thread (cheap; it already returned).
-    let _ = watch.join();
+    let status = wait_child_with_timeout(child, EI_TIMEOUT)?;
     if !status.success() {
         return Err(format!("Elite Insights exited with status {}", status));
     }
@@ -521,45 +495,7 @@ fn run_ei_html(app: &AppHandle, input: &Path) -> Result<PathBuf, String> {
     let child: Child = cmd
         .spawn()
         .map_err(|e| format!("failed to spawn Elite Insights: {}", e))?;
-    let child = std::sync::Arc::new(std::sync::Mutex::new(Some(child)));
-    let child_wait = child.clone();
-    let (tx, rx) = std::sync::mpsc::channel::<Option<std::process::ExitStatus>>();
-    let watch = std::thread::spawn(move || {
-        let st = child_wait
-            .lock()
-            .ok()
-            .and_then(|mut g| g.take())
-            .and_then(|mut c| c.wait().ok());
-        let _ = tx.send(st);
-    });
-    let status = match rx.recv_timeout(EI_TIMEOUT) {
-        Ok(Some(s)) => s,
-        Ok(None) => {
-            if let Ok(mut g) = child.lock() {
-                if let Some(mut c) = g.take() {
-                    let _ = c.kill();
-                }
-            }
-            return Err("Elite Insights wait failed.".to_string());
-        }
-        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-            if let Ok(mut g) = child.lock() {
-                if let Some(mut c) = g.take() {
-                    let _ = c.kill();
-                }
-            }
-            return Err("Elite Insights timed out after 120s (killed).".to_string());
-        }
-        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-            if let Ok(mut g) = child.lock() {
-                if let Some(mut c) = g.take() {
-                    let _ = c.kill();
-                }
-            }
-            return Err("Elite Insights wait thread died.".to_string());
-        }
-    };
-    let _ = watch.join();
+    let status = wait_child_with_timeout(child, EI_TIMEOUT)?;
     if !status.success() {
         return Err(format!("Elite Insights exited with status {}", status));
     }
@@ -625,21 +561,7 @@ pub fn run_ei_wingman_bundle(app: &AppHandle, input: &Path) -> Result<(PathBuf, 
     cmd.creation_flags(0x08000000);
     const EI_TIMEOUT: Duration = Duration::from_secs(120);
     let child: Child = cmd.spawn().map_err(|e| format!("failed to spawn Elite Insights: {}", e))?;
-    let child = std::sync::Arc::new(std::sync::Mutex::new(Some(child)));
-    let child_wait = child.clone();
-    let (tx, rx) = std::sync::mpsc::channel::<Option<std::process::ExitStatus>>();
-    let watch = std::thread::spawn(move || {
-        let st = child_wait.lock().ok().and_then(|mut g| g.take()).and_then(|mut c| c.wait().ok());
-        let _ = tx.send(st);
-    });
-    let status = match rx.recv_timeout(EI_TIMEOUT) {
-        Ok(Some(s)) => s,
-        _ => {
-            if let Ok(mut g) = child.lock() { if let Some(mut c) = g.take() { let _ = c.kill(); } }
-            return Err("Elite Insights timed out or failed.".to_string());
-        }
-    };
-    let _ = watch.join();
+    let status = wait_child_with_timeout(child, EI_TIMEOUT)?;
     if !status.success() {
         return Err(format!("Elite Insights exited with status {}", status));
     }
@@ -1691,12 +1613,12 @@ fn parse_duration_string(s: &str) -> Option<f64> {
 /// we normalize to `C:\...`. No-op safe on non-Windows.
 fn path_to_windows(p: &Path) -> String {
     let s = p.to_string_lossy().to_string();
-    if s.starts_with("//") {
+    if let Some(rest) = s.strip_prefix("//") {
         // //c/Users/... -> C:\Users\...
-        let rest = s.trim_start_matches('/');
-        let drive = &rest[..1];
-        let tail = &rest[2..];
-        return format!("{}:\\{}", drive.to_uppercase(), tail.replace('/', "\\"));
+        let mut parts = rest.splitn(2, '/');
+        let drive = parts.next().unwrap_or("c");
+        let tail = parts.next().unwrap_or("");
+        return format!("{}:\\{}", drive.to_ascii_uppercase(), tail.replace('/', "\\"));
     }
     s.replace('/', "\\")
 }

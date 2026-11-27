@@ -2954,10 +2954,10 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
     record.diagnostics = Some(diag.clone());
 
     // ── PARALLEL PIPELINE: EI Parse + dps.report Upload ─────────────────────
-    // Run EI parse and dps.report upload CONCURRENTLY so the user gets the
-    // permalink as soon as the upload completes, without waiting for EI.
-    // EI is CPU-bound (.NET, blocking), upload is network-bound — they don't
-    // compete for resources, so running them in parallel is a pure win.
+    // EI runs in a blocking task while the local record is prepared, then the
+    // single dps.report POST happens once in Step 3. The HTTP request is bounded
+    // by the upload semaphore and the EI process by the EI semaphore/per-path
+    // lock, so concurrent uploads cannot spawn unlimited heavy .NET processes.
     let mut ei_parsed: Option<serde_json::Value> = None;
     let mut ei_duration_set = false;
     let mut ei_join_handle: Option<
@@ -2965,14 +2965,19 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
     > = None;
 
     if crate::ei_runner::ei_enabled() && record.is_convergence != Some(true) {
-        let base = std::path::Path::new(&record.file_path);
-        if let Some(local_path) = base.parent() {
-            let evtc = local_path.join(record.file_name.clone());
-            if crate::ei_runner::check_dotnet_runtime().is_ok() {
-                let app_clone = app.clone();
-                ei_join_handle = Some(tauri::async_runtime::spawn_blocking(move || {
-                    crate::ei_runner::run_ei(&app_clone, &evtc)
-                }));
+        if let Ok(permit) = crate::ei_semaphore().acquire().await {
+            let base = std::path::Path::new(&record.file_path);
+            if let Some(local_path) = base.parent() {
+                let evtc = local_path.join(record.file_name.clone());
+                if crate::ei_runner::check_dotnet_runtime().is_ok() {
+                    let app_clone = app.clone();
+                    ei_join_handle = Some(tauri::async_runtime::spawn_blocking(move || {
+                        let _permit = permit;
+                        let _lock = crate::ei_lock_for(&evtc);
+                        let _guard = _lock.lock().unwrap_or_else(|e| e.into_inner());
+                        crate::ei_runner::run_ei(&app_clone, &evtc)
+                    }));
+                }
             }
         }
     }
@@ -3040,45 +3045,8 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
     }
     let _ = app.emit("upload-status", record.clone());
 
-    let file_name_clone = file_name.clone();
-    let file_bytes_clone = file_bytes.clone();
-    let client_clone = client.clone();
-    let upload_handle = tauri::async_runtime::spawn(async move {
-        let mut attempt = 0;
-        let max_attempts = config.max_upload_retries.saturating_add(1);
-        loop {
-            attempt += 1;
-            let part = multipart::Part::bytes(file_bytes_clone.clone())
-                .file_name(file_name_clone.clone())
-                .mime_str("application/octet-stream")
-                .unwrap_or_else(|_| multipart::Part::bytes(vec![]));
-            let mut form = multipart::Form::new().part("file", part);
-            if !config.dps_report_token.is_empty() {
-                form = form.text("userToken", config.dps_report_token.clone());
-            }
-            form = form.text("json", "1");
-            let resp = client_clone
-                .post(active_dps_endpoint(use_backup))
-                .multipart(form)
-                .send()
-                .await;
-            if let Ok(resp) = &resp {
-                if resp.status().is_success() || resp.status().as_u16() == 422 {
-                    break;
-                }
-            }
-            if attempt >= max_attempts {
-                break;
-            }
-            let base: u64 = 3;
-            let factor = 2u64.saturating_pow(attempt.saturating_sub(1));
-            let secs = (base * factor).min(60);
-            tokio::time::sleep(Duration::from_secs(secs)).await;
-        }
-    });
-
     if let Some(ei_handle) = ei_join_handle {
-        let (ei_result, _upload_result) = tokio::join!(ei_handle, upload_handle);
+        let ei_result = ei_handle.await;
         match ei_result {
             Ok(Ok(raw)) => {
                 crate::ei_runner::enrich_record_from_ei(&mut record, &raw);
@@ -3104,9 +3072,8 @@ async fn upload_file(app: AppHandle, client: reqwest::Client, path: PathBuf, man
             }
         }
         let _ = app.emit("upload-status", record.clone());
-    } else {
-        let _ = upload_handle.await;
     }
+    // The single dps.report POST happens in Step 3 below.
     // If the file is too small (under 15 KB), prevent upload and show custom GG error
     if file_bytes.len() < 15360 {
         record.status = "Failed".to_string();
@@ -5731,6 +5698,11 @@ fn get_cache_file_path(app: &AppHandle, permalink: &str) -> std::path::PathBuf {
 fn raw_cache_get(app: &AppHandle, permalink: &str) -> Option<Value> {
     // Memory holds only the permalink list (LRU recency); the JSON lives on disk.
     let path = get_cache_file_path(app, permalink);
+    if let Ok(meta) = std::fs::metadata(&path) {
+        if meta.len() > 120 * 1024 * 1024 {
+            return None;
+        }
+    }
     if path.exists() {
         if let Ok(content) = std::fs::read_to_string(&path) {
             if let Ok(val) = serde_json::from_str::<Value>(&content) {
