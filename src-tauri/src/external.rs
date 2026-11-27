@@ -1222,6 +1222,25 @@ mod tests {
     }
 
     #[test]
+    fn maps_wingman_twin_largos_name() {
+        let raw = json!({
+            "triggerID": 21105,
+            "fightName": "Twin Largos CM",
+            "success": false,
+            "players": []
+        });
+        let rec = build_record(
+            Service::Wingman,
+            "yqfD-20261125-224048_twins",
+            "https://gw2wingman.nevermindcreations.de/log/yqfD-20261125-224048_twins",
+            &raw,
+        )
+        .unwrap();
+        assert_eq!(rec.boss_name, "Twin Largos");
+        assert!(rec.multi_boss);
+    }
+
+    #[test]
     fn maps_wingman_harvest_temple_name() {
         let raw = json!({
             "triggerID": 24375,

@@ -1684,10 +1684,9 @@ pub fn get_boss_name_from_id(boss_id: u16) -> String {
         19844 => "Statue of Darkness".to_string(),
         19450 => "Dhuum".to_string(),
         // W6
-        21105 | 21085 => "Conjured Amalgamate".to_string(),
+        // W6 — EI SpeciesIDs: Nikare=21105, Kenut=21089, ConjuredAmalgamate=43974.
         43974 => "Conjured Amalgamate".to_string(),
-        21189 => "Nikare".to_string(),
-        21100 => "Kenut".to_string(),
+        21105 | 21089 => "Twin Largos".to_string(),
         20934 => "Qadim".to_string(),
         // W7
         22006 => "Cardinal Adina".to_string(),
@@ -3729,7 +3728,20 @@ mod quick_play_tests {
         // After start/end time fix:
         //   boss_fight_duration: start=9125826, end=9695947 → 570.121 sec
         //   full_fight_duration:  start=9125826, end=9621577 → 495.751 sec
-    }
-}
+        }
+        }
+
+        #[cfg(test)]
+        mod boss_name_tests {
+        use super::*;
+
+        #[test]
+        fn maps_twin_largos_ids_to_the_encounter() {
+            assert_eq!(get_boss_name_from_id(21105), "Twin Largos");
+            assert_eq!(get_boss_name_from_id(21089), "Twin Largos");
+            assert_eq!(get_boss_name_from_id(43974), "Conjured Amalgamate");
+            assert_ne!(get_boss_name_from_id(21189), "Nikare");
+        }
+        }
 
 
