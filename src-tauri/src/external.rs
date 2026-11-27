@@ -483,14 +483,101 @@ fn save_record(app: &AppHandle, rec: &ExternalLogRecord) -> Result<(), String> {
 
 #[command]
 pub async fn add_external_log(app: AppHandle, url: String) -> Result<ExternalLogRecord, String> {
-    let (service, link_id, canonical) = normalize_link(&url)?;
+    add_log_from_url(&app, &url).await
+}
+
+async fn add_log_from_url(app: &AppHandle, url: &str) -> Result<ExternalLogRecord, String> {
+    let (service, link_id, canonical) = normalize_link(url)?;
     let id = format!("{}:{}", service.key(), link_id);
-    if let Some(existing) = get_record(&app, &id)? {
+    if let Some(existing) = get_record(app, &id)? {
         return Ok(existing);
     }
-    let rec = fetch_record(&app, service, &link_id, &canonical).await?;
-    save_record(&app, &rec)?;
+    let rec = fetch_record(app, service, &link_id, &canonical).await?;
+    save_record(app, &rec)?;
     Ok(rec)
+}
+
+/// Wingman indexes the full dps.report permalink including the boss suffix;
+/// `normalize_link` strips that suffix for cache ids, so lookups need the
+/// original full id.
+fn full_dps_report_link(input: &str) -> Result<String, String> {
+    let url = Url::parse(input.trim()).map_err(|_| "That does not look like a full link (include https://).".to_string())?;
+    let host = url.host_str().unwrap_or_default().to_lowercase();
+    if !matches!(host.as_str(), "dps.report" | "b.dps.report" | "a.dps.report") {
+        return Err("Paste a dps.report link to find it on Wingman.".to_string());
+    }
+    let parts: Vec<&str> = url
+        .path_segments()
+        .map(|s| s.filter(|p| !p.is_empty()).collect())
+        .unwrap_or_default();
+    let id = if parts.first().copied() == Some("getJson") {
+        url.query_pairs()
+            .find(|(key, _)| key == "permalink")
+            .map(|(_, value)| value.to_string())
+    } else {
+        parts.first().map(|p| p.to_string())
+    }
+    .ok_or_else(|| "No dps.report log id found in that link.".to_string())?;
+    if !valid_id(&id) {
+        return Err("Invalid dps.report log id.".to_string());
+    }
+    Ok(format!("{DPS_BASE}/{id}"))
+}
+
+fn wingman_query_url(endpoint: &str, link: &str) -> Result<String, String> {
+    let mut url = reqwest::Url::parse(&format!("{WINGMAN_BASE}{endpoint}"))
+        .map_err(|e| format!("Invalid Wingman endpoint: {e}"))?;
+    url.query_pairs_mut().append_pair("link", link);
+    Ok(url.to_string())
+}
+
+fn parse_wingman_lookup(value: &Value) -> Result<Value, String> {
+    let in_db = value.get("inDB").and_then(|v| v.as_bool()).unwrap_or(false);
+    let in_queue = value.get("inQueue").and_then(|v| v.as_bool()).unwrap_or(false);
+    let mut out = serde_json::json!({ "found": false, "inQueue": in_queue });
+    if in_db {
+        if let Some(target) = value.get("targetURL").and_then(|v| v.as_str()) {
+            let (service, link_id, url) = normalize_link(target)?;
+            if !matches!(service, Service::Wingman) {
+                return Err("Wingman returned a target that is not a Wingman log.".to_string());
+            }
+            out["found"] = Value::Bool(true);
+            out["targetURL"] = Value::String(url);
+            out["linkId"] = Value::String(link_id);
+        }
+    }
+    Ok(out)
+}
+
+/// Looks up an already-imported Wingman log for a dps.report link. Read-only.
+#[command]
+pub async fn find_wingman_log_for_dps(link: String) -> Result<Value, String> {
+    let full = full_dps_report_link(&link)?;
+    let url = wingman_query_url("/api/checkLogQueuedOrDB", &full)?;
+    let response = fetch_json(&url, Service::Wingman).await?;
+    parse_wingman_lookup(&response)
+}
+
+/// Explicitly queues a dps.report log for import into Wingman.
+#[command]
+pub async fn import_wingman_log_from_dps(link: String) -> Result<Value, String> {
+    let full = full_dps_report_link(&link)?;
+    let url = wingman_query_url("/api/importLogQueued", &full)?;
+    let response = fetch_json(&url, Service::Wingman).await?;
+    let success = response.get("success").and_then(|v| v.as_i64()).unwrap_or(0) == 1;
+    let note = response
+        .get("note")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    if !success {
+        return Err(if note.is_empty() {
+            "Wingman could not queue the log.".to_string()
+        } else {
+            note
+        });
+    }
+    Ok(serde_json::json!({ "queued": true, "note": note }))
 }
 
 /// Fetches dps.report JSON with curl.exe. On some Windows connections both the
@@ -803,6 +890,41 @@ mod tests {
         assert_eq!(rec.duration_sec, 310.503);
         assert_eq!(rec.num_players, 1);
         assert_eq!(rec.players[0].profession, "Mechanist");
+    }
+
+    #[test]
+    fn parses_wingman_lookup_response() {
+        assert_eq!(
+            full_dps_report_link("https://b.dps.report/getJson?permalink=abc_def").unwrap(),
+            "https://dps.report/abc_def"
+        );
+        let found: Value = serde_json::from_str(
+            r#"{"link":"https://dps.report/abc","inDB":true,"inQueue":false,"targetURL":"https://gw2wingman.nevermindcreations.de/log/abc"}"#,
+        )
+        .unwrap();
+        let out = parse_wingman_lookup(&found).unwrap();
+        assert_eq!(out["found"], true);
+        assert_eq!(out["linkId"], "abc");
+        assert_eq!(out["targetURL"], "https://gw2wingman.nevermindcreations.de/log/abc");
+
+        let missing: Value = serde_json::from_str(
+            r#"{"link":"https://dps.report/abc","inDB":false,"inQueue":true}"#,
+        )
+        .unwrap();
+        let out = parse_wingman_lookup(&missing).unwrap();
+        assert_eq!(out["found"], false);
+        assert_eq!(out["inQueue"], true);
+    }
+
+    #[test]
+    #[ignore]
+    fn probe_wingman_lookup_for_dps_link() {
+        let Ok(id) = std::env::var("PROBE_DPS_LINK") else { return; };
+        let link = format!("https://dps.report/{id}");
+        match tokio::runtime::Runtime::new().unwrap().block_on(find_wingman_log_for_dps(link)) {
+            Ok(v) => println!("PROBE lookup: {v}"),
+            Err(e) => panic!("PROBE failed: {e}"),
+        }
     }
 
     #[test]

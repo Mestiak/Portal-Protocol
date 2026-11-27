@@ -26,8 +26,13 @@
     bossIcon: (name: string | undefined, players?: number) => string;
   } = $props();
 
+  interface WingmanLookup { found: boolean; inQueue: boolean; targetURL?: string; linkId?: string; }
+
   let logs = $state<ExtLog[]>([]);
   let linkInput = $state("");
+  let lookupInput = $state("");
+  let lookupBusy = $state(false);
+  let lookupResult = $state<WingmanLookup | null>(null);
   let busy = $state(false);
   let checking = $state(false);
   let error = $state("");
@@ -166,6 +171,54 @@
     }
   }
 
+  async function findWingmanLog() {
+    const link = lookupInput.trim();
+    if (!link || lookupBusy) return;
+    if (!dpsLinkId(link)) {
+      error = "Paste a dps.report log link to find it on Wingman.";
+      onToast(error, "default");
+      return;
+    }
+    lookupBusy = true;
+    error = "";
+    try {
+      const result = await invoke<WingmanLookup>("find_wingman_log_for_dps", { link });
+      lookupResult = result;
+      if (result.found && result.targetURL) {
+        const rec = await invoke<ExtLog>("add_external_log", { url: result.targetURL });
+        logs = [rec, ...logs.filter((l) => l.id !== rec.id)];
+        lookupInput = "";
+        onToast(`Found and added ${rec.bossName || "log"} from Wingman.`, "success");
+      } else if (result.inQueue) {
+        onToast("That log is already queued on Wingman. Check again in a few minutes.", "default");
+      } else {
+        onToast("That log is not on Wingman yet.", "default");
+      }
+    } catch (e) {
+      error = String(e);
+      onToast(`Could not find that log: ${String(e)}`, "default");
+    } finally {
+      lookupBusy = false;
+      await loadStatus(false);
+    }
+  }
+
+  async function importWingmanLog() {
+    const link = lookupInput.trim();
+    if (!link || lookupBusy) return;
+    lookupBusy = true;
+    try {
+      await invoke("import_wingman_log_from_dps", { link });
+      lookupResult = { found: false, inQueue: true };
+      onToast("Queued for import on Wingman. Check again in a few minutes.", "success");
+    } catch (e) {
+      error = String(e);
+      onToast(`Could not queue the import: ${String(e)}`, "default");
+    } finally {
+      lookupBusy = false;
+    }
+  }
+
   async function refreshLog(log: ExtLog) {
     if (busy) return;
     busy = true;
@@ -278,6 +331,29 @@
       </div>
     </div>
   {/if}
+
+  <div class="ext-paste card">
+    <label class="ext-label" for="wingman-lookup">Find on Wingman</label>
+    <p class="ext-hint">Have only a dps.report link? Look up its Wingman copy, then open it with Check Stats.</p>
+    <div class="ext-paste-row">
+      <input id="wingman-lookup" class="ext-input" placeholder="https://dps.report/…"
+             value={lookupInput}
+             oninput={(e) => { lookupInput = e.currentTarget.value; lookupResult = null; }}
+             onkeydown={(e) => { if (e.key === "Enter") void findWingmanLog(); }} />
+      <button class="ext-btn ext-primary" onclick={() => void findWingmanLog()} disabled={lookupBusy || busy}>
+        <i class="fa-solid {lookupBusy ? 'fa-spinner fa-spin' : 'fa-magnifying-glass'}"></i> {lookupBusy ? "Searching…" : "Find Wingman log"}
+      </button>
+    </div>
+    {#if lookupResult && !lookupResult.found}
+      <div class="ext-lookup-result">
+        <span>{lookupResult.inQueue ? "Already queued on Wingman — check again in a few minutes." : "Not on Wingman yet."}</span>
+        {#if !lookupResult.inQueue}
+          <button class="ext-btn" onclick={() => void importWingmanLog()} disabled={lookupBusy}>Import to Wingman</button>
+        {/if}
+        <button class="ext-btn" onclick={() => void findWingmanLog()} disabled={lookupBusy}>Check again</button>
+      </div>
+    {/if}
+  </div>
 
   <div class="ext-paste card">
     <label class="ext-label" for="ext-link">Log link</label>
@@ -411,6 +487,7 @@
   }
   .ext-outage i { color: var(--warn); margin-top: 2px; }
   .ext-paste { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .ext-lookup-result { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 10px; color: var(--text-muted); animation: ext-reveal 160ms cubic-bezier(.2,.8,.2,1) backwards; }
   .ext-label { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); font-weight: 800; }
   .ext-paste-row, .ext-note-row { display: flex; gap: 8px; }
   .ext-input {
@@ -462,7 +539,7 @@
     to { opacity: 1; transform: none; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .ext-card, .ext-outage, .ext-added, .ext-confirm, .ext-notes { animation: none; }
+    .ext-card, .ext-outage, .ext-added, .ext-confirm, .ext-notes, .ext-lookup-result { animation: none; }
     .ext-status-btn, .ext-btn, .ext-card, .ext-input, .ext-note-del { transition: none; }
     .ext-status-btn:hover:not(:disabled), .ext-btn:hover:not(:disabled), .ext-card:hover, .ext-btn:active:not(:disabled) { transform: none; }
   }

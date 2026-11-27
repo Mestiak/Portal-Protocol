@@ -1540,6 +1540,8 @@ pub fn run() {
             load_stats_cache,
             store_stats_cache,
             external::add_external_log,
+            external::find_wingman_log_for_dps,
+            external::import_wingman_log_from_dps,
             external::fetch_dps_report_json,
             external::store_external_raw,
             external::list_external_logs,
