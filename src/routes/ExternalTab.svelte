@@ -15,6 +15,8 @@
   interface CouncilHp { key: string; name: string; hp_left: number; died: boolean; order: number; icon: string | null; }
   interface ExternalCouncil { phases: CouncilPhase[]; hp: CouncilHp[]; }
   interface CouncilRow { key: string; name: string; icon: string; kind: string; cleared: boolean; hp: number | null; died: boolean; }
+  interface TargetRow { label: string; hp: number | null; icon: string; iconColor?: string | null; }
+  interface ExternalTargets { rows: TargetRow[]; }
   interface ServiceStatus { dpsReport: string; wingman: string; }
 
   // dps.report link fetching is disabled; Wingman links are supported.
@@ -48,6 +50,7 @@
   let statsBusyId = $state<string | null>(null);
   let addNotice = $state("");
   let councilByLog = $state<Record<string, ExternalCouncil>>({});
+  let targetsByLog = $state<Record<string, ExternalTargets>>({});
 
   onMount(() => {
     void loadLogs();
@@ -57,19 +60,28 @@
   async function loadLogs() {
     try {
       logs = await invoke<ExtLog[]>("list_external_logs");
-      for (const log of logs) if (log.multiBoss) void loadCouncil(log.id);
+      for (const log of logs) if (log.multiBoss) void loadBreakdowns(log.id);
     } catch (e) {
       error = `Could not load saved logs: ${String(e)}`;
     }
   }
 
-  async function loadCouncil(id: string) {
-    if (councilByLog[id]) return;
-    try {
-      const council = await invoke<ExternalCouncil | null>("get_external_multi_boss", { id });
-      if (council) councilByLog = { ...councilByLog, [id]: council };
-    } catch {
-      // Council data is optional; the card still shows its other details.
+  async function loadBreakdowns(id: string) {
+    if (!councilByLog[id]) {
+      try {
+        const council = await invoke<ExternalCouncil | null>("get_external_multi_boss", { id });
+        if (council) councilByLog = { ...councilByLog, [id]: council };
+      } catch {
+        // Council data is optional; the card still shows its other details.
+      }
+    }
+    if (!targetsByLog[id]) {
+      try {
+        const targets = await invoke<ExternalTargets | null>("get_external_multi_targets", { id });
+        if (targets) targetsByLog = { ...targetsByLog, [id]: targets };
+      } catch {
+        // Target data is optional; the card still shows its other details.
+      }
     }
   }
 
@@ -195,7 +207,7 @@
         rec = await invoke<ExtLog>("add_external_log", { url });
       }
       logs = [rec, ...logs.filter((l) => l.id !== rec.id)];
-      if (rec.multiBoss) void loadCouncil(rec.id);
+      if (rec.multiBoss) void loadBreakdowns(rec.id);
       linkInput = "";
       addNotice = `Added ${rec.bossName || "log"} — ready to analyze.`;
       setTimeout(() => { addNotice = ""; }, 2600);
@@ -226,7 +238,7 @@
       if (result.found && result.targetURL) {
         const rec = await invoke<ExtLog>("add_external_log", { url: result.targetURL });
         logs = [rec, ...logs.filter((l) => l.id !== rec.id)];
-        if (rec.multiBoss) void loadCouncil(rec.id);
+        if (rec.multiBoss) void loadBreakdowns(rec.id);
         lookupInput = "";
         onToast(`Found and added ${rec.bossName || "log"} from Wingman.`, "success");
       } else if (result.inQueue) {
@@ -282,7 +294,7 @@
         rec = await invoke<ExtLog>("refresh_external_log", { id: log.id });
       }
       logs = logs.map((l) => (l.id === rec.id ? rec : l));
-      if (rec.multiBoss) void loadCouncil(rec.id);
+      if (rec.multiBoss) void loadBreakdowns(rec.id);
       onToast(`Refreshed ${rec.bossName || "log"}.`, "success");
       await loadStatus(false);
     } catch (e) {
@@ -428,6 +440,7 @@
     <div class="ext-list">
       {#each logs as log (log.id)}
         {@const councilChips = log.multiBoss ? councilRows(log) : []}
+        {@const targetRows = log.multiBoss ? (targetsByLog[log.id]?.rows ?? []) : []}
         <div class="log-card card ext-card">
           <div class="ext-head">
             <img class="ext-icon" src={bossIcon(log.bossName, log.numPlayers)} alt={log.bossName} />
@@ -473,6 +486,21 @@
                       <span class="dragon-name">{chip.name}</span>
                       <span class="phase-mark"><i class="fa-solid {chip.cleared ? 'fa-check' : 'fa-xmark'}"></i></span>
                     </div>
+                  {/each}
+                </div>
+              {/if}
+              {#if targetRows.length}
+                <div class="ext-target-rows">
+                  {#each targetRows as row}
+                    <span class="meta-item" style="color:#d1d5db; font-weight:700;">
+                      <i class="fa-solid {row.icon}" style="margin-right:4px; font-size:11px;{row.iconColor ? ` color:${row.iconColor};` : ''}"></i>
+                      {row.label}
+                      {#if row.hp != null}
+                        <span style={row.hp <= 1 ? 'color:#4ade80; margin-left:6px;' : 'color:#f87171; margin-left:6px;'}>
+                          {row.hp <= 1 ? 'Killed' : `${row.hp.toFixed(2)}% HP Left`}
+                        </span>
+                      {/if}
+                    </span>
                   {/each}
                 </div>
               {/if}
@@ -589,6 +617,7 @@
   .ext-body { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
   .ext-name { font-size: 14px; font-weight: 800; color: #fff; }
   .ext-meta-line { display: flex; flex-wrap: wrap; gap: 8px; }
+  .ext-target-rows { display: flex; flex-direction: column; gap: 2px; margin-top: 2px; }
   .ext-detail { font-size: 10px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
   .ext-source { display: flex; flex-wrap: wrap; gap: 5px; font-size: 10px; color: var(--text-muted); }
   .ext-source a { color: var(--accent); text-decoration: none; }

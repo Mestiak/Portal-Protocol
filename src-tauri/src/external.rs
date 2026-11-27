@@ -354,6 +354,119 @@ fn council_cache_put(app: &AppHandle, service: Service, link_id: &str, value: &E
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalTargetRow {
+    pub label: String,
+    pub hp: Option<f64>,
+    pub icon: String,
+    pub icon_color: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExternalTargets {
+    pub rows: Vec<ExternalTargetRow>,
+}
+
+fn targets_cache_path(app: &AppHandle, service: Service, link_id: &str) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| e.to_string())?
+        .join("external_cache");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let safe: String = link_id
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect();
+    Ok(dir.join(format!("{}_{}_targets.json.gz", service.key(), safe)))
+}
+
+fn targets_cache_get(app: &AppHandle, service: Service, link_id: &str) -> Option<ExternalTargets> {
+    let file = File::open(targets_cache_path(app, service, link_id).ok()?).ok()?;
+    let mut decoder = GzDecoder::new(file);
+    let mut text = String::new();
+    decoder.read_to_string(&mut text).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+fn targets_cache_put(app: &AppHandle, service: Service, link_id: &str, value: &ExternalTargets) {
+    if let Ok(path) = targets_cache_path(app, service, link_id) {
+        if let Ok(file) = File::create(path) {
+            let mut encoder = GzEncoder::new(file, Compression::fast());
+            let _ = serde_json::to_writer(&mut encoder, value);
+            let _ = encoder.finish();
+        }
+    }
+}
+
+fn push_target(
+    rows: &mut Vec<ExternalTargetRow>,
+    label: &str,
+    hp: Option<f64>,
+    icon: &str,
+    color: Option<&str>,
+) {
+    if let Some(value) = hp {
+        rows.push(ExternalTargetRow {
+            label: label.to_string(),
+            hp: Some(value),
+            icon: icon.to_string(),
+            icon_color: color.map(|c| c.to_string()),
+        });
+    }
+}
+
+fn compute_targets(raw: &Value) -> Option<ExternalTargets> {
+    let mut record = crate::uploader::UploadRecord::default();
+    crate::ei_runner::enrich_record_from_ei(&mut record, raw);
+    let mut rows: Vec<ExternalTargetRow> = Vec::new();
+
+    if let Some(v) = &record.twin_largos {
+        push_target(&mut rows, "Nikare", v.nikare_hp_left, "fa-person", None);
+        push_target(&mut rows, "Kenut", v.kenut_hp_left, "fa-person", None);
+    }
+    if let Some(v) = &record.eyes {
+        push_target(&mut rows, "Eye of Darkness", v.darkness_hp_left, "fa-eye", None);
+        push_target(&mut rows, "Eye of Despair", v.despair_hp_left, "fa-eye", None);
+    }
+    if let Some(v) = &record.voice_claw {
+        push_target(&mut rows, "Voice", v.voice_hp_left, "fa-person", None);
+        push_target(&mut rows, "Claw", v.claw_hp_left, "fa-person", None);
+    }
+    if let Some(v) = &record.aetherblade {
+        push_target(&mut rows, "Mai Trin", v.maitrin_hp_left, "fa-skull", None);
+        push_target(&mut rows, "Echo of Scarlet", v.scarlet_hp_left, "fa-person", None);
+    }
+    if let Some(v) = &record.ca_arms {
+        push_target(&mut rows, "Right Arm", Some(v.right_arm_hp_left), "fa-hand-fist", None);
+        push_target(&mut rows, "Left Arm", Some(v.left_arm_hp_left), "fa-hand-fist", None);
+    }
+    if let Some(v) = &record.old_lions_court {
+        if let Some(phase) = v.phase {
+            rows.push(ExternalTargetRow {
+                label: format!("Phase {}", phase),
+                hp: None,
+                icon: "fa-tower-observation".to_string(),
+                icon_color: None,
+            });
+        }
+        if v.cc_wipe {
+            rows.push(ExternalTargetRow {
+                label: "CC Wipe".to_string(),
+                hp: None,
+                icon: "fa-puzzle-piece".to_string(),
+                icon_color: None,
+            });
+        }
+        push_target(&mut rows, "Prototype Vermilion", v.vermilion_hp_left, "fa-robot", Some("#ef4444"));
+        push_target(&mut rows, "Prototype Arsenite", v.arsenite_hp_left, "fa-robot", Some("#22c55e"));
+        push_target(&mut rows, "Prototype Indigo", v.indigo_hp_left, "fa-robot", Some("#3b82f6"));
+    }
+
+    if rows.is_empty() { None } else { Some(ExternalTargets { rows }) }
+}
+
 fn normalized_name(name: &str) -> String {
     name.to_lowercase()
         .chars()
@@ -403,14 +516,23 @@ async fn raw_json_for(app: &AppHandle, service: Service, link_id: &str) -> Resul
     Ok(raw)
 }
 
-async fn warm_external_council(app: &AppHandle, service: Service, link_id: &str) {
-    if council_cache_get(app, service, link_id).is_some() {
+async fn warm_external_breakdowns(app: &AppHandle, service: Service, link_id: &str) {
+    let need_council = council_cache_get(app, service, link_id).is_none();
+    let need_targets = targets_cache_get(app, service, link_id).is_none();
+    if !need_council && !need_targets {
         return;
     }
     if let Ok(raw) = raw_json_for(app, service, link_id).await {
-        let success = raw.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-        if let Some(council) = compute_council(&raw, success) {
-            council_cache_put(app, service, link_id, &council);
+        if need_council {
+            let success = raw.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+            if let Some(council) = compute_council(&raw, success) {
+                council_cache_put(app, service, link_id, &council);
+            }
+        }
+        if need_targets {
+            if let Some(targets) = compute_targets(&raw) {
+                targets_cache_put(app, service, link_id, &targets);
+            }
         }
     }
 }
@@ -615,7 +737,7 @@ async fn add_log_from_url(app: &AppHandle, url: &str) -> Result<ExternalLogRecor
     let rec = fetch_record(app, service, &link_id, &canonical).await?;
     save_record(app, &rec)?;
     if rec.multi_boss {
-        warm_external_council(app, service, &link_id).await;
+        warm_external_breakdowns(app, service, &link_id).await;
     }
     Ok(rec)
 }
@@ -852,7 +974,7 @@ pub async fn refresh_external_log(app: AppHandle, id: String) -> Result<External
     }
     save_record(&app, &rec)?;
     if rec.multi_boss {
-        warm_external_council(&app, service, &link_id).await;
+        warm_external_breakdowns(&app, service, &link_id).await;
     }
     Ok(rec)
 }
@@ -899,6 +1021,38 @@ pub async fn get_external_multi_boss(
         Some(council) => {
             council_cache_put(&app, service, &link_id, &council);
             Ok(Some(council))
+        }
+        None => Ok(None),
+    }
+}
+
+#[command]
+pub async fn get_external_multi_targets(
+    app: AppHandle,
+    id: String,
+) -> Result<Option<ExternalTargets>, String> {
+    let (source, link_id) = {
+        let conn = db::open_db(&app)?;
+        conn.query_row(
+            "SELECT source, link_id FROM external_logs WHERE id = ?1",
+            [&id],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+        )
+        .map_err(|e| e.to_string())?
+    };
+    let service = match source.as_str() {
+        "dpsreport" => Service::DpsReport,
+        "wingman" => Service::Wingman,
+        _ => return Err("Unknown external log source.".to_string()),
+    };
+    if let Some(cached) = targets_cache_get(&app, service, &link_id) {
+        return Ok(Some(cached));
+    }
+    let raw = raw_json_for(&app, service, &link_id).await?;
+    match compute_targets(&raw) {
+        Some(targets) => {
+            targets_cache_put(&app, service, &link_id, &targets);
+            Ok(Some(targets))
         }
         None => Ok(None),
     }
@@ -1049,6 +1203,22 @@ mod tests {
         assert_eq!(rec.duration_sec, 310.503);
         assert_eq!(rec.num_players, 1);
         assert_eq!(rec.players[0].profession, "Mechanist");
+    }
+
+    #[test]
+    fn computes_external_target_rows() {
+        let raw = json!({
+            "targets": [
+                { "name": "Nikare", "healthPercentBurned": 80.0 },
+                { "name": "Kenut", "healthPercentBurned": 100.0 }
+            ]
+        });
+        let targets = compute_targets(&raw).unwrap();
+        assert_eq!(targets.rows.len(), 2);
+        assert_eq!(targets.rows[0].label, "Nikare");
+        assert_eq!(targets.rows[0].hp, Some(20.0));
+        assert_eq!(targets.rows[1].label, "Kenut");
+        assert_eq!(targets.rows[1].hp, Some(0.0));
     }
 
     #[test]
