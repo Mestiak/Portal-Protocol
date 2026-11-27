@@ -672,7 +672,7 @@
             { title: "Analyze shared log links", desc: "The new External tab reads GW2 Wingman links and shows a log card with the same badges, fight time, player count and HP styling as the regular feed. Check Stats opens the usual Stats modal, including its encounter-specific tabs." },
             { title: "Find on Wingman", desc: "Paste a dps.report link to see whether Wingman already has the fight. If it does, its log is added so you can open it with Check Stats. If it does not, the tab says so and offers an explicit Import button. Nothing is queued automatically and nothing is polled. Direct dps.report fetching is disabled for now because that site returned HTTP 403; the code stays behind a feature flag." },
             { title: "Saved workspace", desc: "External cards persist across restarts with their notes, source link and last-checked time. Raw Elite Insights JSON is cached on disk and parsed stats use the compact cache, so reopening Check Stats is fast. Service status shows an outage banner when Wingman is down." },
-            { title: "Card polish", desc: "Buttons have clear hover, press and loading states. Failed-log HP uses the red heart icon in the same row as fight time and player count. Not on Wingman yet is orange, Already queued on Wingman is bold white, and the Opening stats toast is green." }
+            { title: "Card polish", desc: "Buttons have clear hover, press and loading states. Failed-log HP uses the red heart icon in the same row as fight time and player count. Not on Wingman yet is orange, Already queued on Wingman is bold white, and the Opening stats toast is green. Deleting a saved log now collapses its card smoothly before it disappears." }
           ]
         },
         {

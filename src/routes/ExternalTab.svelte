@@ -45,6 +45,8 @@
   let error = $state("");
   let status = $state<ServiceStatus>({ dpsReport: "unknown", wingman: "unknown" });
   let confirmDelete = $state<string | null>(null);
+  let deletingIds = $state<Set<string>>(new Set());
+  let prefersReducedMotion = $state(false);
   let notesOpen = $state<Record<string, boolean>>({});
   let noteDraft = $state<Record<string, string>>({});
   let statsBusyId = $state<string | null>(null);
@@ -53,6 +55,7 @@
   let targetsByLog = $state<Record<string, ExternalTargets>>({});
 
   onMount(() => {
+    prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     void loadLogs();
     void loadStatus(false);
   });
@@ -306,13 +309,36 @@
     }
   }
 
+  function startDelete(log: ExtLog) {
+    if (deletingIds.has(log.id)) return;
+    const card = document.querySelector(`[data-ext-card-id="${CSS.escape(log.id)}"]`) as HTMLElement | null;
+    if (card) card.style.setProperty("--delete-height", `${card.offsetHeight}px`);
+    deletingIds = new Set(deletingIds).add(log.id);
+    confirmDelete = null;
+    void removeLog(log);
+  }
+
+  function finishDelete(log: ExtLog) {
+    if (!deletingIds.has(log.id)) return;
+    logs = logs.filter((l) => l.id !== log.id);
+    const next = new Set(deletingIds);
+    next.delete(log.id);
+    deletingIds = next;
+    onToast(`Removed ${log.bossName || "log"} from External logs.`, "success");
+  }
+
   async function removeLog(log: ExtLog) {
     try {
       await invoke("delete_external_log", { id: log.id });
-      logs = logs.filter((l) => l.id !== log.id);
-      confirmDelete = null;
-      onToast(`Removed ${log.bossName || "log"} from External logs.`, "success");
+      if (prefersReducedMotion) {
+        finishDelete(log);
+      } else {
+        setTimeout(() => finishDelete(log), 420);
+      }
     } catch (e) {
+      const next = new Set(deletingIds);
+      next.delete(log.id);
+      deletingIds = next;
       error = String(e);
       onToast(`Could not remove: ${String(e)}`, "default");
     }
@@ -441,7 +467,7 @@
       {#each logs as log (log.id)}
         {@const councilChips = log.multiBoss ? councilRows(log) : []}
         {@const targetRows = log.multiBoss ? (targetsByLog[log.id]?.rows ?? []) : []}
-        <div class="log-card card ext-card">
+        <div class="log-card card ext-card" data-ext-card-id={log.id} class:ext-deleting={deletingIds.has(log.id)} inert={deletingIds.has(log.id)} onanimationend={() => finishDelete(log)}>
           <div class="ext-head">
             <img class="ext-icon" src={bossIcon(log.bossName, log.numPlayers)} alt={log.bossName} />
             <div class="ext-body">
@@ -529,7 +555,7 @@
             <div class="ext-confirm">
               Remove this saved log and its notes? The original link is unaffected.
               <button class="ext-btn" onclick={() => { confirmDelete = null; }}>Cancel</button>
-              <button class="ext-btn ext-danger" onclick={() => void removeLog(log)}>Remove</button>
+              <button class="ext-btn ext-danger" onclick={() => startDelete(log)}>Remove</button>
             </div>
           {/if}
 
@@ -612,6 +638,11 @@
     transition: border-color .18s ease, box-shadow .18s ease, transform .18s cubic-bezier(.2,.8,.2,1);
   }
   .ext-card:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--accent) 30%, var(--border)); box-shadow: 0 6px 18px #0004; }
+  .ext-card.ext-deleting {
+    pointer-events: none; overflow: hidden; min-height: 0;
+    animation: ext-card-delete 280ms cubic-bezier(.4,0,.2,1) forwards;
+  }
+  .ext-card.ext-deleting:hover { transform: none; border-color: var(--border); box-shadow: none; }
   .ext-head { display: flex; align-items: flex-start; gap: 10px; }
   .ext-icon { width: 42px; height: 42px; border-radius: 8px; object-fit: cover; background: #0c0c0f; flex: none; }
   .ext-body { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
@@ -639,12 +670,18 @@
   .ext-note-del:hover { color: var(--fail); }
   .ext-note-empty { font-size: 10px; color: var(--text-muted); }
 
+  @keyframes ext-card-delete {
+    0% { max-height: var(--delete-height, 320px); opacity: 1; transform: scale(1) translateX(0); padding: 12px; }
+    45% { opacity: .55; transform: scale(.985) translateX(10px); }
+    100% { max-height: 0; opacity: 0; transform: scale(.97) translateX(18px); padding-top: 0; padding-bottom: 0; border-width: 0; margin-bottom: -10px; }
+  }
   @keyframes ext-reveal {
     from { opacity: 0; transform: translateY(6px); }
     to { opacity: 1; transform: none; }
   }
   @media (prefers-reduced-motion: reduce) {
     .ext-card, .ext-outage, .ext-added, .ext-confirm, .ext-notes, .ext-lookup-result { animation: none; }
+    .ext-card.ext-deleting { animation: none; opacity: .45; }
     .ext-status-btn, .ext-btn, .ext-card, .ext-input, .ext-note-del { transition: none; }
     .ext-status-btn:hover:not(:disabled), .ext-btn:hover:not(:disabled), .ext-card:hover, .ext-btn:active:not(:disabled) { transform: none; }
   }

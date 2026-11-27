@@ -25,7 +25,8 @@ fast. The tab shows an outage banner when Wingman is down, and buttons have
 clear hover, press and loading states. Failed-log HP uses the red heart icon in
 the same metadata row as fight time and player count. "Not on Wingman yet" is
 orange, "Already queued on Wingman" is bold white, and the Opening stats toast
-is green.
+is green. Deleting a saved log now collapses its card smoothly before it
+disappears.
 
 ## 🐉 Multi-Boss Encounters
 
