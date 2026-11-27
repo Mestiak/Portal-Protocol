@@ -16,6 +16,7 @@ use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use futures_util::StreamExt;
+use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, ACCEPT_LANGUAGE, USER_AGENT};
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -135,10 +136,19 @@ pub struct ExternalLogRecord {
     pub last_checked: String,
 }
 
+fn client_headers() -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    headers.insert(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.0.0 Safari/537.36"));
+    headers.insert(ACCEPT, HeaderValue::from_static("application/json,text/plain,*/*"));
+    headers.insert(ACCEPT_LANGUAGE, HeaderValue::from_static("en-US,en;q=0.9"));
+    headers
+}
+
 fn client() -> &'static Client {
     static CLIENT: OnceLock<Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
         Client::builder()
+            .default_headers(client_headers())
             .timeout(Duration::from_secs(30))
             .pool_max_idle_per_host(4)
             .build()
@@ -154,6 +164,7 @@ fn download_client() -> &'static Client {
     static CLIENT: OnceLock<Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
         Client::builder()
+            .default_headers(client_headers())
             .connect_timeout(Duration::from_secs(30))
             .timeout(Duration::from_secs(300))
             .pool_max_idle_per_host(4)
@@ -223,13 +234,11 @@ async fn fetch_json(url: &str, service: Service) -> Result<Value, String> {
     if !resp.status().is_success() {
         let status = resp.status();
         mark_fail(service);
-        let suffix = if service == Service::DpsReport { " The backup domain will be tried." } else { "" };
         return Err(format!(
-            "{} returned HTTP {}{}{}",
+            "{} returned HTTP {}{}",
             service.label(),
             status,
-            if status.as_u16() == 403 { " (access blocked)" } else if status.as_u16() >= 500 { " (server error)" } else { "" },
-            suffix
+            if status.as_u16() == 403 { " (access blocked)" } else if status.as_u16() >= 500 { " (server error)" } else { "" }
         ));
     }
     let mut buf: Vec<u8> = Vec::with_capacity(4 * 1024 * 1024);
@@ -259,20 +268,19 @@ async fn fetch_json(url: &str, service: Service) -> Result<Value, String> {
 }
 
 /// dps.report's primary domain is blocked in some regions (Cloudflare 403).
-/// Its own docs recommend b.dps.report as the HTTPS alternate, so retry there
-/// before surfacing a failure. Errors name both attempts.
+/// Its docs list three service domains, so try all of them in order before
+/// surfacing a failure. Errors name every attempt.
 async fn fetch_dps_json(link_id: &str) -> Result<Value, String> {
-    let primary = format!("{DPS_BASE}/getJson?permalink={link_id}");
-    match fetch_json(&primary, Service::DpsReport).await {
-        Ok(value) => Ok(value),
-        Err(primary_err) => {
-            let backup = format!("https://b.dps.report/getJson?permalink={link_id}");
-            match fetch_json(&backup, Service::DpsReport).await {
-                Ok(value) => Ok(value),
-                Err(backup_err) => Err(format!("{primary_err} Backup domain: {backup_err}")),
-            }
+    let domains = [DPS_BASE, "https://b.dps.report", "http://a.dps.report"];
+    let mut failures: Vec<String> = Vec::new();
+    for domain in domains {
+        let url = format!("{domain}/getJson?permalink={link_id}");
+        match fetch_json(&url, Service::DpsReport).await {
+            Ok(value) => return Ok(value),
+            Err(err) => failures.push(format!("{domain}: {err}")),
         }
     }
+    Err(failures.join(" | "))
 }
 
 fn cache_path(app: &AppHandle, service: Service, link_id: &str) -> Result<PathBuf, String> {
@@ -627,25 +635,20 @@ pub fn external_service_status() -> Value {
 /// tiny: Wingman's patch table, dps.report's front page.
 #[command]
 pub async fn check_external_services() -> Result<Value, String> {
-    let dps = client()
-        .get(DPS_BASE)
-        .send()
-        .await
-        .map(|r| r.status().is_success())
-        .unwrap_or(false);
-    // The primary domain is regionally blocked for some users; b.dps.report is
-    // the documented HTTPS alternate and is what the link fetch falls back to.
-    let backup = if dps {
-        true
-    } else {
-        client()
-            .get("https://b.dps.report")
+    let mut dps_ok = false;
+    for base in [DPS_BASE, "https://b.dps.report", "http://a.dps.report"] {
+        if client()
+            .get(base)
             .send()
             .await
             .map(|r| r.status().is_success())
             .unwrap_or(false)
-    };
-    if dps || backup {
+        {
+            dps_ok = true;
+            break;
+        }
+    }
+    if dps_ok {
         mark_ok(Service::DpsReport);
     } else {
         mark_fail(Service::DpsReport);
@@ -711,6 +714,17 @@ mod tests {
         assert_eq!(rec.duration_sec, 310.503);
         assert_eq!(rec.num_players, 1);
         assert_eq!(rec.players[0].profession, "Mechanist");
+    }
+
+    #[test]
+    #[ignore]
+    fn probe_dps_http_domain_fetch() {
+        let Ok(id) = std::env::var("PROBE_DPS_LINK") else { return; };
+        let url = format!("http://a.dps.report/getJson?permalink={id}");
+        match tokio::runtime::Runtime::new().unwrap().block_on(fetch_json(&url, Service::DpsReport)) {
+            Ok(v) => println!("PROBE ok: {} chars from a.dps.report", v.to_string().len()),
+            Err(e) => panic!("PROBE failed: {e}"),
+        }
     }
 
     #[test]
