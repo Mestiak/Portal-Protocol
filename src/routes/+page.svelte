@@ -7803,7 +7803,7 @@ async function testWebhook(wh: any) {
       </div>
     {:else if activeTab === "external"}
       <div style="display: flex; flex-direction: column; gap: inherit; height: 100%; overflow-y: auto;" in:fly={{ y: 6, duration: prefersReducedMotion ? 0 : 200 }} out:fade={{ duration: prefersReducedMotion ? 0 : 150 }}>
-        <ExternalTab onCheckStats={openExternalStats} bossIcon={getBossIcon} />
+        <ExternalTab onCheckStats={openExternalStats} onToast={showToast} bossIcon={getBossIcon} />
       </div>
     {:else if activeTab === "tracker"}
       <div style="display: flex; flex-direction: column; gap: inherit; height: 100%; overflow-y: auto;" in:fly={{ y: 6, duration: prefersReducedMotion ? 0 : 200 }} out:fade={{ duration: prefersReducedMotion ? 0 : 150 }}>
