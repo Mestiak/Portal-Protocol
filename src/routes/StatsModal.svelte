@@ -1152,6 +1152,7 @@
   $effect(() => {
     if (!permalink && !localPath && !external) return;
     const cacheKey = external ? `external:${external.id}` : (localPath || permalink);
+    const statsCacheFile = localPath || (external ? `external:${external.id}` : null);
     // Opening a different log resets the phase selection.
     selectedPhase = 0;
     const cachedMem = statsCache.get(cacheKey);
@@ -1172,9 +1173,9 @@
     activeTab = "statistics";
     inflight = (async () => {
       // Try compact cache first (instant)
-      if (localPath) {
+      if (statsCacheFile) {
         try {
-          const cached = await invoke("load_stats_cache", { filePath: localPath }) as { stats: any; mechanics: any; phases?: PhaseStat[] | null; defenseSupport?: DefenseSupportStats | null; skillMap?: Record<string, { name?: string; icon?: string }>; buffMap?: Record<string, { name?: string }>; version?: number } | null;
+          const cached = await invoke("load_stats_cache", { filePath: statsCacheFile }) as { stats: any; mechanics: any; phases?: PhaseStat[] | null; defenseSupport?: DefenseSupportStats | null; skillMap?: Record<string, { name?: string; icon?: string }>; buffMap?: Record<string, { name?: string }>; version?: number } | null;
           if (cached && cached.version === STATS_CACHE_VERSION) {
             stats = cached.stats;
             mechanics = cached.mechanics;
@@ -1284,8 +1285,8 @@
         }
         mechanics = mech;
         statsCache.set(cacheKey, { version: STATS_CACHE_VERSION, stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport, skillMap: (res.raw as any)?.skillMap, buffMap: (res.raw as any)?.buffMap });
-        if (localPath) {
-          try { await invoke("store_stats_cache", { filePath: localPath, data: { version: STATS_CACHE_VERSION, stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport, skillMap: (res.raw as any)?.skillMap, buffMap: (res.raw as any)?.buffMap } }); } catch (e) {}
+        if (statsCacheFile) {
+          try { await invoke("store_stats_cache", { filePath: statsCacheFile, data: { version: STATS_CACHE_VERSION, stats: res.stats, mechanics: mech, phases: phaseStats, defenseSupport, skillMap: (res.raw as any)?.skillMap, buffMap: (res.raw as any)?.buffMap } }); } catch (e) {}
         }
         // Non-Cerus fights only get the Boon Uptime tab — skip Statistics.
         // Harvest Temple defaults to Revealed if break data is present.
