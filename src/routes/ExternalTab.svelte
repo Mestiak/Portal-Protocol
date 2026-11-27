@@ -96,6 +96,13 @@
   }
 
   async function fetchDpsJson(id: string): Promise<any> {
+    try {
+      const value = await invoke<any>("fetch_dps_report_json", { linkId: id });
+      status = { ...status, dpsReport: "online" };
+      return value;
+    } catch (e) {
+      // The WebView is a secondary path; the command already tried every domain.
+    }
     const failures: string[] = [];
     for (const base of ["https://dps.report", "https://b.dps.report", "http://a.dps.report"]) {
       try {

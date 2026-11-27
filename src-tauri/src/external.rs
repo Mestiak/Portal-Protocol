@@ -493,6 +493,73 @@ pub async fn add_external_log(app: AppHandle, url: String) -> Result<ExternalLog
     Ok(rec)
 }
 
+/// Fetches dps.report JSON with curl.exe. On some Windows connections both the
+/// native reqwest client and WebView2 are 403'd while curl succeeds, so this is
+/// the primary path for dps.report links. The id is validated before use and
+/// curl is spawned directly (no shell), off the async runtime.
+async fn fetch_dps_json_via_curl(link_id: &str) -> Result<Value, String> {
+    if !valid_id(link_id) {
+        return Err("Invalid dps.report log id.".to_string());
+    }
+    let mut failures: Vec<String> = Vec::new();
+    for base in [DPS_BASE, "https://b.dps.report", "http://a.dps.report"] {
+        let url = format!("{base}/getJson?permalink={link_id}");
+        for binary in [r"C:\Windows\System32\curl.exe", "curl.exe"] {
+            let binary_path = binary.to_string();
+            let target = url.clone();
+            let output = tokio::task::spawn_blocking(move || {
+                let mut cmd = std::process::Command::new(&binary_path);
+                cmd.args(["-f", "-sS", "--max-time", "180", &target]);
+                #[cfg(windows)]
+                {
+                    use std::os::windows::process::CommandExt;
+                    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+                }
+                cmd.output()
+            })
+            .await
+            .map_err(|e| e.to_string())?;
+            match output {
+                Ok(out) if out.status.success() => {
+                    if out.stdout.len() as u64 > MAX_JSON_BYTES {
+                        failures.push(format!("{base}: response too large"));
+                        break;
+                    }
+                    match serde_json::from_slice::<Value>(&out.stdout) {
+                        Ok(value) => {
+                            if let Some(msg) = value.get("error").and_then(|v| v.as_str()) {
+                                failures.push(format!("{base}: {msg}"));
+                                break;
+                            }
+                            mark_ok(Service::DpsReport);
+                            return Ok(value);
+                        }
+                        Err(e) => {
+                            failures.push(format!("{base}: invalid JSON ({e})"));
+                            break;
+                        }
+                    }
+                }
+                Ok(out) => {
+                    let msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                    failures.push(format!("{base}: {}", if msg.is_empty() { "curl failed" } else { &msg }));
+                    break;
+                }
+                Err(e) => {
+                    failures.push(format!("{binary}: {e}"));
+                    continue;
+                }
+            }
+        }
+    }
+    Err(failures.join(" | "))
+}
+
+#[command]
+pub async fn fetch_dps_report_json(link_id: String) -> Result<Value, String> {
+    fetch_dps_json_via_curl(&link_id).await
+}
+
 /// Stores EI JSON fetched by the WebView. dps.report's bot protection rejects
 /// the app's native HTTP client on some connections even with browser headers,
 /// while the WebView fetch of the same URL succeeds. Rust still validates and
@@ -732,6 +799,16 @@ mod tests {
         assert_eq!(rec.duration_sec, 310.503);
         assert_eq!(rec.num_players, 1);
         assert_eq!(rec.players[0].profession, "Mechanist");
+    }
+
+    #[test]
+    #[ignore]
+    fn probe_dps_curl_fetch() {
+        let Ok(id) = std::env::var("PROBE_DPS_LINK") else { return; };
+        match tokio::runtime::Runtime::new().unwrap().block_on(fetch_dps_json_via_curl(&id)) {
+            Ok(v) => println!("PROBE ok: {} chars via curl", v.to_string().len()),
+            Err(e) => panic!("PROBE failed: {e}"),
+        }
     }
 
     #[test]

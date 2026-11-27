@@ -1540,6 +1540,7 @@ pub fn run() {
             load_stats_cache,
             store_stats_cache,
             external::add_external_log,
+            external::fetch_dps_report_json,
             external::store_external_raw,
             external::list_external_logs,
             external::refresh_external_log,
