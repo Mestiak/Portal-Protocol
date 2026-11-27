@@ -321,8 +321,8 @@
                 {/if}
               </div>
               <div class="ext-meta-line">
-                <span class="ext-detail">{fmtDuration(log.durationSec)}</span>
-                <span class="ext-detail">{log.numPlayers} players</span>
+                <span class="ext-detail"><i class="fa-solid fa-stopwatch" style="margin-right: 4px; font-size: 11px;"></i> {fmtDuration(log.durationSec)}</span>
+                <span class="ext-detail"><i class="fa-solid fa-users" style="margin-right: 4px; font-size: 11px;"></i> {log.numPlayers} players</span>
               </div>
               <div class="ext-source">
                 <span>{sourceLabel(log.source)}</span>
