@@ -504,7 +504,11 @@ async fn fetch_dps_json_via_curl(link_id: &str) -> Result<Value, String> {
     let mut failures: Vec<String> = Vec::new();
     for base in [DPS_BASE, "https://b.dps.report", "http://a.dps.report"] {
         let url = format!("{base}/getJson?permalink={link_id}");
-        for binary in [r"C:\Windows\System32\curl.exe", "curl.exe"] {
+        #[cfg(windows)]
+        let binaries: &[&str] = &[r"C:\Windows\System32\curl.exe", "curl.exe"];
+        #[cfg(not(windows))]
+        let binaries: &[&str] = &["curl", "curl.exe"];
+        for binary in binaries {
             let binary_path = binary.to_string();
             let target = url.clone();
             let output = tokio::task::spawn_blocking(move || {
