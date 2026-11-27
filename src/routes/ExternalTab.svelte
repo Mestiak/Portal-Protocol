@@ -1,4 +1,4 @@
-<!-- External logs: paste a dps.report or Wingman link, analyze it, keep notes. -->
+<!-- External logs: paste a supported log link, analyze it, keep notes. -->
 <script lang="ts">
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
@@ -12,6 +12,9 @@
     players: ExtPlayer[]; notes: ExtNote[]; createdAt: string; lastChecked: string;
   }
   interface ServiceStatus { dpsReport: string; wingman: string; }
+
+  // dps.report link fetching is disabled; Wingman links are supported.
+  const ENABLE_DPS_REPORT_LINKS = false;
 
   let {
     onCheckStats,
@@ -67,6 +70,9 @@
   }
 
   function statusLabel(): string {
+    if (!ENABLE_DPS_REPORT_LINKS) {
+      return status.wingman === "offline" ? "Wingman down · dps.report links disabled" : "dps.report links disabled · Wingman available";
+    }
     if (status.dpsReport === "offline" && status.wingman === "offline") return "Both services down";
     if (status.dpsReport === "offline") return "dps.report down · Wingman available";
     if (status.wingman === "offline") return "Wingman down · dps.report available";
@@ -124,6 +130,11 @@
   async function addLog() {
     const url = linkInput.trim();
     if (!url || busy) return;
+    if (dpsLinkId(url) && !ENABLE_DPS_REPORT_LINKS) {
+      error = "dps.report links are temporarily disabled in this build. Use a GW2 Wingman log link.";
+      onToast(error, "default");
+      return;
+    }
     busy = true;
     error = "";
     try {
@@ -160,6 +171,11 @@
     busy = true;
     error = "";
     try {
+      if (log.source === "dpsreport" && !ENABLE_DPS_REPORT_LINKS) {
+        error = "dps.report links are temporarily disabled in this build.";
+        onToast(error, "default");
+        return;
+      }
       let rec: ExtLog;
       if (log.source === "dpsreport") {
         const raw = await fetchDpsJson(log.linkId);
@@ -238,7 +254,7 @@
   <div class="ext-intro">
     <div>
       <h2>External logs</h2>
-      <p class="ext-hint">Paste a dps.report or GW2 Wingman link to read its log here. Saved logs stay in this tab with their notes — they are not added to your upload history or analytics.</p>
+      <p class="ext-hint">Paste a GW2 Wingman log link to read it here. dps.report links are temporarily disabled in this build. Saved logs stay in this tab with their notes — they are not added to your upload history or analytics.</p>
     </div>
     <div class="ext-intro-actions">
       <span class="ext-status-text">{statusLabel()}</span>
@@ -248,7 +264,7 @@
     </div>
   </div>
 
-  {#if status.dpsReport === "offline" || status.wingman === "offline"}
+  {#if (ENABLE_DPS_REPORT_LINKS && status.dpsReport === "offline") || status.wingman === "offline"}
     <div class="ext-outage" role="status">
       <i class="fa-solid fa-triangle-exclamation"></i>
       <div>
@@ -257,7 +273,7 @@
         {:else if status.dpsReport === "offline"}
           <strong>dps.report appears to be down.</strong> Wingman links still work; dps.report links will fail until it recovers. Already-cached logs still open.
         {:else}
-          <strong>GW2 Wingman appears to be down.</strong> dps.report links still work; Wingman links will fail until it recovers. Already-cached logs still open.
+          <strong>GW2 Wingman appears to be down.</strong> {ENABLE_DPS_REPORT_LINKS ? "dps.report links still work; " : ""}Wingman links will fail until it recovers. Already-cached logs still open.
         {/if}
       </div>
     </div>
@@ -266,7 +282,7 @@
   <div class="ext-paste card">
     <label class="ext-label" for="ext-link">Log link</label>
     <div class="ext-paste-row">
-      <input id="ext-link" class="ext-input" placeholder="https://dps.report/… or https://gw2wingman.nevermindcreations.de/log/…"
+      <input id="ext-link" class="ext-input" placeholder="https://gw2wingman.nevermindcreations.de/log/…"
              value={linkInput}
              oninput={(e) => { linkInput = e.currentTarget.value; }}
              onkeydown={(e) => { if (e.key === "Enter") void addLog(); }} />
