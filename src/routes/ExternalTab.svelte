@@ -29,6 +29,7 @@
   interface WingmanLookup { found: boolean; inQueue: boolean; targetURL?: string; linkId?: string; }
 
   let logs = $state<ExtLog[]>([]);
+  let actionMode = $state<"add" | "find">("add");
   let linkInput = $state("");
   let lookupInput = $state("");
   let lookupBusy = $state(false);
@@ -88,7 +89,7 @@
   function openStats(log: ExtLog) {
     if (statsBusyId) return;
     statsBusyId = log.id;
-    onToast(`Opening stats for ${log.bossName || "this log"}…`);
+    onToast(`Opening stats for ${log.bossName || "this log"}…`, "success");
     onCheckStats(log);
     setTimeout(() => { if (statsBusyId === log.id) statsBusyId = null; }, 900);
   }
@@ -332,43 +333,54 @@
     </div>
   {/if}
 
-  <div class="ext-paste card">
-    <label class="ext-label" for="wingman-lookup">Find on Wingman</label>
-    <p class="ext-hint">Have only a dps.report link? Look up its Wingman copy, then open it with Check Stats.</p>
-    <div class="ext-paste-row">
-      <input id="wingman-lookup" class="ext-input" placeholder="https://dps.report/…"
-             value={lookupInput}
-             oninput={(e) => { lookupInput = e.currentTarget.value; lookupResult = null; }}
-             onkeydown={(e) => { if (e.key === "Enter") void findWingmanLog(); }} />
-      <button class="ext-btn ext-primary" onclick={() => void findWingmanLog()} disabled={lookupBusy || busy}>
-        <i class="fa-solid {lookupBusy ? 'fa-spinner fa-spin' : 'fa-magnifying-glass'}"></i> {lookupBusy ? "Searching…" : "Find Wingman log"}
-      </button>
-    </div>
-    {#if lookupResult && !lookupResult.found}
-      <div class="ext-lookup-result">
-        <span>{lookupResult.inQueue ? "Already queued on Wingman — check again in a few minutes." : "Not on Wingman yet."}</span>
-        {#if !lookupResult.inQueue}
-          <button class="ext-btn" onclick={() => void importWingmanLog()} disabled={lookupBusy}>Import to Wingman</button>
-        {/if}
-        <button class="ext-btn" onclick={() => void findWingmanLog()} disabled={lookupBusy}>Check again</button>
-      </div>
-    {/if}
+  <div class="ext-mode-row">
+    <button class="ext-btn" class:ext-primary={actionMode === "add"} onclick={() => { actionMode = "add"; error = ""; }}>
+      <i class="fa-solid fa-plus"></i> Add Log
+    </button>
+    <button class="ext-btn" class:ext-primary={actionMode === "find"} onclick={() => { actionMode = "find"; error = ""; }}>
+      <i class="fa-solid fa-magnifying-glass"></i> Find on Wingman
+    </button>
   </div>
 
-  <div class="ext-paste card">
-    <label class="ext-label" for="ext-link">Log link</label>
-    <div class="ext-paste-row">
-      <input id="ext-link" class="ext-input" placeholder="https://gw2wingman.nevermindcreations.de/log/…"
-             value={linkInput}
-             oninput={(e) => { linkInput = e.currentTarget.value; }}
-             onkeydown={(e) => { if (e.key === "Enter") void addLog(); }} />
-      <button class="ext-btn ext-primary" onclick={() => void addLog()} disabled={busy || !linkInput.trim()}>
-        <i class="fa-solid {busy ? 'fa-spinner fa-spin' : 'fa-plus'}"></i> Add log
-      </button>
+  {#if actionMode === "find"}
+    <div class="ext-paste card">
+      <label class="ext-label" for="wingman-lookup">dps.report link</label>
+      <p class="ext-hint">Look up its Wingman copy, then open it with Check Stats.</p>
+      <div class="ext-paste-row">
+        <input id="wingman-lookup" class="ext-input" placeholder="https://dps.report/…"
+               value={lookupInput}
+               oninput={(e) => { lookupInput = e.currentTarget.value; lookupResult = null; }}
+               onkeydown={(e) => { if (e.key === "Enter") void findWingmanLog(); }} />
+        <button class="ext-btn ext-primary" onclick={() => void findWingmanLog()} disabled={lookupBusy || busy}>
+          <i class="fa-solid {lookupBusy ? 'fa-spinner fa-spin' : 'fa-magnifying-glass'}"></i> {lookupBusy ? "Searching…" : "Find Wingman log"}
+        </button>
+      </div>
+      {#if lookupResult && !lookupResult.found}
+        <div class="ext-lookup-result">
+          <span class={lookupResult.inQueue ? "ext-strong-text" : "ext-warn-text"}>{lookupResult.inQueue ? "Already queued on Wingman — check again in a few minutes." : "Not on Wingman yet."}</span>
+          {#if !lookupResult.inQueue}
+            <button class="ext-btn" onclick={() => void importWingmanLog()} disabled={lookupBusy}>Import to Wingman</button>
+          {/if}
+          <button class="ext-btn" onclick={() => void findWingmanLog()} disabled={lookupBusy}>Check again</button>
+        </div>
+      {/if}
     </div>
-    {#if addNotice}<div class="ext-added" role="status"><i class="fa-solid fa-circle-check"></i> {addNotice}</div>{/if}
-    {#if error}<div class="ext-error" role="alert">{error}</div>{/if}
-  </div>
+  {:else}
+    <div class="ext-paste card">
+      <label class="ext-label" for="ext-link">Wingman log link</label>
+      <div class="ext-paste-row">
+        <input id="ext-link" class="ext-input" placeholder="https://gw2wingman.nevermindcreations.de/log/…"
+               value={linkInput}
+               oninput={(e) => { linkInput = e.currentTarget.value; }}
+               onkeydown={(e) => { if (e.key === "Enter") void addLog(); }} />
+        <button class="ext-btn ext-primary" onclick={() => void addLog()} disabled={busy || !linkInput.trim()}>
+          <i class="fa-solid {busy ? 'fa-spinner fa-spin' : 'fa-plus'}"></i> Add log
+        </button>
+      </div>
+      {#if addNotice}<div class="ext-added" role="status"><i class="fa-solid fa-circle-check"></i> {addNotice}</div>{/if}
+    </div>
+  {/if}
+  {#if error}<div class="ext-error" role="alert">{error}</div>{/if}
 
   {#if logs.length === 0}
     <div class="ext-empty card">No external logs yet. Paste a link above to analyze one.</div>
@@ -397,11 +409,11 @@
                 {/if}
               </div>
               <div class="ext-meta-line">
-                <span class="ext-detail"><i class="fa-solid fa-stopwatch" style="margin-right: 4px; font-size: 11px;"></i> {fmtDuration(log.durationSec)}</span>
-                <span class="ext-detail"><i class="fa-solid fa-users" style="margin-right: 4px; font-size: 11px;"></i> {log.numPlayers} players</span>
                 {#if log.success === false && log.hpLeft != null}
                   <span class="ext-detail" style="color:#f87171; font-weight:700;"><i class="fa-solid fa-heart-crack" style="margin-right: 4px; font-size: 11px;"></i> {log.hpLeft.toFixed(2)}% HP Left</span>
                 {/if}
+                <span class="ext-detail"><i class="fa-solid fa-stopwatch" style="margin-right: 4px; font-size: 11px;"></i> {fmtDuration(log.durationSec)}</span>
+                <span class="ext-detail"><i class="fa-solid fa-users" style="margin-right: 4px; font-size: 11px;"></i> {log.numPlayers} players</span>
               </div>
               <div class="ext-source">
                 <span>{sourceLabel(log.source)}</span>
@@ -487,6 +499,9 @@
   }
   .ext-outage i { color: var(--warn); margin-top: 2px; }
   .ext-paste { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .ext-mode-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .ext-warn-text { color: var(--warn); font-weight: 800; }
+  .ext-strong-text { color: #fff; font-weight: 800; }
   .ext-lookup-result { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 10px; color: var(--text-muted); animation: ext-reveal 160ms cubic-bezier(.2,.8,.2,1) backwards; }
   .ext-label { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); font-weight: 800; }
   .ext-paste-row, .ext-note-row { display: flex; gap: 8px; }
