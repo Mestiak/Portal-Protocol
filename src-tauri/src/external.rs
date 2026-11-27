@@ -129,6 +129,7 @@ pub struct ExternalLogRecord {
     pub duration_sec: f64,
     pub group_dps: f64,
     pub hp_left: Option<f64>,
+    pub multi_boss: bool,
     pub num_players: usize,
     pub players: Vec<ExternalPlayer>,
     pub notes: Vec<ExternalNote>,
@@ -315,6 +316,105 @@ fn cache_put(app: &AppHandle, service: Service, link_id: &str, value: &Value) {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExternalCouncil {
+    pub phases: Vec<crate::evtc_parser::DragonPhase>,
+    pub hp: Vec<crate::evtc_parser::DragonHp>,
+}
+
+fn council_cache_path(app: &AppHandle, service: Service, link_id: &str) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| e.to_string())?
+        .join("external_cache");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let safe: String = link_id
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect();
+    Ok(dir.join(format!("{}_{}_multi.json.gz", service.key(), safe)))
+}
+
+fn council_cache_get(app: &AppHandle, service: Service, link_id: &str) -> Option<ExternalCouncil> {
+    let file = File::open(council_cache_path(app, service, link_id).ok()?).ok()?;
+    let mut decoder = GzDecoder::new(file);
+    let mut text = String::new();
+    decoder.read_to_string(&mut text).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+fn council_cache_put(app: &AppHandle, service: Service, link_id: &str, value: &ExternalCouncil) {
+    if let Ok(path) = council_cache_path(app, service, link_id) {
+        if let Ok(file) = File::create(path) {
+            let mut encoder = GzEncoder::new(file, Compression::fast());
+            let _ = serde_json::to_writer(&mut encoder, value);
+            let _ = encoder.finish();
+        }
+    }
+}
+
+fn normalized_name(name: &str) -> String {
+    name.to_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect()
+}
+
+fn is_dragonvoid_name(name: &str) -> bool {
+    let c = normalized_name(name);
+    matches!(
+        c.as_str(),
+        "void" | "dragonvoid" | "thedragonvoid" | "harvesttemple" | "harvesttemplecm"
+    )
+}
+
+/// Fights whose single-boss HP number is not meaningful: the regular log cards
+/// suppress it and show a per-target pattern instead.
+fn is_multi_boss_name(name: &str) -> bool {
+    let c = normalized_name(name);
+    is_dragonvoid_name(name)
+        || matches!(
+            c.as_str(),
+            "twinlargos" | "nikare" | "kenut" | "eyes" | "eyesoffate" | "voiceandclaw"
+                | "voice" | "claw" | "conjuredamalgamate" | "aetherbladehideout"
+                | "oldlionscourt" | "prototypevermilion" | "prototypeindigo" | "prototypegold"
+        )
+}
+
+fn compute_council(raw: &Value, success: bool) -> Option<ExternalCouncil> {
+    Some(ExternalCouncil {
+        phases: crate::evtc_parser::dragon_phase_full_with_adds(raw, success, None)?,
+        hp: crate::evtc_parser::dragon_phase_state_with_success(raw, Some(success))?,
+    })
+}
+
+async fn raw_json_for(app: &AppHandle, service: Service, link_id: &str) -> Result<Value, String> {
+    if let Some(raw) = cache_get(app, service, link_id) {
+        return Ok(raw);
+    }
+    let raw = match service {
+        Service::Wingman => {
+            fetch_json(&format!("{WINGMAN_BASE}/api/getFullJson/{link_id}"), service).await?
+        }
+        Service::DpsReport => fetch_dps_json(link_id).await?,
+    };
+    cache_put(app, service, link_id, &raw);
+    Ok(raw)
+}
+
+async fn warm_external_council(app: &AppHandle, service: Service, link_id: &str) {
+    if council_cache_get(app, service, link_id).is_some() {
+        return;
+    }
+    if let Ok(raw) = raw_json_for(app, service, link_id).await {
+        let success = raw.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+        if let Some(council) = compute_council(&raw, success) {
+            council_cache_put(app, service, link_id, &council);
+        }
+    }
+}
+
 fn players_from(raw: &Value) -> Vec<ExternalPlayer> {
     raw.get("players")
         .and_then(|v| v.as_array())
@@ -346,18 +446,21 @@ fn record_from_row(row: &rusqlite::Row<'_>) -> Result<ExternalLogRecord, rusqlit
     let raw_notes: String = row.get("notes")?;
     let players: Vec<ExternalPlayer> = serde_json::from_str(&raw_players).unwrap_or_default();
     let notes = parse_notes(&raw_notes);
+    let boss_name: String = row.get::<_, Option<String>>("boss_name")?.unwrap_or_default();
+    let multi_boss = is_multi_boss_name(&boss_name);
     Ok(ExternalLogRecord {
         id: row.get("id")?,
         source: row.get("source")?,
         link_id: row.get("link_id")?,
         url: row.get("url")?,
-        boss_name: row.get::<_, Option<String>>("boss_name")?.unwrap_or_default(),
+        boss_name,
         success: row.get::<_, Option<i64>>("success")?.map(|v| v != 0),
         is_cm: row.get::<_, Option<i64>>("is_cm")?.unwrap_or(0) != 0,
         is_lcm: row.get::<_, Option<i64>>("is_lcm")?.unwrap_or(0) != 0,
         duration_sec: row.get::<_, Option<f64>>("duration_sec")?.unwrap_or(0.0),
         group_dps: row.get::<_, Option<f64>>("group_dps")?.unwrap_or(0.0),
         hp_left: row.get("hp_left")?,
+        multi_boss,
         num_players: players.len(),
         players,
         notes,
@@ -383,7 +486,14 @@ fn build_record(service: Service, link_id: &str, url: &str, raw: &Value) -> Resu
     let (boss_name, success, is_cm, is_lcm, duration_sec, group_dps, hp_left) = match service {
         Service::Wingman => {
             let trigger = raw.get("triggerID").and_then(|v| v.as_u64()).unwrap_or(0) as u16;
-            let name = crate::evtc_parser::get_boss_name_from_id(trigger);
+            let fight_name = raw.get("fightName").and_then(|v| v.as_str()).unwrap_or("");
+            let name = if trigger == 24375
+                || normalized_name(fight_name).contains("harvesttemple")
+            {
+                "The Dragonvoid".to_string()
+            } else {
+                crate::evtc_parser::get_boss_name_from_id(trigger)
+            };
             (
                 if name.is_empty() {
                     link_id.replace('_', " ")
@@ -400,8 +510,16 @@ fn build_record(service: Service, link_id: &str, url: &str, raw: &Value) -> Resu
         }
         Service::DpsReport => {
             let stats = crate::uploader::shape_log_stats(raw);
+            let fight_name = raw.get("fightName").and_then(|v| v.as_str()).unwrap_or("");
+            let boss_name = if normalized_name(fight_name).contains("harvesttemple")
+                || is_dragonvoid_name(&stats.boss_name)
+            {
+                "The Dragonvoid".to_string()
+            } else {
+                stats.boss_name
+            };
             (
-                stats.boss_name,
+                boss_name,
                 raw.get("success").and_then(|v| v.as_bool()),
                 raw.get("isCM").and_then(|v| v.as_bool()).unwrap_or(false),
                 raw.get("isLegendaryCM").and_then(|v| v.as_bool()).unwrap_or(false),
@@ -415,6 +533,7 @@ fn build_record(service: Service, link_id: &str, url: &str, raw: &Value) -> Resu
         }
     };
     let now = Utc::now().to_rfc3339();
+    let multi_boss = is_multi_boss_name(&boss_name);
     Ok(ExternalLogRecord {
         id: format!("{}:{}", service.key(), link_id),
         source: service.key().to_string(),
@@ -427,6 +546,7 @@ fn build_record(service: Service, link_id: &str, url: &str, raw: &Value) -> Resu
         duration_sec,
         group_dps,
         hp_left,
+        multi_boss,
         num_players: players.len(),
         players,
         notes: Vec::new(),
@@ -494,6 +614,9 @@ async fn add_log_from_url(app: &AppHandle, url: &str) -> Result<ExternalLogRecor
     }
     let rec = fetch_record(app, service, &link_id, &canonical).await?;
     save_record(app, &rec)?;
+    if rec.multi_boss {
+        warm_external_council(app, service, &link_id).await;
+    }
     Ok(rec)
 }
 
@@ -728,6 +851,9 @@ pub async fn refresh_external_log(app: AppHandle, id: String) -> Result<External
         rec.url = existing.url;
     }
     save_record(&app, &rec)?;
+    if rec.multi_boss {
+        warm_external_council(&app, service, &link_id).await;
+    }
     Ok(rec)
 }
 
@@ -743,6 +869,39 @@ pub fn delete_external_log(app: AppHandle, id: String) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+#[command]
+pub async fn get_external_multi_boss(
+    app: AppHandle,
+    id: String,
+) -> Result<Option<ExternalCouncil>, String> {
+    let (source, link_id) = {
+        let conn = db::open_db(&app)?;
+        conn.query_row(
+            "SELECT source, link_id FROM external_logs WHERE id = ?1",
+            [&id],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+        )
+        .map_err(|e| e.to_string())?
+    };
+    let service = match source.as_str() {
+        "dpsreport" => Service::DpsReport,
+        "wingman" => Service::Wingman,
+        _ => return Err("Unknown external log source.".to_string()),
+    };
+    if let Some(cached) = council_cache_get(&app, service, &link_id) {
+        return Ok(Some(cached));
+    }
+    let raw = raw_json_for(&app, service, &link_id).await?;
+    let success = raw.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+    match compute_council(&raw, success) {
+        Some(council) => {
+            council_cache_put(&app, service, &link_id, &council);
+            Ok(Some(council))
+        }
+        None => Ok(None),
+    }
 }
 
 #[command]
@@ -890,6 +1049,41 @@ mod tests {
         assert_eq!(rec.duration_sec, 310.503);
         assert_eq!(rec.num_players, 1);
         assert_eq!(rec.players[0].profession, "Mechanist");
+    }
+
+    #[test]
+    fn maps_wingman_harvest_temple_name() {
+        let raw = json!({
+            "triggerID": 24375,
+            "fightName": "Harvest Temple CM",
+            "success": false,
+            "players": []
+        });
+        let rec = build_record(
+            Service::Wingman,
+            "SwWf-20261126-000925_void",
+            "https://gw2wingman.nevermindcreations.de/log/SwWf-20261126-000925_void",
+            &raw,
+        )
+        .unwrap();
+        assert_eq!(rec.boss_name, "The Dragonvoid");
+        assert!(rec.multi_boss);
+    }
+
+    #[test]
+    #[ignore]
+    fn probe_council_from_ei_json_file() {
+        let Ok(path) = std::env::var("PROBE_EI_JSON") else { return; };
+        let text = std::fs::read_to_string(path).unwrap();
+        let raw: Value = serde_json::from_str(&text).unwrap();
+        let success = raw.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+        let council = compute_council(&raw, success).unwrap();
+        for phase in &council.phases {
+            println!("PROBE {}: cleared={}", phase.key, phase.cleared);
+        }
+        for hp in &council.hp {
+            println!("PROBE hp {}: {} died={}", hp.key, hp.hp_left, hp.died);
+        }
     }
 
     #[test]

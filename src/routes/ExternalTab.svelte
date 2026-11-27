@@ -8,9 +8,13 @@
   interface ExtLog {
     id: string; source: string; linkId: string; url: string; bossName: string;
     success: boolean | null; isCm: boolean; isLcm: boolean; durationSec: number;
-    groupDps: number; hpLeft: number | null; numPlayers: number;
+    groupDps: number; hpLeft: number | null; multiBoss: boolean; numPlayers: number;
     players: ExtPlayer[]; notes: ExtNote[]; createdAt: string; lastChecked: string;
   }
+  interface CouncilPhase { key: string; name: string; icon: string | null; kind: string; cleared: boolean; order: number; raw: string; }
+  interface CouncilHp { key: string; name: string; hp_left: number; died: boolean; order: number; icon: string | null; }
+  interface ExternalCouncil { phases: CouncilPhase[]; hp: CouncilHp[]; }
+  interface CouncilRow { key: string; name: string; icon: string; kind: string; cleared: boolean; hp: number | null; died: boolean; }
   interface ServiceStatus { dpsReport: string; wingman: string; }
 
   // dps.report link fetching is disabled; Wingman links are supported.
@@ -43,6 +47,7 @@
   let noteDraft = $state<Record<string, string>>({});
   let statsBusyId = $state<string | null>(null);
   let addNotice = $state("");
+  let councilByLog = $state<Record<string, ExternalCouncil>>({});
 
   onMount(() => {
     void loadLogs();
@@ -52,9 +57,41 @@
   async function loadLogs() {
     try {
       logs = await invoke<ExtLog[]>("list_external_logs");
+      for (const log of logs) if (log.multiBoss) void loadCouncil(log.id);
     } catch (e) {
       error = `Could not load saved logs: ${String(e)}`;
     }
+  }
+
+  async function loadCouncil(id: string) {
+    if (councilByLog[id]) return;
+    try {
+      const council = await invoke<ExternalCouncil | null>("get_external_multi_boss", { id });
+      if (council) councilByLog = { ...councilByLog, [id]: council };
+    } catch {
+      // Council data is optional; the card still shows its other details.
+    }
+  }
+
+  function councilRows(log: ExtLog): CouncilRow[] {
+    const council = councilByLog[log.id];
+    if (!council) return [];
+    const hpByKey = new Map(council.hp.map((h) => [h.key, h]));
+    return council.phases.map((p) => {
+      const hp = hpByKey.get(p.key) ?? null;
+      const isDragon = p.kind === "dragon";
+      const died = isDragon ? p.cleared : hp?.died ?? false;
+      const hpLeft = isDragon ? (p.cleared ? 0 : hp?.hp_left ?? 100) : hp?.hp_left ?? null;
+      return {
+        key: p.key,
+        name: p.name,
+        icon: p.icon ? `/bosses/${p.icon}.png` : `/bosses/the${p.key}void.png`,
+        kind: p.kind,
+        cleared: p.cleared,
+        hp: hpLeft,
+        died,
+      };
+    });
   }
 
   async function loadStatus(probe: boolean) {
@@ -158,6 +195,7 @@
         rec = await invoke<ExtLog>("add_external_log", { url });
       }
       logs = [rec, ...logs.filter((l) => l.id !== rec.id)];
+      if (rec.multiBoss) void loadCouncil(rec.id);
       linkInput = "";
       addNotice = `Added ${rec.bossName || "log"} — ready to analyze.`;
       setTimeout(() => { addNotice = ""; }, 2600);
@@ -188,6 +226,7 @@
       if (result.found && result.targetURL) {
         const rec = await invoke<ExtLog>("add_external_log", { url: result.targetURL });
         logs = [rec, ...logs.filter((l) => l.id !== rec.id)];
+        if (rec.multiBoss) void loadCouncil(rec.id);
         lookupInput = "";
         onToast(`Found and added ${rec.bossName || "log"} from Wingman.`, "success");
       } else if (result.inQueue) {
@@ -243,6 +282,7 @@
         rec = await invoke<ExtLog>("refresh_external_log", { id: log.id });
       }
       logs = logs.map((l) => (l.id === rec.id ? rec : l));
+      if (rec.multiBoss) void loadCouncil(rec.id);
       onToast(`Refreshed ${rec.bossName || "log"}.`, "success");
       await loadStatus(false);
     } catch (e) {
@@ -387,6 +427,7 @@
   {:else}
     <div class="ext-list">
       {#each logs as log (log.id)}
+        {@const councilChips = log.multiBoss ? councilRows(log) : []}
         <div class="log-card card ext-card">
           <div class="ext-head">
             <img class="ext-icon" src={bossIcon(log.bossName, log.numPlayers)} alt={log.bossName} />
@@ -409,12 +450,32 @@
                 {/if}
               </div>
               <div class="ext-meta-line">
-                {#if log.success === false && log.hpLeft != null}
+                {#if log.success === false && log.hpLeft != null && !log.multiBoss}
                   <span class="ext-detail" style="color:#f87171; font-weight:700;"><i class="fa-solid fa-heart-crack" style="margin-right: 4px; font-size: 11px;"></i> {log.hpLeft.toFixed(2)}% HP Left</span>
                 {/if}
                 <span class="ext-detail"><i class="fa-solid fa-stopwatch" style="margin-right: 4px; font-size: 11px;"></i> {fmtDuration(log.durationSec)}</span>
                 <span class="ext-detail"><i class="fa-solid fa-users" style="margin-right: 4px; font-size: 11px;"></i> {log.numPlayers} players</span>
               </div>
+              {#if councilChips.length}
+                <div class="dragon-council merged" aria-label="Dragon Council">
+                  {#each councilChips as chip, i (chip.key)}
+                    <div
+                      class="dragon-chip tk-{chip.kind}"
+                      class:cleared={chip.cleared}
+                      class:wiped={!chip.cleared}
+                      style="--i:{i}"
+                      title="{chip.name}: {chip.cleared ? 'Cleared' : 'Not cleared'}{chip.hp != null ? ' · ' + (chip.died ? 'Defeated' : chip.hp.toFixed(1) + '% HP left') : ''}"
+                    >
+                      <img class="dragon-icon" src={chip.icon} alt={chip.name} onerror={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden'; }} />
+                      {#if chip.hp != null}
+                        <span class="dragon-hp-text">{chip.died ? 'Defeated' : chip.hp.toFixed(1) + '% left'}</span>
+                      {/if}
+                      <span class="dragon-name">{chip.name}</span>
+                      <span class="phase-mark"><i class="fa-solid {chip.cleared ? 'fa-check' : 'fa-xmark'}"></i></span>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
               <div class="ext-source">
                 <span>{sourceLabel(log.source)}</span>
                 <span class="ext-dot">·</span>

@@ -1548,6 +1548,7 @@ pub fn run() {
             external::refresh_external_log,
             external::delete_external_log,
             external::get_external_log_full,
+            external::get_external_multi_boss,
             external::add_external_note,
             external::delete_external_note,
             external::external_service_status,

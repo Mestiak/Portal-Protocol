@@ -2533,8 +2533,9 @@
     nikare: "twinlargos",
     kenut: "twinlargos",
     // Harvest Temple: "The Dragonvoid" is the in-game NPC name from EVTC;
-    // canonicalize to the "dragonvoid" local icon asset.
+    // Wingman's trigger 24375 is reported as plain "Void".
     thedragonvoid: "dragonvoid",
+    void: "dragonvoid",
   };
 
   /** Return an external (dps.report / imgur / GW2 render) icon URL as-is.
