@@ -223,9 +223,13 @@ async fn fetch_json(url: &str, service: Service) -> Result<Value, String> {
     if !resp.status().is_success() {
         let status = resp.status();
         mark_fail(service);
+        let suffix = if service == Service::DpsReport { " The backup domain will be tried." } else { "" };
         return Err(format!(
-            "{} returned HTTP {status}. The service may be down or rate-limiting requests.",
-            service.label()
+            "{} returned HTTP {}{}{}",
+            service.label(),
+            status,
+            if status.as_u16() == 403 { " (access blocked)" } else if status.as_u16() >= 500 { " (server error)" } else { "" },
+            suffix
         ));
     }
     let mut buf: Vec<u8> = Vec::with_capacity(4 * 1024 * 1024);
@@ -252,6 +256,23 @@ async fn fetch_json(url: &str, service: Service) -> Result<Value, String> {
     }
     mark_ok(service);
     Ok(value)
+}
+
+/// dps.report's primary domain is blocked in some regions (Cloudflare 403).
+/// Its own docs recommend b.dps.report as the HTTPS alternate, so retry there
+/// before surfacing a failure. Errors name both attempts.
+async fn fetch_dps_json(link_id: &str) -> Result<Value, String> {
+    let primary = format!("{DPS_BASE}/getJson?permalink={link_id}");
+    match fetch_json(&primary, Service::DpsReport).await {
+        Ok(value) => Ok(value),
+        Err(primary_err) => {
+            let backup = format!("https://b.dps.report/getJson?permalink={link_id}");
+            match fetch_json(&backup, Service::DpsReport).await {
+                Ok(value) => Ok(value),
+                Err(backup_err) => Err(format!("{primary_err} Backup domain: {backup_err}")),
+            }
+        }
+    }
 }
 
 fn cache_path(app: &AppHandle, service: Service, link_id: &str) -> Result<PathBuf, String> {
@@ -413,7 +434,7 @@ async fn fetch_record(app: &AppHandle, service: Service, link_id: &str, url: &st
             build_record(service, link_id, url, &meta)
         }
         Service::DpsReport => {
-            let raw = fetch_json(&format!("{DPS_BASE}/getJson?permalink={link_id}"), service).await?;
+            let raw = fetch_dps_json(link_id).await?;
             cache_put(app, service, link_id, &raw);
             build_record(service, link_id, url, &raw)
         }
@@ -544,7 +565,7 @@ pub async fn get_external_log_full(app: AppHandle, id: String) -> Result<crate::
         Some(v) => v,
         None => match service {
             Service::DpsReport => {
-                let v = fetch_json(&format!("{DPS_BASE}/getJson?permalink={link_id}"), service).await?;
+                let v = fetch_dps_json(&link_id).await?;
                 cache_put(&app, service, &link_id, &v);
                 v
             }
@@ -612,7 +633,19 @@ pub async fn check_external_services() -> Result<Value, String> {
         .await
         .map(|r| r.status().is_success())
         .unwrap_or(false);
-    if dps {
+    // The primary domain is regionally blocked for some users; b.dps.report is
+    // the documented HTTPS alternate and is what the link fetch falls back to.
+    let backup = if dps {
+        true
+    } else {
+        client()
+            .get("https://b.dps.report")
+            .send()
+            .await
+            .map(|r| r.status().is_success())
+            .unwrap_or(false)
+    };
+    if dps || backup {
         mark_ok(Service::DpsReport);
     } else {
         mark_fail(Service::DpsReport);
@@ -678,6 +711,28 @@ mod tests {
         assert_eq!(rec.duration_sec, 310.503);
         assert_eq!(rec.num_players, 1);
         assert_eq!(rec.players[0].profession, "Mechanist");
+    }
+
+    #[test]
+    #[ignore]
+    fn probe_dps_backup_fetch() {
+        let Ok(id) = std::env::var("PROBE_DPS_LINK") else { return; };
+        let url = format!("https://b.dps.report/getJson?permalink={id}");
+        match tokio::runtime::Runtime::new().unwrap().block_on(fetch_json(&url, Service::DpsReport)) {
+            Ok(v) => println!("PROBE ok: {} chars from b.dps.report", v.to_string().len()),
+            Err(e) => panic!("PROBE failed: {e}"),
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn probe_dps_report_fetch() {
+        let Ok(id) = std::env::var("PROBE_DPS_LINK") else { return; };
+        let url = format!("{DPS_BASE}/getJson?permalink={id}");
+        match tokio::runtime::Runtime::new().unwrap().block_on(fetch_json(&url, Service::DpsReport)) {
+            Ok(v) => println!("PROBE ok: {} chars of JSON", v.to_string().len()),
+            Err(e) => panic!("PROBE failed: {e}"),
+        }
     }
 
     #[test]
