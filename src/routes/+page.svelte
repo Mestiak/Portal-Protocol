@@ -2536,6 +2536,13 @@
     // Wingman's trigger 24375 is reported as plain "Void".
     thedragonvoid: "dragonvoid",
     void: "dragonvoid",
+    statueofdarkness: "eyes",
+    voiceandclawofthefallen: "voiceandclaw",
+    thevoiceandtheclaw: "voiceandclaw",
+    siegethestronghold: "keepconstruct",
+    elementalaikeeperofthepeak: "ai",
+    darkaikeeperofthepeak: "ai",
+    aifullencounter: "ai",
   };
 
   /** Return an external (dps.report / imgur / GW2 render) icon URL as-is.

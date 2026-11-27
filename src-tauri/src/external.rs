@@ -489,7 +489,8 @@ fn is_multi_boss_name(name: &str) -> bool {
     is_dragonvoid_name(name)
         || matches!(
             c.as_str(),
-            "twinlargos" | "nikare" | "kenut" | "eyes" | "eyesoffate" | "voiceandclaw"
+            "twinlargos" | "nikare" | "kenut" | "eyes" | "eyesoffate" | "statueofdarkness"
+                | "voiceandclaw" | "voiceandclawofthefallen" | "thevoiceandtheclaw"
                 | "voice" | "claw" | "conjuredamalgamate" | "aetherbladehideout"
                 | "oldlionscourt" | "prototypevermilion" | "prototypeindigo" | "prototypegold"
         )
@@ -603,18 +604,111 @@ fn get_record(app: &AppHandle, id: &str) -> Result<Option<ExternalLogRecord>, St
     Ok(found)
 }
 
+// Wingman's `triggerID` is a boss/event id from Wingman's own list, not an
+// Elite Insights species id. The two namespaces overlap but differ (e.g. 21105
+// is Nikare in EI and Twin Largos in Wingman). Source: /api/bosses.
+fn wingman_boss_name(trigger: u64) -> Option<&'static str> {
+    Some(match trigger {
+        1 => "WvW",
+        1527 => "Convergence: Outer Nayos",
+        1562 => "Convergence: Mount Balrior",
+        1571 => "Convergence: Mount Balrior",
+        1629 => "Vloxx",
+        15375 => "Sabetha the Saboteur",
+        15415 => "Spirit Woods",
+        15429 => "Gorseval the Multifarious",
+        15438 => "Vale Guardian",
+        16088 => "Bandit Trio",
+        16115 => "Matthias Gabrel",
+        16123 => "Slothasor",
+        16177 => "Average Kitty Golem",
+        16198 => "Vital Kitty Golem",
+        16199 => "Standard Kitty Golem",
+        16202 => "Massive Kitty Golem",
+        16235 => "Keep Construct",
+        16246 => "Xera",
+        16247 => "Twisted Castle",
+        16253 => "Siege the Stronghold",
+        16948 => "Ensolyss of the Endless Torment",
+        17021 => "M A M A",
+        17028 => "Siax the Corrupted",
+        17154 => "Deimos",
+        17172 => "Mursaat Overseer",
+        17188 => "Samarog",
+        17194 => "Cairn the Indomitable",
+        17632 => "Skorvald the Shattered",
+        17759 => "Arkk",
+        17949 => "Artsariiv",
+        19450 => "Dhuum",
+        19536 => "Eater of Souls",
+        19645 => "Medium Kitty Golem",
+        19651 => "Statue of Darkness",
+        19676 => "Large Kitty Golem",
+        19691 => "Broken King",
+        19767 => "Soulless Horror",
+        19828 => "River of Souls",
+        20934 => "Qadim",
+        21105 => "Twin Largos",
+        21333 => "Freezie",
+        21964 => "Cardinal Sabir",
+        22000 => "Qadim the Peerless",
+        22006 => "Cardinal Adina",
+        22154 => "Icebrood Construct",
+        22343 => "Voice and Claw of the Fallen",
+        22492 => "Fraenir of Jormag",
+        22521 => "Boneskinner",
+        22711 => "Whisper of Jormag",
+        23254 => "Elemental Ai, Keeper of the Peak",
+        23957 => "Ankka",
+        24033 => "Captain Mai Trin",
+        24375 => "The Dragonvoid",
+        24485 => "Minister Li",
+        25357 => "Kanaxai, Scythe of Souls",
+        25413 => "Old Lion's Court",
+        25415 => "Old Lions Court",
+        25419 => "Old Lions Court",
+        25577 => "Kanaxai, Scythe of House Aurkus",
+        25705 => "Dagda",
+        25989 => "Cerus",
+        26123 => "Ura",
+        26228 => "Ura",
+        26231 => "Eparch",
+        26257 => "Greer",
+        26309 => "Greer",
+        26712 => "Ura",
+        26725 => "Greer the Blightbringer",
+        26774 => "Decima the Stormsinger",
+        26867 => "Decima the Stormsinger",
+        26889 => "Greer",
+        27010 => "Legendary Whispering Shadow",
+        27017 => "Ura",
+        27124 => "Kela, Seneschal of Waves",
+        28077 => "Vloxx",
+        28106 => "Vloxx",
+        43488 => "The Dragonvoid",
+        43974 => "Conjured Amalgamate",
+        232542 => "Dark Ai, Keeper of the Peak",
+        232543 => "Ai, Keeper of the Peak",
+        _ => return None,
+    })
+}
+
 fn build_record(service: Service, link_id: &str, url: &str, raw: &Value) -> Result<ExternalLogRecord, String> {
     let players = players_from(raw);
     let (boss_name, success, is_cm, is_lcm, duration_sec, group_dps, hp_left) = match service {
         Service::Wingman => {
-            let trigger = raw.get("triggerID").and_then(|v| v.as_u64()).unwrap_or(0) as u16;
+            let trigger = raw.get("triggerID").and_then(|v| v.as_u64()).unwrap_or(0);
             let fight_name = raw.get("fightName").and_then(|v| v.as_str()).unwrap_or("");
-            let name = if trigger == 24375
-                || normalized_name(fight_name).contains("harvesttemple")
-            {
+            let name = if trigger == 24375 || normalized_name(fight_name).contains("harvesttemple") {
                 "The Dragonvoid".to_string()
             } else {
-                crate::evtc_parser::get_boss_name_from_id(trigger)
+                match wingman_boss_name(trigger) {
+                    Some(name) => name.to_string(),
+                    None if trigger <= u16::MAX as u64 => {
+                        crate::evtc_parser::get_boss_name_from_id(trigger as u16)
+                    }
+                    None => format!("Encounter {}", trigger),
+                }
             };
             (
                 if name.is_empty() {
@@ -1219,6 +1313,15 @@ mod tests {
         assert_eq!(targets.rows[0].hp, Some(20.0));
         assert_eq!(targets.rows[1].label, "Kenut");
         assert_eq!(targets.rows[1].hp, Some(0.0));
+    }
+
+    #[test]
+    fn wingman_boss_ids_use_wingman_namespace() {
+        assert_eq!(wingman_boss_name(21105), Some("Twin Largos"));
+        assert_eq!(wingman_boss_name(22343), Some("Voice and Claw of the Fallen"));
+        assert_eq!(wingman_boss_name(22521), Some("Boneskinner"));
+        assert_eq!(wingman_boss_name(232542), Some("Dark Ai, Keeper of the Peak"));
+        assert_eq!(wingman_boss_name(28106), Some("Vloxx"));
     }
 
     #[test]

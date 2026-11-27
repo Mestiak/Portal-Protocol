@@ -1680,7 +1680,7 @@ pub fn get_boss_name_from_id(boss_id: u16) -> String {
         19767 => "Soulless Horror".to_string(),
         19828 => "River of Souls".to_string(),
         19691 => "Statue of Ice".to_string(),
-        19651 => "Statue of Death".to_string(),
+        19651 => "Statue of Darkness".to_string(),
         19844 => "Statue of Darkness".to_string(),
         19450 => "Dhuum".to_string(),
         // W6
@@ -1690,12 +1690,14 @@ pub fn get_boss_name_from_id(boss_id: u16) -> String {
         20934 => "Qadim".to_string(),
         // W7
         22006 => "Cardinal Adina".to_string(),
-        22343 | 22484 | 21964 => "Cardinal Sabir".to_string(),
+        21964 | 22484 => "Cardinal Sabir".to_string(),
+        22343 => "Voice and Claw of the Fallen".to_string(),
         22000 => "Qadim the Peerless".to_string(),
         // W8 / Janthir Syntri
         26257 | 26309 | 26889 => "Greer".to_string(),
         26725 => "Greer, the Blightbringer".to_string(),
-        26231 | 26625 | 26720 | 26774 => "Decima".to_string(),
+        26231 => "Eparch, The Lonely King".to_string(),
+        26625 | 26720 | 26774 => "Decima".to_string(),
         26867 => "Godsquall Decima".to_string(),
         26123 | 26228 | 27017 | 26712 => "Ura".to_string(),
         // SotO Convergences
@@ -1707,10 +1709,12 @@ pub fn get_boss_name_from_id(boss_id: u16) -> String {
         // IBS Strikes
         22154 => "Icebrood Construct".to_string(),
         22611 => "Kodan Brothers".to_string(),
-        22521 => "Fraenir of Jormag".to_string(),
-        22582 => "Boneskinner".to_string(),
+        22492 => "Fraenir of Jormag".to_string(),
+        22521 | 22582 => "Boneskinner".to_string(),
         22711 => "Whisper of Jormag".to_string(),
         22836 => "Varinia Stormsounder".to_string(),
+        19536 => "Eater of Souls".to_string(),
+        21333 => "Freezie".to_string(),
         // EoD Strikes
         24033 => "Captain Mai Trin".to_string(),
         23957 => "Ankka".to_string(),
@@ -1724,15 +1728,16 @@ pub fn get_boss_name_from_id(boss_id: u16) -> String {
         43488 => "The Dragonvoid".to_string(),
         // Janthir Wilds Strikes
         27124 => "Kela, Seneschal of Waves".to_string(),
+        28106 => "Vloxx".to_string(),
         // Fractals
         17021 => "M.A.M.A.".to_string(),
         17028 => "Siax the Corrupted".to_string(),
         16948 => "Ensolyss of the Endless Torment".to_string(),
-        17613 => "Skorvald the Shattered".to_string(),
+        17613 | 17632 => "Skorvald the Shattered".to_string(),
         17949 => "Artsariiv".to_string(),
         17759 => "Arkk".to_string(),
         23254 => "Ai, Keeper of the Peak".to_string(),
-        25357 => "Kanaxai, Scythe of Souls".to_string(),
+        25357 | 25572 | 25577 => "Kanaxai, Scythe of Souls".to_string(),
         26239 | 26262 => "Eparch, The Lonely King".to_string(),
         27010 => "Whispering Shadow".to_string(),
 
