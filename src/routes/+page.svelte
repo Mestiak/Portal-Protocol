@@ -667,9 +667,34 @@
       date: "November 2026",
       notes: [
         {
+          category: "🌐 External Logs — New Tab",
+          items: [
+            { title: "Analyze shared log links", desc: "The new External tab reads GW2 Wingman links and shows a log card with the same badges, fight time, player count and HP styling as the regular feed. Check Stats opens the usual Stats modal, including its encounter-specific tabs." },
+            { title: "Find on Wingman", desc: "Paste a dps.report link to see whether Wingman already has the fight. If it does, its log is added so you can open it with Check Stats. If it does not, the tab says so and offers an explicit Import button. Nothing is queued automatically and nothing is polled. Direct dps.report fetching is disabled for now because that site returned HTTP 403; the code stays behind a feature flag." },
+            { title: "Saved workspace", desc: "External cards persist across restarts with their notes, source link and last-checked time. Raw Elite Insights JSON is cached on disk and parsed stats use the compact cache, so reopening Check Stats is fast. Service status shows an outage banner when Wingman is down." },
+            { title: "Card polish", desc: "Buttons have clear hover, press and loading states. Failed-log HP uses the red heart icon in the same row as fight time and player count. Not on Wingman yet is orange, Already queued on Wingman is bold white, and the Opening stats toast is green." }
+          ]
+        },
+        {
+          category: "🐉 Multi-Boss Encounters",
+          items: [
+            { title: "Dragon Council strip", desc: "Harvest Temple / The Dragonvoid shows the same per-dragon and interphase strip as the regular cards, with cleared state, remaining HP and a check or cross mark. A compact cached version appears quickly." },
+            { title: "Per-target HP rows", desc: "Twin Largos, Statue of Darkness, Voice & Claw, Conjured Amalgamate, Aetherblade Hideout and Old Lion's Court show each target separately instead of one misleading HP number. Old Lion's Court also shows its phase and CC-wipe flag. The single boss HP line is hidden for these fights." },
+            { title: "Boss ID audit", desc: "Wingman trigger IDs and Elite Insights species IDs are separate namespaces that overlap; mixing them could label Twin Largos as Conjured Amalgamate. External cards now use Wingman's own ID list. All 63 Wingman boss IDs are covered, including two IDs above 65,535 that used to be truncated. Regular uploads were unaffected because they take their names from the EVTC file and dps.report's API." }
+          ]
+        },
+        {
           category: "🐞 Bug Fixes",
           items: [
-            { title: "Boss HP Shows the Boss", desc: "On fights with summoned adds, the remaining-HP number could come from a minion instead of the boss — an Adina wipe showed 12% where the boss was at 7%, and some Qadim wipes showed a damaged add instead of an untouched boss. The app now reads the main boss directly. Logs saved before this fix keep their old number until they are processed again." }
+            { title: "Boss HP Shows the Boss", desc: "On fights with summoned adds, the remaining-HP number could come from a minion instead of the boss — an Adina wipe showed 12% where the boss was at 7%, and some Qadim wipes showed a damaged add instead of an untouched boss. The app now reads the main boss directly. Logs saved before this fix keep their old number until they are processed again." },
+            { title: "Large Wingman JSON downloads", desc: "Full reports of 35 MB or more used to fail because a 30-second timeout cut the stream off. Downloads now have a longer timeout." },
+            { title: "Boss names from IDs", desc: "Several species-to-name entries were wrong (Voice & Claw, Boneskinner, Eparch, the eyes and others). They now match Elite Insights' species table, with icon aliases for the canonical names." }
+          ]
+        },
+        {
+          category: "💬 Feedback & Requests",
+          items: [
+            { title: "Get in Touch", desc: "Something look wrong, or is there a mechanic you'd like added? DM me on Discord — Mestiak. Bug reports and requests are both welcome." }
           ]
         }
       ]
