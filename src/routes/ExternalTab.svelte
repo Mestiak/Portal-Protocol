@@ -323,6 +323,9 @@
               <div class="ext-meta-line">
                 <span class="ext-detail"><i class="fa-solid fa-stopwatch" style="margin-right: 4px; font-size: 11px;"></i> {fmtDuration(log.durationSec)}</span>
                 <span class="ext-detail"><i class="fa-solid fa-users" style="margin-right: 4px; font-size: 11px;"></i> {log.numPlayers} players</span>
+                {#if log.success === false && log.hpLeft != null}
+                  <span class="ext-detail" style="color:#f87171; font-weight:700;"><i class="fa-solid fa-heart-crack" style="margin-right: 4px; font-size: 11px;"></i> {log.hpLeft.toFixed(2)}% HP Left</span>
+                {/if}
               </div>
               <div class="ext-source">
                 <span>{sourceLabel(log.source)}</span>
