@@ -82,13 +82,57 @@
     setTimeout(() => { if (statsBusyId === log.id) statsBusyId = null; }, 900);
   }
 
+  function dpsLinkId(input: string): string | null {
+    try {
+      const url = new URL(input.trim());
+      const host = url.hostname.toLowerCase();
+      if (!["dps.report", "b.dps.report", "a.dps.report"].includes(host)) return null;
+      const parts = url.pathname.split("/").filter(Boolean);
+      if (parts[0] === "getJson") return url.searchParams.get("permalink") || null;
+      return parts[0]?.split("_")[0] || null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function fetchDpsJson(id: string): Promise<any> {
+    const failures: string[] = [];
+    for (const base of ["https://dps.report", "https://b.dps.report", "http://a.dps.report"]) {
+      try {
+        const res = await fetch(`${base}/getJson?permalink=${encodeURIComponent(id)}`);
+        const text = await res.text();
+        if (!res.ok) { failures.push(`${base}: HTTP ${res.status}`); continue; }
+        const value = JSON.parse(text);
+        if (value?.error) { failures.push(`${base}: ${value.error}`); continue; }
+        status = { ...status, dpsReport: "online" };
+        return value;
+      } catch (e) {
+        failures.push(`${base}: ${String(e)}`);
+      }
+    }
+    status = { ...status, dpsReport: "offline" };
+    throw new Error(failures.join(" | "));
+  }
+
   async function addLog() {
     const url = linkInput.trim();
     if (!url || busy) return;
     busy = true;
     error = "";
     try {
-      const rec = await invoke<ExtLog>("add_external_log", { url });
+      const dpsId = dpsLinkId(url);
+      let rec: ExtLog;
+      if (dpsId) {
+        const raw = await fetchDpsJson(dpsId);
+        rec = await invoke<ExtLog>("store_external_raw", {
+          source: "dpsreport",
+          linkId: dpsId,
+          url: `https://dps.report/${dpsId}`,
+          raw,
+        });
+      } else {
+        rec = await invoke<ExtLog>("add_external_log", { url });
+      }
       logs = [rec, ...logs.filter((l) => l.id !== rec.id)];
       linkInput = "";
       addNotice = `Added ${rec.bossName || "log"} — ready to analyze.`;
@@ -109,7 +153,18 @@
     busy = true;
     error = "";
     try {
-      const rec = await invoke<ExtLog>("refresh_external_log", { id: log.id });
+      let rec: ExtLog;
+      if (log.source === "dpsreport") {
+        const raw = await fetchDpsJson(log.linkId);
+        rec = await invoke<ExtLog>("store_external_raw", {
+          source: "dpsreport",
+          linkId: log.linkId,
+          url: log.url,
+          raw,
+        });
+      } else {
+        rec = await invoke<ExtLog>("refresh_external_log", { id: log.id });
+      }
       logs = logs.map((l) => (l.id === rec.id ? rec : l));
       onToast(`Refreshed ${rec.bossName || "log"}.`, "success");
       await loadStatus(false);

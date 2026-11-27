@@ -493,6 +493,40 @@ pub async fn add_external_log(app: AppHandle, url: String) -> Result<ExternalLog
     Ok(rec)
 }
 
+/// Stores EI JSON fetched by the WebView. dps.report's bot protection rejects
+/// the app's native HTTP client on some connections even with browser headers,
+/// while the WebView fetch of the same URL succeeds. Rust still validates and
+/// persists the payload.
+#[command]
+pub fn store_external_raw(
+    app: AppHandle,
+    source: String,
+    link_id: String,
+    url: String,
+    raw: Value,
+) -> Result<ExternalLogRecord, String> {
+    if source != "dpsreport" {
+        return Err("Only dps.report payloads can be stored from the frontend.".to_string());
+    }
+    if !raw
+        .get("players")
+        .and_then(|v| v.as_array())
+        .map(|a| !a.is_empty())
+        .unwrap_or(false)
+    {
+        return Err("dps.report returned a log without player data.".to_string());
+    }
+    let mut rec = build_record(Service::DpsReport, &link_id, &url, &raw)?;
+    if let Some(existing) = get_record(&app, &rec.id)? {
+        rec.notes = existing.notes;
+        rec.created_at = existing.created_at;
+    }
+    cache_put(&app, Service::DpsReport, &link_id, &raw);
+    save_record(&app, &rec)?;
+    mark_ok(Service::DpsReport);
+    Ok(rec)
+}
+
 #[command]
 pub async fn list_external_logs(app: AppHandle) -> Result<Vec<ExternalLogRecord>, String> {
     let conn = db::open_db(&app)?;
@@ -631,28 +665,12 @@ pub fn external_service_status() -> Value {
     })
 }
 
-/// Lightweight probe used by the External tab's status banner. Each endpoint is
-/// tiny: Wingman's patch table, dps.report's front page.
+/// Lightweight probe used by the External tab's status banner. Wingman is
+/// probed here. dps.report is fetched through the WebView, so its status is
+/// learned from real link fetches instead of a native-client probe that some
+/// connections get 403'd on.
 #[command]
 pub async fn check_external_services() -> Result<Value, String> {
-    let mut dps_ok = false;
-    for base in [DPS_BASE, "https://b.dps.report", "http://a.dps.report"] {
-        if client()
-            .get(base)
-            .send()
-            .await
-            .map(|r| r.status().is_success())
-            .unwrap_or(false)
-        {
-            dps_ok = true;
-            break;
-        }
-    }
-    if dps_ok {
-        mark_ok(Service::DpsReport);
-    } else {
-        mark_fail(Service::DpsReport);
-    }
     let wing = client()
         .get(format!("{WINGMAN_BASE}/api/patches"))
         .send()
